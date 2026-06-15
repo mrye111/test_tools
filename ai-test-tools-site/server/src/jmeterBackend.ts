@@ -1,5 +1,5 @@
-import cors from "cors";
-import express, { type Express, type Response as ExpressResponse } from "express";
+﻿import cors from "cors";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
@@ -7,24 +7,39 @@ import { createInterface } from "node:readline";
 import { spawnSync } from "node:child_process";
 import { XMLParser } from "fast-xml-parser";
 import { registerTestCaseRoutes } from "./features/testcase/routes.js";
-
-type JsonObject = Record<string, unknown>;
-
-type JmxProperty =
-  | { kind: "string" | "bool" | "int" | "long" | "double"; name: string; value: string | number | boolean }
-  | { kind: "collection"; name: string; items?: JmxProperty[] }
-  | { kind: "element"; name: string; elementType: string; attrs?: Record<string, string>; props?: JmxProperty[] }
-  | { kind: "objSaveConfig" };
-
-export type JmxElement = {
-  tag: string;
-  guiclass: string;
-  testclass: string;
-  testname: string;
-  enabled?: boolean;
-  props: JmxProperty[];
-  children: JmxElement[];
-};
+import { registerLogRoutes } from "./log-routes.js";
+import { traceMiddleware, getTraceContext, withSpanSync } from "./middleware/trace.js";
+import { AppError } from "./app-error.js";
+import { logger } from "./logger.js";
+import {
+  type JsonObject,
+  type JmxProperty,
+  type JmxElement,
+  serializeJmx,
+  empty,
+  element,
+  pString,
+  pBool,
+  pInt,
+  pLong,
+  pDouble,
+  pCollection,
+  pElement,
+  argumentProp,
+  argumentsElementProp,
+  jmsPropertiesProp,
+  parsePairs,
+  resultCollector,
+  defaultControllerName,
+} from "./jmx-serializer.js";
+import {
+  generateJmeterWithAi,
+  publicAiConfigStatus,
+  sendSseEvent,
+  isJsonObject,
+  type SseSession,
+  type AiRuntimeView,
+} from "./ai-generator.js";
 
 type TreeNodeRef = {
   path: string;
@@ -44,243 +59,9 @@ const PROTOCOL_VERSION = "2025-06-18";
 const SERVER_NAME = "jmeter-mcp-server";
 const SERVER_VERSION = "1.0.0";
 
-const empty = (value: unknown): string => (value == null ? "" : String(value));
-const boolText = (value: boolean): string => (value ? "true" : "false");
-
-function attrEscape(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function textEscape(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function pString(name: string, value: unknown): JmxProperty {
-  return { kind: "string", name, value: empty(value) };
-}
-
-function pBool(name: string, value: boolean): JmxProperty {
-  return { kind: "bool", name, value };
-}
-
-function pInt(name: string, value: number): JmxProperty {
-  return { kind: "int", name, value };
-}
-
-function pLong(name: string, value: number | string): JmxProperty {
-  return { kind: "long", name, value };
-}
-
-function pDouble(name: string, value: number | string): JmxProperty {
-  return { kind: "double", name, value };
-}
-
-function pCollection(name: string, items: JmxProperty[] = []): JmxProperty {
-  return { kind: "collection", name, items };
-}
-
-function pElement(
-  name: string,
-  elementType: string,
-  props: JmxProperty[] = [],
-  attrs: Record<string, string> = {},
-): JmxProperty {
-  return { kind: "element", name, elementType, attrs, props };
-}
-
-function element(
-  tag: string,
-  guiclass: string,
-  testclass: string,
-  testname: string,
-  props: JmxProperty[] = [],
-): JmxElement {
-  return { tag, guiclass, testclass, testname, enabled: true, props, children: [] };
-}
-
-function argumentProp(name: string, value: string, http = false, encoded = false): JmxProperty {
-  const props = http
-    ? [
-        pBool("HTTPArgument.always_encode", encoded),
-        pString("Argument.value", value),
-        pString("Argument.metadata", "="),
-        pBool("HTTPArgument.use_equals", true),
-        pString("Argument.name", name),
-      ]
-    : [pString("Argument.name", name), pString("Argument.value", value), pString("Argument.metadata", "=")];
-  return pElement(name, http ? "HTTPArgument" : "Argument", props);
-}
-
-function argumentsElementProp(name: string, args: Array<[string, string]> = [], http = false): JmxProperty {
-  return pElement(
-    name,
-    "Arguments",
-    [pCollection("Arguments.arguments", args.map(([key, value]) => argumentProp(key, value, http, true)))],
-    http ? { guiclass: "HTTPArgumentsPanel", testclass: "Arguments", testname: "User Defined Variables" } : {},
-  );
-}
-
-function jmsPropertiesProp(properties: Array<[string, string]> = [], name = "jms.jmsProperties"): JmxProperty {
-  return pElement(
-    name,
-    "JMSProperties",
-    [pCollection("JMSProperties.properties", properties.map(([key, value]) => pElement("", "JMSProperty", [pString("JMSProperty.name", key), pString("JMSProperty.value", value)])))],
-  );
-}
-
-function parsePairs(value: string | null | undefined, pairDelimiter = ","): Array<[string, string]> {
-  if (!value) return [];
-  return value
-    .split(pairDelimiter)
-    .map((pair) => pair.trim())
-    .filter(Boolean)
-    .map((pair) => pair.split("=", 2))
-    .filter((pair): pair is [string, string] => pair.length === 2)
-    .map(([key, val]) => [key.trim(), val.trim()]);
-}
-
-function renderProp(prop: JmxProperty, depth: number): string {
-  const pad = "  ".repeat(depth);
-  if (prop.kind === "string") {
-    return `${pad}<stringProp name="${attrEscape(prop.name)}">${textEscape(empty(prop.value))}</stringProp>\n`;
-  }
-  if (prop.kind === "bool") {
-    return `${pad}<boolProp name="${attrEscape(prop.name)}">${boolText(Boolean(prop.value))}</boolProp>\n`;
-  }
-  if (prop.kind === "int") {
-    return `${pad}<intProp name="${attrEscape(prop.name)}">${Number(prop.value)}</intProp>\n`;
-  }
-  if (prop.kind === "long") {
-    return `${pad}<longProp name="${attrEscape(prop.name)}">${textEscape(empty(prop.value))}</longProp>\n`;
-  }
-  if (prop.kind === "double") {
-    return `${pad}<doubleProp name="${attrEscape(prop.name)}">${textEscape(empty(prop.value))}</doubleProp>\n`;
-  }
-  if (prop.kind === "collection") {
-    if (!prop.items || prop.items.length === 0) {
-      return `${pad}<collectionProp name="${attrEscape(prop.name)}"/>\n`;
-    }
-    return `${pad}<collectionProp name="${attrEscape(prop.name)}">\n${prop.items
-      .map((item) => renderProp(item, depth + 1))
-      .join("")}${pad}</collectionProp>\n`;
-  }
-  if (prop.kind === "element") {
-    const attrs = Object.entries({ name: prop.name, elementType: prop.elementType, ...(prop.attrs ?? {}) })
-      .map(([key, value]) => `${key}="${attrEscape(value)}"`)
-      .join(" ");
-    if (!prop.props || prop.props.length === 0) {
-      return `${pad}<elementProp ${attrs}/>\n`;
-    }
-    return `${pad}<elementProp ${attrs}>\n${prop.props
-      .map((item) => renderProp(item, depth + 1))
-      .join("")}${pad}</elementProp>\n`;
-  }
-  return `${pad}<objProp>
-${pad}  <name>saveConfig</name>
-${pad}  <value class="SampleSaveConfiguration">
-${pad}    <time>true</time>
-${pad}    <latency>true</latency>
-${pad}    <timestamp>true</timestamp>
-${pad}    <success>true</success>
-${pad}    <label>true</label>
-${pad}    <code>true</code>
-${pad}    <message>true</message>
-${pad}    <threadName>true</threadName>
-${pad}    <dataType>true</dataType>
-${pad}    <encoding>false</encoding>
-${pad}    <assertions>true</assertions>
-${pad}    <subresults>true</subresults>
-${pad}    <responseData>false</responseData>
-${pad}    <samplerData>false</samplerData>
-${pad}    <xml>false</xml>
-${pad}    <fieldNames>true</fieldNames>
-${pad}    <responseHeaders>false</responseHeaders>
-${pad}    <requestHeaders>false</requestHeaders>
-${pad}    <responseDataOnError>true</responseDataOnError>
-${pad}    <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
-${pad}    <assertionsResultsToSave>0</assertionsResultsToSave>
-${pad}    <bytes>true</bytes>
-${pad}    <sentBytes>true</sentBytes>
-${pad}    <url>true</url>
-${pad}    <threadCounts>true</threadCounts>
-${pad}    <idleTime>true</idleTime>
-${pad}    <connectTime>true</connectTime>
-${pad}  </value>
-${pad}</objProp>\n`;
-}
-
-function renderElement(node: JmxElement, depth: number): string {
-  const pad = "  ".repeat(depth);
-  const attrs = [
-    `guiclass="${attrEscape(node.guiclass)}"`,
-    `testclass="${attrEscape(node.testclass)}"`,
-    `testname="${attrEscape(node.testname)}"`,
-    `enabled="${node.enabled === false ? "false" : "true"}"`,
-  ].join(" ");
-  if (node.props.length === 0) {
-    return `${pad}<${node.tag} ${attrs}/>\n`;
-  }
-  return `${pad}<${node.tag} ${attrs}>\n${node.props.map((prop) => renderProp(prop, depth + 1)).join("")}${pad}</${node.tag}>\n`;
-}
-
-function renderHashTree(children: JmxElement[], depth: number): string {
-  const pad = "  ".repeat(depth);
-  if (children.length === 0) {
-    return `${pad}<hashTree/>\n`;
-  }
-  return `${pad}<hashTree>\n${children
-    .map((child) => `${renderElement(child, depth + 1)}${renderHashTree(child.children, depth + 1)}`)
-    .join("")}${pad}</hashTree>\n`;
-}
-
-export function serializeJmx(root: JmxElement): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">\n${renderHashTree([root], 1)}</jmeterTestPlan>\n`;
-}
-
-function resultCollector(type: string, displayName: string, filename?: string): JmxElement | null {
-  const guiByType: Record<string, string> = {
-    view_results_tree: "ViewResultsFullVisualizer",
-    aggregate_report: "StatVisualizer",
-    summary_report: "SummaryReport",
-    simple_data_writer: "SimpleDataWriter",
-    view_results_in_table: "TableVisualizer",
-    graph_results: "GraphVisualizer",
-    spline_visualizer: "SplineVisualizer",
-    response_time_graph: "RespTimeGraphVisualizer",
-    assertion_results: "AssertionVisualizer",
-    generate_summary_results: "SummariserGui",
-  };
-  const guiclass = guiByType[type];
-  if (!guiclass) return null;
-  const props: JmxProperty[] = [pBool("ResultCollector.error_logging", false), { kind: "objSaveConfig" }];
-  if (filename) props.unshift(pString("filename", filename));
-  return element("ResultCollector", guiclass, "ResultCollector", displayName, props);
-}
-
-function defaultControllerName(type: string | null | undefined): string {
-  const names: Record<string, string> = {
-    if: "If Controller",
-    while: "While Controller",
-    foreach: "ForEach Controller",
-    transaction: "Transaction Controller",
-    throughput: "Throughput Controller",
-    once_only: "Once Only Controller",
-    random_order: "Random Order Controller",
-    switch: "Switch Controller",
-    runtime: "Runtime Controller",
-    loop: "Loop Controller",
-    simple: "Simple Controller",
-    module: "Module Controller",
-    interleave: "Interleave Controller",
-    random: "Random Controller",
-    critical_section: "Critical Section Controller",
-  };
-  return type ? names[type] ?? `${type} Controller` : "Controller";
-}
+// Re-export types from sub-modules for backward compatibility
+export type { JsonObject, JmxProperty, JmxElement } from "./jmx-serializer.js";
+export { serializeJmx } from "./jmx-serializer.js";
 
 export class TestPlanService {
   private root: JmxElement | null = null;
@@ -2381,9 +2162,11 @@ export class JmeterMcpRuntime {
   }
 
   callTool(name: string, args: JsonObject = {}): string {
-    const tool = this.tools.get(name);
-    if (!tool) throw new Error(`Unknown tool: ${name}`);
-    return tool.execute(args, this.service);
+    return withSpanSync({ name: `tool.${name}`, type: "tool", attributes: { toolName: name, args } }, () => {
+      const tool = this.tools.get(name);
+      if (!tool) throw new Error(`Unknown tool: ${name}`);
+      return tool.execute(args, this.service);
+    });
   }
 
   private success(id: unknown, result: JsonObject): JsonObject {
@@ -2395,327 +2178,17 @@ export class JmeterMcpRuntime {
   }
 }
 
-type SseSession = {
-  id: string;
-  response: ExpressResponse;
-};
-
-type AiModelConfig = {
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-};
-
-type AiToolCall = {
-  name: string;
-  arguments: JsonObject;
-};
-
-type AiGeneratedPlan = {
-  planName: string;
-  summary: string;
-  notes: string[];
-  toolCalls: AiToolCall[];
-};
-
-const AI_CONSTRUCTION_TOOL_DENYLIST = new Set([
-  "load_test_plan",
-  "save_test_plan",
-  "run_test_plan",
-  "update_element",
-  "delete_element",
-  "move_element",
-  "replace_script",
-  "list_test_plan_tree",
-  "validate_test_plan",
-]);
-
-function sendSseEvent(response: ExpressResponse, event: string, data: string): void {
-  response.write(`event: ${event}\n`);
-  for (const line of data.split("\n")) response.write(`data: ${line}\n`);
-  response.write("\n");
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function publicAiConfigStatus(): JsonObject {
-  return {
-    ok: true,
-    mode: "client_supplied",
-    serverStoresConfig: false,
-    message: "AI 配置由前端随请求传入，后端不读取 ai.md、不持久化密钥。",
-    required: ["ai_config.base_url", "ai_config.api_key", "ai_config.model"],
-    aliases: {
-      base_url: ["base_url", "baseUrl", "baseurl", "url"],
-      api_key: ["api_key", "apiKey", "key"],
-      model: ["model", "model_id", "modelId", "id"],
-    },
-  };
-}
-
-function firstText(args: JsonObject, keys: string[]): string {
-  for (const key of keys) {
-    const value = args[key];
-    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
-  }
-  return "";
-}
-
-function parseAiModelConfig(body: JsonObject): AiModelConfig {
-  const rawConfig = isJsonObject(body.ai_config)
-    ? body.ai_config
-    : isJsonObject(body.aiConfig)
-      ? body.aiConfig
-      : {};
-  const config = Object.keys(rawConfig).length ? rawConfig : body;
-  const baseUrl = firstText(config, ["base_url", "baseUrl", "baseurl", "url"]);
-  const apiKey = firstText(config, ["api_key", "apiKey", "key"]);
-  const model = firstText(config, ["model", "model_id", "modelId", "id"]);
-
-  if (!baseUrl || !apiKey || !model) {
-    throw new Error("ai_config.base_url, ai_config.api_key and ai_config.model are required.");
-  }
-  if (!/^https?:\/\//i.test(baseUrl)) {
-    throw new Error("ai_config.base_url must start with http:// or https://.");
-  }
-
-  return { baseUrl, apiKey, model };
-}
-
-function sanitizeAiErrorText(text: string, config: AiModelConfig): string {
-  return text.split(config.apiKey).join("[redacted]").slice(0, 500);
-}
-
-function extractJsonObjectText(text: string): string {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced ? fenced[1] : text;
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  if (start < 0 || end < start) throw new Error("AI response does not contain a JSON object.");
-  return candidate.slice(start, end + 1);
-}
-
-function safeFilename(value: string): string {
-  const normalized = value
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  return normalized || `ai-jmeter-${Date.now()}`;
-}
-
-function resolveGeneratedJmxPath(generatedRoot: string, requested: string | null | undefined, planName: string): string {
-  const fallback = resolve(generatedRoot, `${safeFilename(planName)}.jmx`);
-  const trimmed = requested?.trim() ?? "";
-  const requestedPath = trimmed && /[\\/]/.test(trimmed) ? trimmed : trimmed ? resolve(generatedRoot, trimmed) : "";
-  const outputPath = requested && requested.trim()
-    ? resolve(requestedPath)
-    : fallback;
-  const normalized = outputPath.toLowerCase().endsWith(".jmx") ? outputPath : `${outputPath}.jmx`;
-  const relativePath = relative(generatedRoot, normalized);
-  const insideGeneratedDir = relativePath !== "" && !relativePath.startsWith("..") && !relativePath.includes(":");
-  if (!insideGeneratedDir) {
-    throw new Error("AI generated JMX can only be saved under server/generated.");
-  }
-  return normalized;
-}
-
-function aiToolCatalog(runtime: JmeterMcpRuntime): JsonObject[] {
-  return [...runtime.tools.values()]
-    .filter((tool) => !AI_CONSTRUCTION_TOOL_DENYLIST.has(tool.name))
-    .map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-    }));
-}
-
-function buildAiSystemPrompt(runtime: JmeterMcpRuntime): string {
-  return [
-    "你是资深 JMeter 性能测试工程师。",
-    "你的任务是把用户的自然语言性能测试需求转换为后端可执行的 JMeter 工具调用计划，而不是直接编写 JMX XML。",
-    "必须只输出一个 JSON 对象，不要输出 Markdown，不要输出解释性正文。",
-    "JSON 结构必须为：",
-    "{\"plan_name\":\"string\",\"summary\":\"string\",\"notes\":[\"string\"],\"tool_calls\":[{\"name\":\"tool_name\",\"arguments\":{}}]}",
-    "规则：",
-    "1. tool_calls 第一项必须是 create_test_plan。",
-    "2. create_test_plan 后必须至少调用一次 add_thread_group。",
-    "3. 除非用户明确要求，否则不要调用保存、运行、加载、更新、删除、移动类工具。",
-    "4. HTTP 场景优先使用 add_more_configs(type=http_defaults)、add_more_configs(type=http_header_manager)、add_http_request、add_assertion、add_listener。",
-    "5. 性能测试默认添加 aggregate_report 和 summary_report 监听器；调试场景可以添加 view_results_tree。",
-    "6. 参数必须符合工具 inputSchema；未知信息使用合理默认值，不要臆造真实密码或密钥。",
-    "7. URL 拆分为 protocol/domain/path/port；domain 不要包含协议头。",
-    "8. JSON 请求体放入 body_data，HTTP Header 用 headers 数组，格式为 {\"name\":\"Content-Type\",\"value\":\"application/json\"}。",
-    `可用工具如下：${JSON.stringify(aiToolCatalog(runtime))}`,
-  ].join("\n");
-}
-
-async function callOpenAiCompatibleChat(config: AiModelConfig, prompt: string, runtime: JmeterMcpRuntime, temperature: number, maxTokens: number): Promise<string> {
-  const endpoint = `${config.baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  const bodyBase = {
-    model: config.model,
-    temperature,
-    max_tokens: maxTokens,
-    messages: [
-      { role: "system", content: buildAiSystemPrompt(runtime) },
-      { role: "user", content: prompt },
-    ],
-  };
-
-  const request = async (withJsonMode: boolean): Promise<Response> => fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(withJsonMode ? { ...bodyBase, response_format: { type: "json_object" } } : bodyBase),
-  });
-
-  let response = await request(true);
-  let text = await response.text();
-  if (!response.ok && /response_format|json_object|unsupported/i.test(text)) {
-    response = await request(false);
-    text = await response.text();
-  }
-
-  if (!response.ok) {
-    throw new Error(`AI request failed: HTTP ${response.status} ${sanitizeAiErrorText(text, config)}`);
-  }
-
-  const data = JSON.parse(text) as JsonObject;
-  const choices = Array.isArray(data.choices) ? data.choices : [];
-  const first = choices[0] as JsonObject | undefined;
-  const message = first && isJsonObject(first.message) ? first.message : {};
-  const content = typeof message.content === "string" ? message.content : "";
-  if (!content.trim()) throw new Error("AI response has no message content.");
-  return content;
-}
-
-function normalizeAiToolCall(value: unknown): AiToolCall | null {
-  if (!isJsonObject(value)) return null;
-  const name = typeof value.name === "string" ? value.name : typeof value.tool === "string" ? value.tool : "";
-  const args = isJsonObject(value.arguments) ? value.arguments : isJsonObject(value.args) ? value.args : {};
-  if (!name) return null;
-  return { name, arguments: args };
-}
-
-function normalizeAiGeneratedPlan(rawText: string, fallbackPrompt: string): AiGeneratedPlan {
-  const parsed = JSON.parse(extractJsonObjectText(rawText)) as JsonObject;
-  const planName = String(parsed.plan_name ?? parsed.planName ?? `AI JMeter Test Plan ${Date.now()}`);
-  const summary = String(parsed.summary ?? "AI generated JMeter test plan.");
-  const notes = Array.isArray(parsed.notes) ? parsed.notes.map((item) => String(item)) : [];
-  const rawCalls = Array.isArray(parsed.tool_calls)
-    ? parsed.tool_calls
-    : Array.isArray(parsed.toolCalls)
-      ? parsed.toolCalls
-      : Array.isArray(parsed.steps)
-        ? parsed.steps
-        : [];
-
-  const toolCalls = rawCalls
-    .map(normalizeAiToolCall)
-    .filter((item): item is AiToolCall => item !== null);
-
-  if (!toolCalls.some((call) => call.name === "create_test_plan")) {
-    toolCalls.unshift({
-      name: "create_test_plan",
-      arguments: {
-        name: planName,
-        comments: `AI generated from prompt: ${fallbackPrompt.slice(0, 200)}`,
-      },
-    });
-  }
-
-  const createIndex = toolCalls.findIndex((call) => call.name === "create_test_plan");
-  if (createIndex > 0) {
-    const [createCall] = toolCalls.splice(createIndex, 1);
-    toolCalls.unshift(createCall);
-  }
-
-  if (!toolCalls.some((call) => call.name === "add_thread_group")) {
-    toolCalls.splice(1, 0, {
-      name: "add_thread_group",
-      arguments: {
-        name: "主线程组",
-        num_threads: 10,
-        ramp_up: 10,
-        loops: 1,
-      },
-    });
-  } else {
-    const firstThreadGroupIndex = toolCalls.findIndex((call) => call.name === "add_thread_group");
-    if (firstThreadGroupIndex > 1) {
-      const [threadGroupCall] = toolCalls.splice(firstThreadGroupIndex, 1);
-      toolCalls.splice(1, 0, threadGroupCall);
-    }
-  }
-
-  if (!toolCalls.some((call) => call.name === "add_listener" || call.name === "add_extended_listener" || call.name === "add_more_listeners" || call.name === "add_backend_listener" || call.name === "add_aggregate_graph")) {
-    toolCalls.push({ name: "add_listener", arguments: { type: "aggregate_report" } });
-    toolCalls.push({ name: "add_listener", arguments: { type: "summary_report" } });
-  }
-
-  return { planName, summary, notes, toolCalls };
-}
-
-function executeAiPlan(runtime: JmeterMcpRuntime, plan: AiGeneratedPlan): Array<{ name: string; arguments: JsonObject; result: string }> {
-  const results: Array<{ name: string; arguments: JsonObject; result: string }> = [];
-  for (const call of plan.toolCalls) {
-    if (AI_CONSTRUCTION_TOOL_DENYLIST.has(call.name)) {
-      throw new Error(`AI plan contains disallowed tool: ${call.name}`);
-    }
-    if (!runtime.tools.has(call.name)) {
-      throw new Error(`AI plan contains unknown tool: ${call.name}`);
-    }
-    const result = runtime.callTool(call.name, call.arguments);
-    results.push({ name: call.name, arguments: call.arguments, result });
-    if (result.startsWith("Error")) {
-      throw new Error(`Tool ${call.name} failed: ${result}`);
-    }
-  }
-  return results;
-}
-
-async function generateJmeterWithAi(runtime: JmeterMcpRuntime, body: JsonObject, generatedRoot: string): Promise<JsonObject> {
-  const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
-  if (!prompt) throw new Error("prompt is required.");
-
-  const config = parseAiModelConfig(body);
-  const temperature = Number.isFinite(Number(body.temperature)) ? Number(body.temperature) : 0.2;
-  const maxTokens = Number.isFinite(Number(body.max_tokens)) ? Number(body.max_tokens) : 6000;
-  const raw = await callOpenAiCompatibleChat(config, prompt, runtime, temperature, maxTokens);
-  const plan = normalizeAiGeneratedPlan(raw, prompt);
-  const outputPath = resolveGeneratedJmxPath(generatedRoot, typeof body.output_path === "string" ? body.output_path : null, plan.planName);
-  const calls = executeAiPlan(runtime, plan);
-  const validation = runtime.callTool("validate_test_plan");
-  const saveResult = runtime.callTool("save_test_plan", { path: outputPath });
-  if (saveResult.startsWith("Error")) throw new Error(saveResult);
-  const tree = runtime.callTool("list_test_plan_tree");
-
-  return {
-    ok: true,
-    model: config.model,
-    summary: plan.summary,
-    notes: plan.notes,
-    planName: plan.planName,
-    outputPath,
-    downloadUrl: `/files?path=${encodeURIComponent(outputPath)}`,
-    toolCalls: calls,
-    validation,
-    saveResult,
-    tree,
-  };
-}
+// AI generation logic moved to ai-generator.ts
 
 export function createMcpExpressApp(runtime = new JmeterMcpRuntime()): Express {
   const app = express();
   const sessions = new Map<string, SseSession>();
   const generatedRoot = resolve(process.cwd(), "server", "generated");
+
+  // ── 基础 middleware ──────────────────────────────────────────────────────
   app.use(cors());
   app.use(express.json({ limit: "20mb" }));
+  app.use(traceMiddleware);
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, server: SERVER_NAME, version: SERVER_VERSION, tools: runtime.tools.size });
@@ -2726,6 +2199,7 @@ export function createMcpExpressApp(runtime = new JmeterMcpRuntime()): Express {
   });
 
   registerTestCaseRoutes(app);
+  registerLogRoutes(app);
 
   app.get("/ai/config", (_req, res) => {
     res.json(publicAiConfigStatus());
@@ -2811,6 +2285,18 @@ export function createMcpExpressApp(runtime = new JmeterMcpRuntime()): Express {
     const response = runtime.dispatch(req.body as JsonObject);
     if (response) res.json(response);
     else res.status(204).end();
+  });
+
+  // ── 全局错误处理 ──────────────────────────────────────────────────────────
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (err instanceof AppError) {
+      logger.error({ traceId: (res.req as Request & { traceId?: string }).traceId, code: err.code, status: err.httpStatus, cause: err.cause?.message }, err.message);
+      res.status(err.httpStatus).json({ success: false, error: err.toJSON() });
+      return;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error({ traceId: (res.req as Request & { traceId?: string }).traceId, status: 500, stack: err instanceof Error ? err.stack : undefined }, message);
+    res.status(500).json({ success: false, error: { code: "INTERNAL", message } });
   });
 
   return app;

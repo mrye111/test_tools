@@ -32,11 +32,11 @@ export const tools: Tool[] = [
     href: '/testcase',
   },
   {
-    id: 'data-visualization',
-    title: '数据可视化',
-    description: '粘贴表格数据即时生成图表，支持 8 种图表类型',
+    id: 'test-report',
+    title: '测试报告',
+    description: '导入测试用例与 BUG 数据，自动生成可视化质量分析报告',
     icon: BarChart3,
-    href: '#',
+    href: '/testreport',
   },
   {
     id: 'encryption',

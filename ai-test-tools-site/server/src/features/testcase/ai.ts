@@ -1,5 +1,6 @@
 import type { AiRequestConfig, JsonObject } from "./types.js";
 import { firstText, isObject, text } from "./utils.js";
+import { withSpan } from "../../middleware/trace.js";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -125,86 +126,107 @@ export async function testAiConnection(config: AiRequestConfig): Promise<void> {
 }
 
 export async function callChatCompletion(config: AiRequestConfig, options: ChatOptions): Promise<string> {
-  const endpoint = normalizeOpenAiChatUrl(config.baseUrl);
-  const payload: JsonObject = applyPayloadOverrides({
-    model: config.model,
-    messages: options.messages,
-    temperature: options.temperature ?? 0.3,
-    max_tokens: options.maxTokens ?? 4096,
-    stream: false,
-    ...(options.responseJson ? { response_format: { type: "json_object" } } : {}),
-  }, config);
+  return withSpan({ name: "ai.chat-completion", type: "ai", attributes: { model: config.model, stream: false } }, async () => {
+    const endpoint = normalizeOpenAiChatUrl(config.baseUrl);
+    const payload: JsonObject = applyPayloadOverrides({
+      model: config.model,
+      messages: options.messages,
+      temperature: options.temperature ?? 0.3,
+      max_tokens: options.maxTokens ?? 4096,
+      stream: false,
+      ...(options.responseJson ? { response_format: { type: "json_object" } } : {}),
+    }, config);
 
-  const doRequest = async (body: JsonObject) => fetch(endpoint, {
-    method: "POST",
-    headers: buildHeaders(config),
-    body: JSON.stringify(body),
-  });
+    const doRequest = async (body: JsonObject) => fetch(endpoint, {
+      method: "POST",
+      headers: buildHeaders(config),
+      body: JSON.stringify(body),
+    });
 
-  let response = await doRequest(payload);
-  let raw = await response.text();
-  if (!response.ok && /response_format|json_object|unsupported/i.test(raw)) {
-    const retryPayload = { ...payload };
-    delete retryPayload.response_format;
-    response = await doRequest(retryPayload);
-    raw = await response.text();
-  }
-  if (!response.ok) {
-    throw new Error(`AI request failed: HTTP ${response.status} ${sanitizeError(raw, config)}`);
-  }
+    let response = await doRequest(payload);
+    let raw = await response.text();
+    if (!response.ok && /response_format|json_object|unsupported/i.test(raw)) {
+      const retryPayload = { ...payload };
+      delete retryPayload.response_format;
+      response = await doRequest(retryPayload);
+      raw = await response.text();
+    }
+    if (!response.ok) {
+      throw new Error(`AI request failed: HTTP ${response.status} ${sanitizeError(raw, config)}`);
+    }
 
-  const data = JSON.parse(raw) as JsonObject;
-  const choices = Array.isArray(data.choices) ? data.choices : [];
-  const first = choices[0] as JsonObject | undefined;
-  const message = first && isObject(first.message) ? first.message : {};
-  return text(message.content ?? message.text ?? first?.text).trim();
+    const data = JSON.parse(raw) as JsonObject;
+    const choices = Array.isArray(data.choices) ? data.choices : [];
+    const first = choices[0] as JsonObject | undefined;
+    const message = first && isObject(first.message) ? first.message : {};
+    const usage = isObject(data.usage) ? data.usage : {};
+    return { text: text(message.content ?? message.text ?? first?.text).trim(), usage };
+  }).then(({ text: result }) => result);
 }
 
 export async function* streamChatCompletion(config: AiRequestConfig, options: ChatOptions): AsyncGenerator<string> {
-  const endpoint = normalizeOpenAiChatUrl(config.baseUrl);
-  const payload: JsonObject = applyPayloadOverrides({
-    model: config.model,
-    messages: options.messages,
-    temperature: options.temperature ?? 0.7,
-    max_tokens: options.maxTokens ?? 4096,
-    stream: true,
-  }, config);
+  const { createSpan, finishSpan } = await import("../../logger.js");
+  const { getTraceContext } = await import("../../middleware/trace.js");
+  const ctx = getTraceContext();
+  const span = ctx ? createSpan(ctx.traceId, ctx.currentSpanId, { name: "ai.stream-completion", type: "ai", attributes: { model: config.model, stream: true } }) : null;
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: buildHeaders(config),
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    throw new Error(`AI request failed: HTTP ${response.status} ${sanitizeError(await response.text(), config)}`);
-  }
-  if (!response.body) return;
+  try {
+    const endpoint = normalizeOpenAiChatUrl(config.baseUrl);
+    const payload: JsonObject = applyPayloadOverrides({
+      model: config.model,
+      messages: options.messages,
+      temperature: options.temperature ?? 0.7,
+      max_tokens: options.maxTokens ?? 4096,
+      stream: true,
+    }, config);
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      try {
-        const chunk = streamJsonTextFromLine(line) ?? "";
-        if (chunk) yield chunk.replace(/```csv|```/g, "");
-      } catch {
-        // 忽略非标准流行，保持长生成不中断。
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: buildHeaders(config),
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(`AI request failed: HTTP ${response.status} ${sanitizeError(await response.text(), config)}`);
+    }
+    if (!response.body) return;
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let chunkCount = 0;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        try {
+          const chunk = streamJsonTextFromLine(line) ?? "";
+          if (chunk) {
+            chunkCount++;
+            yield chunk.replace(/```csv|```/g, "");
+          }
+        } catch {
+          // 忽略非标准流行，保持长生成不中断。
+        }
       }
     }
-  }
-  const finalBuffer = `${buffer}${decoder.decode()}`.trim();
-  if (finalBuffer) {
-    try {
-      const chunk = streamJsonTextFromLine(finalBuffer) ?? "";
-      if (chunk) yield chunk.replace(/```csv|```/g, "");
-    } catch {
-      // 最后一段无法解析时忽略，前面的有效片段已经返回。
+    const finalBuffer = `${buffer}${decoder.decode()}`.trim();
+    if (finalBuffer) {
+      try {
+        const chunk = streamJsonTextFromLine(finalBuffer) ?? "";
+        if (chunk) yield chunk.replace(/```csv|```/g, "");
+      } catch {
+        // 最后一段无法解析时忽略，前面的有效片段已经返回。
+      }
     }
+    if (span) {
+      span.attributes.chunks = chunkCount;
+      finishSpan(span, "ok");
+    }
+  } catch (error) {
+    if (span) finishSpan(span, "error", error instanceof Error ? error : new Error(String(error)));
+    throw error;
   }
 }

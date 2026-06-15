@@ -1,6 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { createZip } from "./zip.js";
-import { escapeXml, safeSheetName } from "./utils.js";
+import { text } from "./utils.js";
+
+function escapeXml(value: unknown): string {
+  return text(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;")
+    .replace(/\\n/g, "&#10;");
+}
+
+function safeSheetName(value: unknown): string {
+  const name = text(value, "测试用例")
+    .replace(/[\[\]:*?/\\]/g, "")
+    .trim();
+  return (name || "测试用例").slice(0, 31);
+}
 
 type RowLike = string[] | Record<string, unknown>;
 

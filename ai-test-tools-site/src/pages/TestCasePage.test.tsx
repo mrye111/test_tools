@@ -16,8 +16,13 @@ vi.mock('../lib/testcase-api', () => ({
   getTestCaseExportFormats: vi.fn(),
   loadStoredModelConfig: vi.fn(),
   toTestCaseAiConfig: vi.fn((config) => ({
-    base_url: config.baseUrl,
-    api_key: config.apiKey,
+    baseUrl: config.baseUrl,
+    apiKey: config.apiKey,
+    model: config.modelId,
+  })),
+  toAiConfig: vi.fn((config) => ({
+    baseUrl: config.baseUrl,
+    apiKey: config.apiKey,
     model: config.modelId,
   })),
   waitForGenerateJob: vi.fn(),

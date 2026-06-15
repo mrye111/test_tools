@@ -1,44 +1,8 @@
-const DEFAULT_API_BASE = 'http://localhost:3000'
+import { buildUrl, parseJson, downloadBlob } from './httpClient'
+import { type AiConfig, type StoredModelConfig, toAiConfig } from '../shared/api-types'
 
-function getApiBase() {
-  const base = import.meta.env.VITE_JMETER_API_BASE ?? DEFAULT_API_BASE
-  return base.replace(/\/$/, '')
-}
-
-function buildUrl(path: string) {
-  return `${getApiBase()}${path}`
-}
-
-async function parseJson<T>(response: Response): Promise<T> {
-  try {
-    return await response.json() as T
-  } catch {
-    throw new Error(`响应解析失败：${response.status}`)
-  }
-}
-
-function saveBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
-
-export interface StoredModelConfig {
-  name: string
-  baseUrl: string
-  apiKey: string
-  modelId: string
-  temperature: number
-}
-
-export interface TestCaseAiConfig {
-  base_url: string
-  api_key: string
-  model: string
-}
+export type { AiConfig, StoredModelConfig }
+export { toAiConfig }
 
 export interface TestCaseExportFormat {
   key: string
@@ -110,13 +74,8 @@ export function loadStoredModelConfig() {
   }
 }
 
-export function toTestCaseAiConfig(config: StoredModelConfig): TestCaseAiConfig {
-  return {
-    base_url: config.baseUrl,
-    api_key: config.apiKey,
-    model: config.modelId,
-  }
-}
+/** @deprecated Use toAiConfig from shared/api-types instead */
+export const toTestCaseAiConfig = toAiConfig
 
 export async function getTestCaseExportFormats() {
   const response = await fetch(buildUrl('/api/export/formats'))
@@ -127,7 +86,7 @@ export async function getTestCaseExportFormats() {
   return data.data ?? []
 }
 
-export async function testCaseAiConnection(aiConfig: TestCaseAiConfig) {
+export async function testCaseAiConnection(aiConfig: AiConfig) {
   const response = await fetch(buildUrl('/api/test-connection'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -148,7 +107,7 @@ export async function createGenerateJob(args: {
   language: 'zh' | 'en'
   coverageMode?: 'quick' | 'standard' | 'expert'
   maxCases?: number
-  aiConfig: TestCaseAiConfig
+  aiConfig: AiConfig
   rows?: string[][]
   selectedIndices?: number[]
   testSetId?: string
@@ -217,7 +176,7 @@ export async function exportTestCaseExcel(args: {
     throw new Error(`导出 Excel 失败：${response.status}`)
   }
   const blob = await response.blob()
-  saveBlob(blob, `${args.featureName || '测试用例'}.xls`)
+  downloadBlob(blob, `${args.featureName || '测试用例'}.xls`)
 }
 
 export async function exportTestCaseXmind(args: {
@@ -233,5 +192,5 @@ export async function exportTestCaseXmind(args: {
     throw new Error(`导出 XMind 失败：${response.status}`)
   }
   const blob = await response.blob()
-  saveBlob(blob, `${args.featureName || '测试用例库'}.xmind`)
+  downloadBlob(blob, `${args.featureName || '测试用例库'}.xmind`)
 }

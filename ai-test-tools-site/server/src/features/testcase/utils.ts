@@ -38,23 +38,6 @@ export function numberList(value: unknown): number[] {
     .filter((item) => Number.isInteger(item) && item >= 0);
 }
 
-export function escapeXml(value: unknown): string {
-  return text(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;")
-    .replace(/\\n/g, "&#10;");
-}
-
-export function safeSheetName(value: unknown): string {
-  const name = text(value, "测试用例")
-    .replace(/[\[\]:*?/\\]/g, "")
-    .trim();
-  return (name || "测试用例").slice(0, 31);
-}
-
 export function safeDownloadName(value: unknown, fallback = "download"): string {
   return encodeURIComponent(text(value, fallback).trim() || fallback);
 }

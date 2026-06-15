@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { dirname, resolve } from "node:path";
 import type { GenerateJobRecord, ProjectRecord, TestCaseRecord, TestCaseStoreData, TestSetRecord } from "./types.js";
 import { nowIso } from "./utils.js";
+import { withSpanSync } from "../../middleware/trace.js";
+import { logger } from "../../logger.js";
 
 type WriteTextFileOptions = {
   attempts?: number;
@@ -104,12 +106,14 @@ export class TestCaseStore {
   }
 
   private saveData(data = this.data): void {
-    try {
-      writeTextFileWithRetry(this.path, JSON.stringify(data, null, 2));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[testcase-store] 写入本地存储失败，已保留内存状态：${message}`);
-    }
+    withSpanSync({ name: "store.write", type: "store", attributes: { file: this.path } }, () => {
+      try {
+        writeTextFileWithRetry(this.path, JSON.stringify(data, null, 2));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn({ file: this.path, error: message }, "写入本地存储失败，已保留内存状态");
+      }
+    });
   }
 
   snapshot(): TestCaseStoreData {

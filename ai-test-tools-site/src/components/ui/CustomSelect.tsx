@@ -20,9 +20,11 @@ export function CustomSelect({ value, onChange, options, placeholder, className 
   const [isOpen, setIsOpen] = useState(false)
   const [dropdownStyle, setDropdownStyle] = useState<CSSProperties>({})
   const [resolvedPlacement, setResolvedPlacement] = useState<'bottom' | 'top'>('bottom')
+  const [highlightIndex, setHighlightIndex] = useState(-1)
   const containerRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const selectedOption = options.find((opt) => opt.value === value)
 
@@ -45,7 +47,10 @@ export function CustomSelect({ value, onChange, options, placeholder, className 
   }, [isOpen])
 
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) {
+      setHighlightIndex(-1)
+      return
+    }
 
     const updatePosition = () => {
       const rect = buttonRef.current?.getBoundingClientRect()
@@ -55,8 +60,8 @@ export function CustomSelect({ value, onChange, options, placeholder, className 
       const viewportPadding = 12
       const belowSpace = window.innerHeight - rect.bottom - viewportPadding
       const aboveSpace = rect.top - viewportPadding
-      const openTop = placement === 'top' || (placement === 'auto' && belowSpace < 220 && aboveSpace > belowSpace)
-      const maxHeight = Math.max(120, Math.min(240, (openTop ? aboveSpace : belowSpace) - gap))
+      const openTop = placement === 'top' || (placement === 'auto' && belowSpace < 240 && aboveSpace > belowSpace)
+      const maxHeight = Math.max(120, Math.min(280, (openTop ? aboveSpace : belowSpace) - gap))
       const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - rect.width - viewportPadding))
 
       setResolvedPlacement(openTop ? 'top' : 'bottom')
@@ -92,38 +97,75 @@ export function CustomSelect({ value, onChange, options, placeholder, className 
     }
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
-      setIsOpen((current) => !current)
+      if (isOpen && highlightIndex >= 0) {
+        handleSelect(options[highlightIndex].value)
+      } else {
+        setIsOpen((current) => !current)
+        if (!isOpen) setHighlightIndex(options.findIndex((o) => o.value === value))
+      }
+      return
+    }
+    if (!isOpen) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        setIsOpen(true)
+        setHighlightIndex(options.findIndex((o) => o.value === value))
+      }
+      return
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setHighlightIndex((prev) => (prev + 1) % options.length)
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setHighlightIndex((prev) => (prev - 1 + options.length) % options.length)
+      return
     }
   }
+
+  useEffect(() => {
+    if (highlightIndex >= 0 && listRef.current) {
+      const item = listRef.current.children[highlightIndex] as HTMLElement | undefined
+      item?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [highlightIndex])
 
   const dropdown = isOpen
     ? createPortal(
         <div
           ref={dropdownRef}
-          className={`dropdown-panel z-[999] overflow-y-auto rounded-xl border border-slate-200 bg-white/96 p-1 shadow-[0_18px_45px_-28px_rgba(15,23,42,0.55)] backdrop-blur ${resolvedPlacement === 'top' ? 'origin-bottom' : 'origin-top'}`}
+          className={`${
+            resolvedPlacement === 'top' ? 'dropdown-panel-up' : 'dropdown-panel'
+          } z-[999] overflow-y-auto rounded-xl border border-[oklch(0.92_0.008_260/0.8)] bg-[oklch(1_0_0/0.96)] p-1.5 shadow-[0_20px_55px_-30px_oklch(0.18_0.02_262/0.45)] backdrop-blur-xl`}
           style={dropdownStyle}
           role="listbox"
         >
-          {options.map((option) => {
-            const isSelected = option.value === value
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => handleSelect(option.value)}
-                role="option"
-                aria-selected={isSelected}
-                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-all duration-150 ${
-                  isSelected
-                    ? 'bg-[rgba(37,99,235,0.08)] font-medium text-accent'
-                    : 'text-fg hover:bg-slate-50'
-                }`}
-              >
-                <span>{option.label}</span>
-                {isSelected && <Check className="h-3.5 w-3.5 text-accent" />}
-              </button>
-            )
-          })}
+          <div ref={listRef}>
+            {options.map((option, idx) => {
+              const isSelected = option.value === value
+              const isHighlighted = idx === highlightIndex
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => handleSelect(option.value)}
+                  onMouseEnter={() => setHighlightIndex(idx)}
+                  role="option"
+                  aria-selected={isSelected}
+                  className={`dropdown-item ${
+                    isSelected ? 'dropdown-item-selected' : ''
+                  } ${
+                    isHighlighted && !isSelected ? 'bg-[oklch(0.95_0.01_260)]' : ''
+                  }`}
+                >
+                  <span className="flex-1 text-left">{option.label}</span>
+                  {isSelected && <Check className="ml-2 h-3.5 w-3.5 shrink-0 text-accent" />}
+                </button>
+              )
+            })}
+          </div>
         </div>,
         document.body,
       )
@@ -140,10 +182,14 @@ export function CustomSelect({ value, onChange, options, placeholder, className 
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >
-        <span className={`min-w-0 truncate ${selectedOption ? 'text-fg' : 'text-slate-400'}`}>
+        <span className={`min-w-0 truncate ${selectedOption ? 'text-fg' : 'text-[oklch(0.68_0.015_260)]'}`}>
           {selectedOption?.label || placeholder || '请选择'}
         </span>
-        <ChevronDown className={`h-4 w-4 text-muted transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-muted transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            isOpen ? 'rotate-180 text-accent' : ''
+          }`}
+        />
       </button>
       {dropdown}
     </div>

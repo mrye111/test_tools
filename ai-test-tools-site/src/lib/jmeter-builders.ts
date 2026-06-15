@@ -138,14 +138,25 @@ export function buildHttpRequestArgs(httpData: HttpRequestData) {
   const headers = mapHeaders(httpData.headers)
   const formParams = mapParams(httpData.formData)
   const contentType = getHeaderContentType(headers) ?? BODY_CONTENT_TYPES[httpData.bodyType]
+  const isBodyless = ['GET', 'HEAD', 'DELETE', 'OPTIONS', 'TRACE'].includes(httpData.method)
 
   let bodyData: string | undefined
   let params: Array<{ name: string; value: string }> | undefined
 
-  if (httpData.bodyType === 'json' && httpData.jsonBody.trim()) bodyData = httpData.jsonBody
-  if (httpData.bodyType === 'xml' && httpData.xmlBody.trim()) bodyData = httpData.xmlBody
-  if (httpData.bodyType === 'raw' && httpData.rawBody.trim()) bodyData = httpData.rawBody
-  if (httpData.bodyType === 'form' && formParams.length > 0) params = formParams
+  if (isBodyless) {
+    // GET/HEAD/DELETE 等无 body 方法 — queryParams 进入 JMX 的 "参数" 列
+    const enabledQuery = httpData.queryParams.filter((p) => p.enabled && p.key)
+    if (enabledQuery.length > 0) {
+      params = enabledQuery.map((p) => ({ name: p.key.trim(), value: p.value }))
+    }
+    bodyData = undefined
+  } else {
+    // 有 body 的方法 — queryParams 仍嵌入 path（JMeter HTTP 请求路径栏）
+    if (httpData.bodyType === 'json' && httpData.jsonBody.trim()) bodyData = httpData.jsonBody
+    if (httpData.bodyType === 'xml' && httpData.xmlBody.trim()) bodyData = httpData.xmlBody
+    if (httpData.bodyType === 'raw' && httpData.rawBody.trim()) bodyData = httpData.rawBody
+    if (httpData.bodyType === 'form' && formParams.length > 0) params = formParams
+  }
 
   return {
     name: 'HTTP 请求',
@@ -153,12 +164,17 @@ export function buildHttpRequestArgs(httpData: HttpRequestData) {
     protocol: httpData.protocol,
     domain,
     port: Number(httpData.port) || (httpData.protocol === 'https' ? 443 : 80),
-    path: appendQuery(basePath, httpData.queryParams),
+    path: isBodyless ? basePath : appendQuery(basePath, httpData.queryParams),
     content_type: contentType ?? undefined,
     body_data: bodyData,
-    headers: headers.length > 0 ? headers : undefined,
     params,
   }
+}
+
+// 单独返回 headers，仅用于 add_more_configs 创建 Header Manager
+// 不传给 add_http_request 避免重复
+export function buildHttpRequestHeaders(httpData: HttpRequestData): Array<{ name: string; value: string }> {
+  return mapHeaders(httpData.headers)
 }
 
 function ensureTemplateValues(template: JmeterTemplate, values: TemplateValues) {
@@ -230,7 +246,24 @@ async function buildHttpStressPlan(
     comments: '由前端 HTTP 模板生成',
   })
   await executeTool(steps, callTool, 'add_thread_group', getThreadGroupArgs(values))
-  await executeTool(steps, callTool, 'add_http_request', buildHttpRequestArgs(httpData))
+
+  const httpArgs = buildHttpRequestArgs(httpData)
+
+  // 先添加 Header Manager（config element），再添加 HTTP Request（sampler）
+  // JMeter 树中 config element 必须在 sampler 之前
+  const requestHeaders = buildHttpRequestHeaders(httpData)
+  if (requestHeaders.length > 0) {
+    const headerPairs = requestHeaders
+      .map((h) => `${h.name}=${h.value}`)
+      .join(';')
+    await executeTool(steps, callTool, 'add_more_configs', {
+      type: 'http_header_manager',
+      name: 'HTTP 请求头管理器',
+      headers: headerPairs,
+    })
+  }
+
+  await executeTool(steps, callTool, 'add_http_request', httpArgs)
 
   const assertionCode = toText(values.assertion_code)
   if (assertionCode) {
