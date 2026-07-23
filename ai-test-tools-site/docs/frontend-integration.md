@@ -34,13 +34,19 @@ GET http://localhost:3000/health
   "ok": true,
   "server": "jmeter-mcp-server",
   "version": "1.0.0",
-  "tools": 57
+  "tools": 48
 }
 ```
 
 ## 2. 推荐接入方式
 
-前端优先使用直接 HTTP 工具接口：
+整计划构建（模板生成、一次出 JMX）优先使用一次构建接口：
+
+```http
+POST /api/jmeter/build
+```
+
+单步编辑、树操作等细粒度场景使用直接 HTTP 工具接口：
 
 ```http
 GET /tools
@@ -49,9 +55,9 @@ POST /tools/:name
 
 原因：
 
-- 返回结构简单，适合 React 页面直接调用。
-- 不需要维护 SSE 会话。
-- 和 MCP 工具名、参数保持一致，后续切换 MCP 客户端成本低。
+- `/api/jmeter/build` 一次请求完成 create → add_* → validate → save → tree 全链路，返回结构简单，适合 React 页面直接调用；每次构建在服务端独立的 `TestPlanService` 实例上执行，并发构建互不影响。
+- `/tools/:name` 和 MCP 工具名、参数保持一致，适合逐步编辑与调试，后续切换 MCP 客户端成本低。
+- 两者都不需要维护 SSE 会话。
 
 可选接入方式：
 
@@ -116,30 +122,100 @@ Content-Type: application/json
 
 ```json
 {
-  "content": [
-    {
-      "type": "text",
-      "text": "Test plan created: 登录接口压测计划"
-    }
-  ]
+  "ok": true,
+  "message": "Test plan created: 登录接口压测计划"
 }
 ```
 
-错误响应示例：
+带结构化数据的成功响应（目前为 `save_test_plan` / `load_test_plan`）：
 
 ```json
 {
-  "error": "Unknown tool: xxx"
+  "ok": true,
+  "message": "Test plan saved: server/generated/demo.jmx",
+  "data": { "path": "server/generated/demo.jmx" }
+}
+```
+
+错误响应（HTTP 4xx/5xx，状态码由错误码映射）：
+
+```json
+{
+  "ok": false,
+  "error": { "code": "not-found", "message": "Unknown tool: xxx" }
 }
 ```
 
 前端判断规则：
 
-- HTTP 状态码非 `2xx`：按接口错误处理。
-- `content[0].text` 以 `Error` 开头：按业务错误处理并展示给用户。
-- 其它文本：按成功结果展示或进入下一步。
+- HTTP 状态码非 `2xx` 或 `ok` 为 `false`：按业务错误处理并展示 `error.message`。
+- `error.code` 是稳定错误码：`unknown-type` / `not-found` / `invalid-args` / `invalid-state` / `io-error` / `execution-error` / `internal`。
+- `ok` 为 `true`：按成功结果展示 `message` 或进入下一步；保存路径等结构化结果从 `data` 读取，不要再用正则解析文本。
 
-### 3.3 JSON-RPC 调用
+### 3.3 模板计划一次构建
+
+```http
+POST /api/jmeter/build
+Content-Type: application/json
+```
+
+一次请求完成整个测试计划构建：按 `steps` 顺序执行工具调用，任一步骤失败即短路，然后由服务端统一执行 validate → save → tree。保存路径由服务端生成（`server/generated/` 下，文件名 = 净化后的 `seed` + 时间戳），前端不再拼接路径。
+
+请求示例：
+
+```json
+{
+  "planName": "登录接口压测计划 20260717-120000",
+  "seed": "http-stress",
+  "steps": [
+    { "tool": "create_test_plan", "args": { "name": "登录接口压测计划 20260717-120000", "comments": "由前端模板生成" } },
+    { "tool": "add_thread_group", "args": { "name": "主线程组", "num_threads": 10, "ramp_up": 5, "loops": 1 } },
+    { "tool": "add_http_request", "args": { "name": "登录请求", "method": "POST", "protocol": "https", "domain": "example.com", "path": "/api/login" } },
+    { "tool": "add_listener", "args": { "type": "aggregate_report" } }
+  ]
+}
+```
+
+字段说明：
+
+- `planName`：测试计划显示名，必填；必须是纯名称，不能包含路径分隔符或 `..`。
+- `seed`：下载文件名种子，必填；同样是纯名称（净化后加时间戳生成 `<seed>-yyyyMMdd-HHmmss.jmx`）。
+- `steps`：非空数组，`tool` 为已注册工具名，`args` 可选；`save_test_plan`/`validate_test_plan`/`list_test_plan_tree` 不需要也不应该出现在 steps 里，服务端会自动追加。
+
+成功响应（HTTP 200）：
+
+```json
+{
+  "ok": true,
+  "planName": "登录接口压测计划 20260717-120000",
+  "path": "D:\\...\\server\\generated\\http-stress-20260717-120000.jmx",
+  "filename": "http-stress-20260717-120000.jmx",
+  "saveMessage": "Test plan saved: D:\\...\\server\\generated\\http-stress-20260717-120000.jmx",
+  "validation": "Validation summary: errors=0, warnings=0\nNo structural issues found.",
+  "tree": "/0 | TestPlan | ... | enabled=true\n...",
+  "steps": [
+    { "tool": "create_test_plan", "text": "Test plan created: ..." },
+    { "tool": "validate_test_plan", "text": "..." },
+    { "tool": "save_test_plan", "text": "..." },
+    { "tool": "list_test_plan_tree", "text": "..." }
+  ]
+}
+```
+
+错误响应（HTTP 4xx/5xx，状态码由错误码映射，同 `/tools/:name`）：
+
+```json
+{
+  "ok": false,
+  "error": { "code": "not-found", "message": "Unknown tool: nope_tool", "step": "nope_tool" }
+}
+```
+
+- `error.step` 指出失败步骤的工具名（构建步骤失败、未知工具、denylist 拦截时存在）。
+- `seed`/`planName` 含路径穿越特征（`..`、`/`、`\`、盘符）直接 400。
+- 下载文件用 `GET /files?path=<响应里的 path>`（见第 8 节）。
+
+### 3.4 JSON-RPC 调用
 
 ```http
 POST /rpc
@@ -176,7 +252,7 @@ Content-Type: application/json
 }
 ```
 
-### 3.4 MCP SSE 调用
+### 3.5 MCP SSE 调用
 
 1. 前端创建 SSE 连接：
 
@@ -212,7 +288,7 @@ await fetch(`http://localhost:3000${messageEndpoint}`, {
 
 普通前端页面通常不需要走 SSE，除非要兼容 MCP 客户端协议。
 
-### 3.5 AI 自然语言生成 JMX
+### 3.6 AI 自然语言生成 JMX
 
 AI 生成接口由前端用户自行配置模型，后端不读取 `ai.md`，也不持久化用户密钥。`ai.md` 只适合开发调试时作为本地测试数据源。
 
@@ -261,11 +337,13 @@ Content-Type: application/json
 字段说明：
 
 - `prompt`：用户自然语言描述，必填。
-- `output_path`：可选，生成文件名或 `server/generated/` 下路径；后端会限制只能写入 `server/generated/`。
+- `output_path`：可选，生成文件名或 `server/generated/` 下路径；后端会限制只能写入 `server/generated/`。不传时使用计划名净化生成文件名（前端页面已不传，由服务端命名）。
 - `ai_config.base_url`：OpenAI 兼容接口地址，通常以 `/v1` 结尾。
 - `ai_config.api_key`：用户自己的模型密钥，只随本次请求发送。
 - `ai_config.model`：模型 ID。
 - `temperature`、`max_tokens`：可选，不传时默认 `0.2` 和 `6000`。
+
+执行说明：AI 计划的工具执行、校验、保存、读树与模板构建共用同一个服务端 PlanBuilder，每次生成使用独立的 `TestPlanService` 实例（并发 AI 生成/模板构建互不影响），AI denylist 逐步强制校验；SSE 事件格式不变。
 
 响应示例：
 
@@ -293,55 +371,37 @@ Content-Type: application/json
 
 ### 4.1 新建并生成基础 JMX
 
-最小可用调用链：
-
-```text
-create_test_plan
-add_thread_group
-add_http_request
-add_listener
-validate_test_plan
-save_test_plan
-```
-
-示例：
+整计划一次构建（推荐，原 9 次 `/tools/:name` 往返已收口为一次请求）：
 
 ```ts
-await callTool("create_test_plan", {
-  name: "登录接口压测计划",
-  comments: "前端生成"
+const result = await buildJmeterPlan({
+  planName: "登录接口压测计划 20260717-120000",
+  seed: "login-stress",
+  steps: [
+    { tool: "create_test_plan", args: { name: "登录接口压测计划 20260717-120000", comments: "前端生成" } },
+    { tool: "add_thread_group", args: { name: "主线程组", num_threads: 10, ramp_up: 5, loops: 1 } },
+    {
+      tool: "add_http_request",
+      args: {
+        name: "登录请求",
+        method: "POST",
+        protocol: "https",
+        domain: "example.com",
+        path: "/api/login",
+        content_type: "application/json",
+        body_data: "{\"username\":\"demo\",\"password\":\"secret\"}",
+        headers: [{ name: "Content-Type", value: "application/json" }],
+      },
+    },
+    { tool: "add_listener", args: { type: "view_results_tree" } },
+  ],
 });
-
-await callTool("add_thread_group", {
-  name: "主线程组",
-  num_threads: 10,
-  ramp_up: 5,
-  loops: 1
-});
-
-await callTool("add_http_request", {
-  name: "登录请求",
-  method: "POST",
-  protocol: "https",
-  domain: "example.com",
-  path: "/api/login",
-  content_type: "application/json",
-  body_data: "{\"username\":\"demo\",\"password\":\"secret\"}",
-  headers: [
-    { "name": "Content-Type", "value": "application/json" }
-  ]
-});
-
-await callTool("add_listener", {
-  type: "view_results_tree"
-});
-
-await callTool("validate_test_plan");
-
-await callTool("save_test_plan", {
-  path: "server/generated/frontend-login-test.jmx"
-});
+// result.path / result.filename 由服务端生成；validate/save/tree 已在服务端完成
 ```
+
+服务端执行顺序固定为：`steps` 依次执行 → `validate_test_plan` → `save_test_plan`（保存到 `server/generated/<seed>-<时间戳>.jmx`）→ `list_test_plan_tree`，任一构建步骤失败即短路并返回带 `error.step` 的 typed 错误。
+
+需要逐步编辑已加载的计划时，仍可使用 `/tools/:name` 单步调用（此时操作的是 MCP 会话共享的单例计划，见第 7 节）。
 
 ### 4.2 按路径插入元素
 
@@ -390,10 +450,9 @@ add_controller_at_path
 建议前端封装一个很薄的 client，统一处理接口地址、错误和文本结果。
 
 ```ts
-export type ToolCallResult = {
-  content?: Array<{ type: "text"; text: string }>;
-  error?: string;
-};
+export type ToolCallSuccess = { ok: true; message: string; data?: Record<string, unknown> };
+export type ToolCallFailure = { ok: false; error: { code: string; message: string } };
+export type ToolCallResult = ToolCallSuccess | ToolCallFailure;
 
 const API_BASE = import.meta.env.VITE_JMETER_API_BASE ?? "http://localhost:3000";
 
@@ -414,16 +473,33 @@ export async function callTool(name: string, args: Record<string, unknown> = {})
 
   const data = (await response.json()) as ToolCallResult;
 
-  if (!response.ok) {
-    throw new Error(data.error ?? `调用 ${name} 失败：${response.status}`);
+  if (!response.ok || !data.ok) {
+    throw new Error(data.ok === false ? data.error.message : `调用 ${name} 失败：${response.status}`);
   }
 
-  const text = data.content?.[0]?.text ?? "";
-  if (text.startsWith("Error")) {
-    throw new Error(text);
+  return { text: data.message, data: data.data };
+}
+
+// 整计划一次构建（模板生成推荐使用，代替多次 callTool 编排）
+export type BuildSpec = {
+  planName: string;
+  seed: string;
+  steps: Array<{ tool: string; args?: Record<string, unknown> }>;
+};
+
+export async function buildJmeterPlan(spec: BuildSpec) {
+  const response = await fetch(`${API_BASE}/api/jmeter/build`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(spec)
+  });
+
+  const data = await response.json();
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.error?.message ?? `生成 JMX 失败：${response.status}`);
   }
 
-  return text;
+  return data; // { ok, planName, path, filename, saveMessage, validation, tree, steps }
 }
 
 export type AiModelConfig = {
@@ -551,8 +627,9 @@ move_element
 关键点：
 
 - 后端运行时是内存态，刷新后端进程会丢失未保存的测试计划。
-- 同一个后端进程内，所有工具调用操作的是同一个 `runtime` 实例。
-- 前端每次开始新建计划时，应先调用 `create_test_plan` 重置当前计划。
+- `/tools/:name`、`/rpc`、MCP SSE 会话操作的是同一个 `runtime` 单例计划（交互式编辑场景）。
+- `POST /api/jmeter/build` 与 AI 生成（`/ai/generate-jmeter*`）每次请求都在服务端新建的独立 `TestPlanService` 实例上执行，并发构建/生成互不干扰。
+- 前端用 `/tools/:name` 逐步编辑时，每次开始新建计划前应先调用 `create_test_plan` 重置当前计划。
 - 复杂页面建议在每次关键操作后调用 `list_test_plan_tree` 刷新树视图。
 - 保存 JMX 是服务器文件系统行为，`path` 是后端机器上的路径，不是浏览器本地路径。
 
@@ -580,8 +657,8 @@ GET /files?path=server/generated/my-plan.jmx
 
 前端建议流程：
 
-1. 调用 `save_test_plan` 获取服务端保存路径。
-2. 从返回文本中提取路径，例如 `Test plan saved: server/generated/my-plan.jmx`。
+1. 通过 `POST /api/jmeter/build`（或 AI 生成接口）构建计划，从响应中读取 `path`（保存路径）与 `filename`（下载文件名）。
+2. 若走单步调用，则调用 `save_test_plan` 并从结构化响应中读取 `data.path`（响应 `message` 仍为 `Test plan saved: server/generated/my-plan.jmx`，仅用于展示）。
 3. 通过 `GET /files?path=...` 拉取 Blob 并触发浏览器下载。
 
 ## 9. 错误处理建议
@@ -591,7 +668,7 @@ GET /files?path=server/generated/my-plan.jmx
 ```text
 网络错误：后端未启动、跨域失败、端口不一致
 协议错误：HTTP 非 2xx、JSON 解析失败
-业务错误：返回文本以 Error 开头
+业务错误：响应 ok=false，按 error.code / error.message 展示
 流程错误：未 create_test_plan 就添加元素、路径不存在、保存路径不可写
 JMeter 运行错误：run_test_plan 返回 JMeter CLI 错误文本
 ```
@@ -611,7 +688,8 @@ JMX 保存失败，请检查服务端保存路径是否可写。
 
 ```text
 GET /health 能返回 ok=true
-GET /tools 能返回 57 个工具
+GET /tools 能返回 48 个工具
+POST /api/jmeter/build 能一次生成 .jmx（响应含 path/filename/validation/tree/steps）
 create_test_plan 能成功
 add_thread_group 能成功
 add_http_request 能成功
@@ -622,17 +700,13 @@ GET /files?path=... 能下载已生成的 .jmx
 生成的 .jmx 能被 JMeter 5.6.3 打开
 ```
 
-本项目已有全量 smoke 命令：
+本项目已有覆盖全部已注册工具的集成测试：
 
 ```powershell
-npm run server:smoke
+npx vitest run server/tests/jmeter-tools.test.ts
 ```
 
-该命令会生成包含所有 JMeter 元素的示例文件：
-
-```text
-server/generated/all-jmeter-elements.jmx
-```
+该套件会对每个工具做真实调用，并按前端模板链路端到端构建、保存、校验 .jmx。
 
 ## 11. TestCase 用例生成接口
 
@@ -732,18 +806,7 @@ GET /api/generate-jobs/job_xxx
 用例编号, 功能模块/接口名称, 功能测试点/请求方式及路径, 用例标题, 优先级, 前置条件, 测试步骤, 预期结果
 ```
 
-### 11.3 同步流式生成
-
-如果前端只想直接拿 CSV 文本，可以调用：
-
-```http
-POST /api/generate
-Content-Type: application/json
-```
-
-请求体和 `/api/generate-jobs` 类似，响应是 `text/plain; charset=utf-8`，内容为 CSV 文本。适合做实时预览；如果要轮询状态或避免长连接，使用异步任务接口。
-
-### 11.4 导出
+### 11.3 导出
 
 查看支持的 Excel 导出格式：
 
@@ -827,7 +890,7 @@ POST /api/export/xmind-all
 }
 ```
 
-### 11.5 兼容数据接口
+### 11.4 兼容数据接口
 
 以下接口保留用于兼容参考服务或旧前端，但当前“用例生成工具”主流程不依赖它们。AI 生成结果不会自动写入这些集合。
 

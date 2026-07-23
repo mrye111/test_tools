@@ -42,10 +42,10 @@ export function ParamTable({ value, onChange, label = '参数', showEncode = tru
           </div>
           {value.map((param, index) => (
             <div key={index} className={`grid items-center gap-2 border-t border-slate-100 px-3 py-1.5 transition-colors duration-150 hover:bg-slate-50/70 ${param.enabled ? '' : 'opacity-40'} ${showEncode ? 'grid-cols-[20px_1fr_1fr_36px_36px] max-sm:grid-cols-[20px_1fr_1fr_36px]' : 'grid-cols-[20px_1fr_1fr_36px]'}`}>
-              <input type="checkbox" checked={param.enabled} onChange={() => handleToggle(index)} className="h-3.5 w-3.5 cursor-pointer accent-[#2563eb]" />
-              <input type="text" value={param.key} onChange={(e) => handleUpdate(index, 'key', e.target.value)} placeholder="key" className="rounded-lg border border-transparent bg-transparent px-1.5 py-1 text-[12px] text-fg outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:shadow-[0_0_0_3px_rgba(37,99,235,0.08)]" />
-              <input type="text" value={param.value} onChange={(e) => handleUpdate(index, 'value', e.target.value)} placeholder="value" className="rounded-lg border border-transparent bg-transparent px-1.5 py-1 text-[12px] text-fg outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:shadow-[0_0_0_3px_rgba(37,99,235,0.08)]" />
-              {showEncode && <input type="checkbox" checked={param.encode} onChange={() => handleUpdate(index, 'encode', !param.encode)} className="h-3.5 w-3.5 cursor-pointer accent-[#2563eb]" title="URL 编码" />}
+              <input type="checkbox" checked={param.enabled} onChange={() => handleToggle(index)} className="h-3.5 w-3.5 cursor-pointer accent-accent" />
+              <input type="text" value={param.key} onChange={(e) => handleUpdate(index, 'key', e.target.value)} placeholder="key" className="rounded-lg border border-transparent bg-transparent px-1.5 py-1 text-[12px] text-fg outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:shadow-[0_0_0_3px_oklch(0.56_0.24_208/0.08)]" />
+              <input type="text" value={param.value} onChange={(e) => handleUpdate(index, 'value', e.target.value)} placeholder="value" className="rounded-lg border border-transparent bg-transparent px-1.5 py-1 text-[12px] text-fg outline-none transition-all duration-150 focus:border-accent focus:bg-white focus:shadow-[0_0_0_3px_oklch(0.56_0.24_208/0.08)]" />
+              {showEncode && <input type="checkbox" checked={param.encode} onChange={() => handleUpdate(index, 'encode', !param.encode)} className="h-3.5 w-3.5 cursor-pointer accent-accent" title="URL 编码" />}
               <button type="button" onClick={() => handleRemove(index)} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 transition-all duration-150 hover:bg-[#fef2f2] hover:text-[#dc2626]">
                 <Trash2 className="h-3 w-3" />
               </button>

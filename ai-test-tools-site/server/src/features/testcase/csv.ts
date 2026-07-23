@@ -62,7 +62,7 @@ function normalizedPriority(priority: string): string {
 
 function stepCount(steps: string): number {
   const normalized = steps.replace(/\\n/g, "\n");
-  const numbered = normalized.match(/(^|\n)\s*\d+[.、)]\s+/g);
+  const numbered = normalized.match(/(^|\n)\s*\d+[.、)]/g);
   if (numbered && numbered.length > 0) return numbered.length;
   return normalized.split(/\n|；|;|\u3002/).filter((item) => item.trim()).length;
 }
@@ -72,9 +72,17 @@ export function isValidGeneratedCaseRow(row: string[]): boolean {
   if (!isGeneratedCaseRow(healed)) return false;
   if (!text(healed[3]).trim()) return false;
   if (!normalizedPriority(text(healed[4]))) return false;
-  if (stepCount(text(healed[6])) < 2) return false;
-  if (!text(healed[7]).trim()) return false;
+  const steps = stepCount(text(healed[6]));
+  const expectedResults = stepCount(text(healed[7]));
+  if (steps < 2 || expectedResults < 2 || steps !== expectedResults) return false;
   return true;
+}
+
+export function invalidGeneratedCaseRows(csvText: string): string[][] {
+  return parseCsv(csvText.replace(/```csv|```/g, "").trim())
+    .map(healCsvRow)
+    .filter(isGeneratedCaseRow)
+    .filter((row) => !isValidGeneratedCaseRow(row));
 }
 
 export function renumberCaseRows(rows: string[][], api = false): string[][] {
@@ -104,6 +112,35 @@ export function normalizeGeneratedRows(csvText: string, expectedHeader: string[]
   const rows = (headerIndex >= 0 ? parsed.slice(headerIndex + 1) : parsed)
     .map(healCsvRow)
     .filter(isValidGeneratedCaseRow)
+    .slice(0, maxRows);
+  return { header: expectedHeader, rows: renumberCaseRows(rows, options.api) };
+}
+
+function isSalvageableCaseRow(row: string[], hasHeader: boolean): boolean {
+  const healed = healCsvRow(row);
+  if (isGeneratedCaseRow(healed)) return Boolean(text(healed[3]).trim() && text(healed[6]).trim() && text(healed[7]).trim());
+  if (!hasHeader) return false;
+  return Boolean(text(healed[1]).trim() && text(healed[3]).trim() && text(healed[6]).trim() && text(healed[7]).trim());
+}
+
+function healSalvagedCaseRow(row: string[]): string[] {
+  const healed = healCsvRow(row);
+  if (!isGeneratedCaseRow(healed)) healed[0] = "TC000";
+  if (!normalizedPriority(text(healed[4]))) healed[4] = "中";
+  return healed;
+}
+
+export function normalizeGeneratedRowsLenient(csvText: string, expectedHeader: string[], options: { maxRows?: number; api?: boolean } = {}): { header: string[]; rows: string[][] } {
+  const parsed = parseCsv(csvText.replace(/```csv|```/g, "").trim());
+  if (!parsed.length) return { header: expectedHeader, rows: [] };
+  const headerIndex = parsed.findIndex((row) => looksLikeHeader(row, expectedHeader));
+  const hasHeader = headerIndex >= 0;
+  const maxRows = options.maxRows && options.maxRows > 0 ? Math.floor(options.maxRows) : Number.POSITIVE_INFINITY;
+  const rows = (hasHeader ? parsed.slice(headerIndex + 1) : parsed)
+    .map(healCsvRow)
+    .filter((row) => !looksLikeHeader(row, expectedHeader))
+    .filter((row) => isSalvageableCaseRow(row, hasHeader))
+    .map(healSalvagedCaseRow)
     .slice(0, maxRows);
   return { header: expectedHeader, rows: renumberCaseRows(rows, options.api) };
 }

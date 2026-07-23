@@ -1,49 +1,109 @@
-const DEFAULT_API_BASE = 'http://localhost:3000'
+import { buildUrl, parseJson, downloadBlob } from './httpClient'
+import { type AiConfig, type StoredModelConfig, type UniversalProvider, toAiConfig } from '../shared/api-types'
+import { loadStoredModelConfig } from './model-config-store'
 
-function getApiBase() {
-  const base = import.meta.env.VITE_JMETER_API_BASE ?? DEFAULT_API_BASE
-  return base.replace(/\/$/, '')
-}
-
-function buildUrl(path: string) {
-  return `${getApiBase()}${path}`
-}
-
-async function parseJson<T>(response: Response): Promise<T> {
-  try {
-    return await response.json() as T
-  } catch {
-    throw new Error(`响应解析失败：${response.status}`)
-  }
-}
-
-function saveBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
-
-export interface StoredModelConfig {
-  name: string
-  baseUrl: string
-  apiKey: string
-  modelId: string
-  temperature: number
-}
-
-export interface TestCaseAiConfig {
-  base_url: string
-  api_key: string
-  model: string
-}
+export type { AiConfig, StoredModelConfig }
+export { toAiConfig }
 
 export interface TestCaseExportFormat {
   key: string
   name: string
   description: string
+}
+
+export interface TestCaseProject {
+  id: string
+  name: string
+  createdAt: string
+  testSetCount: number
+  testCaseCount: number
+}
+
+export interface TestCaseSet {
+  id: string
+  projectId: string
+  name: string
+  featureName: string
+  testType: 'functional' | 'api'
+  language: 'zh' | 'en'
+  context: string
+  status: 'queued' | 'running' | 'completed' | 'failed'
+  generationJobId?: string
+  error?: string
+  header: string[]
+  rows: string[][]
+  createdAt: string
+  updatedAt?: string
+}
+
+type ApiEnvelope<T> = { success: boolean; data?: T; error?: string }
+
+async function readData<T>(response: Response, fallback: string): Promise<T> {
+  const body = await parseJson<ApiEnvelope<T>>(response)
+  if (!response.ok || body.success === false || body.data === undefined) {
+    throw new Error(body.error ?? `${fallback}：${response.status}`)
+  }
+  return body.data
+}
+
+export async function listTestCaseProjects() {
+  return readData<TestCaseProject[]>(await fetch(buildUrl('/api/projects')), '获取项目失败')
+}
+
+export async function createTestCaseProject(name: string) {
+  const response = await fetch(buildUrl('/api/projects'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  return readData<TestCaseProject>(response, '创建项目失败')
+}
+
+export async function updateTestCaseProject(projectId: string, name: string) {
+  const response = await fetch(buildUrl(`/api/projects/${encodeURIComponent(projectId)}`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  const body = await parseJson<ApiEnvelope<unknown>>(response)
+  if (!response.ok || body.success === false) throw new Error(body.error ?? `更新项目失败：${response.status}`)
+}
+
+export async function deleteTestCaseProject(projectId: string) {
+  const response = await fetch(buildUrl(`/api/projects/${encodeURIComponent(projectId)}`), { method: 'DELETE' })
+  const body = await parseJson<ApiEnvelope<unknown>>(response)
+  if (!response.ok || body.success === false) throw new Error(body.error ?? `删除项目失败：${response.status}`)
+}
+
+export async function listTestCaseSets(projectId: string) {
+  const query = new URLSearchParams({ project_id: projectId })
+  return readData<TestCaseSet[]>(await fetch(buildUrl(`/api/test-sets?${query}`)), '获取用例集失败')
+}
+
+export async function deleteTestCaseSet(projectId: string, testSetId: string) {
+  const query = new URLSearchParams({ project_id: projectId })
+  const response = await fetch(buildUrl(`/api/test-sets/${encodeURIComponent(testSetId)}?${query}`), { method: 'DELETE' })
+  const body = await parseJson<ApiEnvelope<unknown>>(response)
+  if (!response.ok || body.success === false) throw new Error(body.error ?? `删除用例集失败：${response.status}`)
+}
+
+export async function upsertTestCase(args: {
+  testSetId: string
+  id?: string
+  row: string[]
+}) {
+  const response = await fetch(buildUrl('/api/test-cases'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+  })
+  return readData<TestCaseSet>(response, '保存测试用例失败')
+}
+
+export async function deleteTestCase(testSetId: string, caseId: string) {
+  const query = new URLSearchParams({ test_set_id: testSetId })
+  const response = await fetch(buildUrl(`/api/test-cases/${encodeURIComponent(caseId)}?${query}`), { method: 'DELETE' })
+  return readData<TestCaseSet>(response, '删除测试用例失败')
 }
 
 export interface GenerateJobSubmitResponse {
@@ -69,9 +129,10 @@ export interface GenerateJobStatusResponse {
     context?: string
     testType?: string
     language?: string
-    coverageMode?: 'quick' | 'standard' | 'expert'
-    maxCases?: number
     generatedCount: number
+    generatedCountRaw?: number
+    addedCount?: number
+    duplicatesFiltered?: number
     error: string
     streamText?: string
     createdAt: string
@@ -91,32 +152,7 @@ export interface GenerateJobStatusResponse {
 
 type GenerateJobData = NonNullable<GenerateJobStatusResponse['data']>
 
-export function loadStoredModelConfig() {
-  const saved = localStorage.getItem('nexuskit_model_config')
-  if (!saved) return null
-
-  try {
-    const parsed = JSON.parse(saved) as Partial<StoredModelConfig>
-    if (!parsed.baseUrl || !parsed.apiKey || !parsed.modelId) return null
-    return {
-      name: parsed.name || '默认模型',
-      baseUrl: parsed.baseUrl,
-      apiKey: parsed.apiKey,
-      modelId: parsed.modelId,
-      temperature: typeof parsed.temperature === 'number' ? parsed.temperature : 0.2,
-    } satisfies StoredModelConfig
-  } catch {
-    return null
-  }
-}
-
-export function toTestCaseAiConfig(config: StoredModelConfig): TestCaseAiConfig {
-  return {
-    base_url: config.baseUrl,
-    api_key: config.apiKey,
-    model: config.modelId,
-  }
-}
+export { loadStoredModelConfig }
 
 export async function getTestCaseExportFormats() {
   const response = await fetch(buildUrl('/api/export/formats'))
@@ -127,31 +163,18 @@ export async function getTestCaseExportFormats() {
   return data.data ?? []
 }
 
-export async function testCaseAiConnection(aiConfig: TestCaseAiConfig) {
-  const response = await fetch(buildUrl('/api/test-connection'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ai_config: aiConfig }),
-  })
-  const data = await parseJson<{ success: boolean; message?: string; error?: string }>(response)
-  if (!response.ok || data.success === false) {
-    throw new Error(data.error ?? `模型连接测试失败：${response.status}`)
-  }
-  return data.message ?? 'API 连接成功'
-}
-
 export async function createGenerateJob(args: {
   mode: 'create' | 'regenerate_all' | 'supplement' | 'regenerate_selected'
   featureName: string
   context: string
   testType: 'functional' | 'api'
   language: 'zh' | 'en'
-  coverageMode?: 'quick' | 'standard' | 'expert'
-  maxCases?: number
-  aiConfig: TestCaseAiConfig
+  aiConfig: UniversalProvider
   rows?: string[][]
   selectedIndices?: number[]
   testSetId?: string
+  projectId: string
+  testSetName: string
 }) {
   const response = await fetch(buildUrl('/api/generate-jobs'), {
     method: 'POST',
@@ -162,11 +185,11 @@ export async function createGenerateJob(args: {
       context: args.context,
       testType: args.testType,
       language: args.language,
-      coverageMode: args.coverageMode,
-      maxCases: args.maxCases,
       rows: args.rows,
       selectedIndices: args.selectedIndices,
       testSetId: args.testSetId,
+      projectId: args.projectId,
+      testSetName: args.testSetName,
       ai_config: args.aiConfig,
     }),
   })
@@ -217,7 +240,7 @@ export async function exportTestCaseExcel(args: {
     throw new Error(`导出 Excel 失败：${response.status}`)
   }
   const blob = await response.blob()
-  saveBlob(blob, `${args.featureName || '测试用例'}.xls`)
+  downloadBlob(blob, `${args.featureName || '测试用例'}.xlsx`)
 }
 
 export async function exportTestCaseXmind(args: {
@@ -233,5 +256,31 @@ export async function exportTestCaseXmind(args: {
     throw new Error(`导出 XMind 失败：${response.status}`)
   }
   const blob = await response.blob()
-  saveBlob(blob, `${args.featureName || '测试用例库'}.xmind`)
+  downloadBlob(blob, `${args.featureName || '测试用例库'}.xmind`)
+}
+
+export async function exportTestCaseExcelAll(args: {
+  projectName: string
+  testSets: Array<{ featureName: string; rows: string[][] }>
+}) {
+  const response = await fetch(buildUrl('/api/export/excel-all'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...args, format: 'default' }),
+  })
+  if (!response.ok) throw new Error(`导出 Excel 失败：${response.status}`)
+  downloadBlob(await response.blob(), `${args.projectName || '测试用例'}.xlsx`)
+}
+
+export async function exportTestCaseXmindAll(args: {
+  projectName: string
+  testSets: Array<{ featureName: string; rows: string[][] }>
+}) {
+  const response = await fetch(buildUrl('/api/export/xmind-all'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+  })
+  if (!response.ok) throw new Error(`导出 XMind 失败：${response.status}`)
+  downloadBlob(await response.blob(), `${args.projectName || '测试用例库'}.xmind`)
 }

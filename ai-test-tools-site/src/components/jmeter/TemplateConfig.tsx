@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { ArrowLeft, Download, Loader2 } from 'lucide-react'
-import type { JmeterTemplate, TemplateParam } from '../../data/jmeter-templates'
-import { HttpRequestConfig, createDefaultHttpRequest, type HttpRequestData } from './HttpRequestConfig'
+import { templateParamCards, type JmeterTemplate, type TemplateParam } from '../../data/jmeter-templates'
+import { HttpRequestConfig } from './HttpRequestConfig'
+import { createDefaultHttpRequest, type HttpRequestData } from '../../lib/jmeter-types'
 import { CustomSelect } from '../ui/CustomSelect'
+import { useErrorDialog } from '../ui/ErrorDialogProvider'
 import { downloadGeneratedJmx } from '../../lib/jmeter-api'
 import { type GeneratedPlanResult, generateTemplatePlan } from '../../lib/jmeter-builders'
 import { GeneratedPlanResult as GeneratedPlanResultPanel } from './GeneratedPlanResult'
@@ -15,35 +17,6 @@ interface Props {
 const inputCls = 'field-control'
 const labelCls = 'field-label text-xs'
 const COMMON_PARAM_KEYS = ['threads', 'ramp_up', 'loops', 'aggregate_report', 'assertion_code']
-
-const templateParamCards: Record<string, Array<{ title: string; description: string; keys: string[] }>> = {
-  'jdbc-stress': [
-    { title: '数据库连接', description: '配置 JDBC URL、驱动、账号和连接池。', keys: ['db_url', 'db_driver', 'db_user', 'db_pass', 'pool_max'] },
-    { title: 'SQL 语句', description: '填写要执行并采样的查询或脚本。', keys: ['sql'] },
-  ],
-  'tcp-stress': [
-    { title: '连接配置', description: '配置 TCP 服务地址、端口和连接复用方式。', keys: ['server', 'port', 're_use'] },
-    { title: '发送数据', description: '填写每次采样发送给服务端的内容。', keys: ['request_data'] },
-  ],
-  'smtp-stress': [
-    { title: '邮件服务器', description: '配置 SMTP 地址、端口和安全连接。', keys: ['server', 'port', 'use_ssl'] },
-    { title: '邮件内容', description: '配置发件人、收件人、标题和正文。', keys: ['sender', 'receiver', 'subject', 'body'] },
-  ],
-  'ftp-stress': [
-    { title: 'FTP 连接', description: '配置文件服务器、账号、端口和传输动作。', keys: ['server', 'port', 'username', 'password', 'ftp_action'] },
-    { title: '文件路径', description: '配置远程文件和本地文件路径。', keys: ['remote_file', 'local_file'] },
-  ],
-  'ldap-stress': [
-    { title: '目录连接', description: '配置 LDAP 服务地址、端口和 SSL。', keys: ['server', 'port', 'use_ssl'] },
-    { title: '查询配置', description: '配置搜索基、过滤器和返回属性。', keys: ['search_base', 'search_filter', 'attributes'] },
-  ],
-  'jsr223-script': [
-    { title: '脚本配置', description: '选择脚本语言，并填写 JSR223 执行内容。', keys: ['language', 'script'] },
-  ],
-  'system-command': [
-    { title: '命令配置', description: '配置命令、参数、工作目录和解释器。', keys: ['command', 'command_params', 'working_dir', 'interpreter'] },
-  ],
-}
 
 function buildTemplateParamCards(template: JmeterTemplate) {
   const paramMap = new Map(template.params.map((param) => [param.key, param]))
@@ -64,6 +37,7 @@ function buildTemplateParamCards(template: JmeterTemplate) {
 }
 
 export function TemplateConfig({ template, onBack }: Props) {
+  const { showError } = useErrorDialog()
   const [values, setValues] = useState<Record<string, string | number>>(() => {
     const init: Record<string, string | number> = {}
     template.params.forEach((p) => {
@@ -76,12 +50,49 @@ export function TemplateConfig({ template, onBack }: Props) {
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<GeneratedPlanResult | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const handleChange = (key: string, value: string | number) => {
     setValues((prev) => ({ ...prev, [key]: value }))
+    setFieldErrors((current) => {
+      if (!current[key]) return current
+      const next = { ...current }
+      delete next[key]
+      return next
+    })
   }
 
   const paramCards = buildTemplateParamCards(template)
+
+  const clearFieldError = (key: string) => {
+    setFieldErrors((current) => {
+      if (!current[key]) return current
+      const next = { ...current }
+      delete next[key]
+      return next
+    })
+  }
+
+  const validateForm = () => {
+    const nextErrors: Record<string, string> = {}
+
+    if (template.id === 'http-stress') {
+      if (!httpData.domain.trim()) nextErrors.domain = '请输入目标域名'
+      if (!httpData.path.trim()) nextErrors.path = '请输入请求路径'
+    }
+
+    template.params
+      .filter((param) => param.required)
+      .forEach((param) => {
+        const rawValue = values[param.key]
+        if (rawValue == null || String(rawValue).trim() === '') {
+          nextErrors[param.key] = `请输入${param.label}`
+        }
+      })
+
+    setFieldErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
 
   const renderParamField = (param: TemplateParam) => (
     <div key={param.key} className={param.type === 'textarea' ? 'col-span-2 max-sm:col-span-1' : ''}>
@@ -90,26 +101,50 @@ export function TemplateConfig({ template, onBack }: Props) {
         {param.required && <span className="ml-0.5 text-[#dc2626]">*</span>}
       </label>
       {param.type === 'text' && (
-        <input type="text" value={values[param.key] ?? ''} onChange={(event) => handleChange(param.key, event.target.value)} placeholder={param.placeholder} className={inputCls} />
+        <input
+          type="text"
+          value={values[param.key] ?? ''}
+          onChange={(event) => handleChange(param.key, event.target.value)}
+          placeholder={param.placeholder}
+          className={`${inputCls} ${fieldErrors[param.key] ? 'field-control-error' : ''}`}
+          aria-invalid={Boolean(fieldErrors[param.key])}
+        />
       )}
       {param.type === 'number' && (
-        <input type="number" value={values[param.key] ?? ''} onChange={(event) => handleChange(param.key, Number(event.target.value))} placeholder={param.placeholder} className={inputCls} />
+        <input
+          type="number"
+          value={values[param.key] ?? ''}
+          onChange={(event) => handleChange(param.key, event.target.value === '' ? '' : Number(event.target.value))}
+          placeholder={param.placeholder}
+          className={`${inputCls} ${fieldErrors[param.key] ? 'field-control-error' : ''}`}
+          aria-invalid={Boolean(fieldErrors[param.key])}
+        />
       )}
       {param.type === 'select' && (
         <CustomSelect
           value={String(values[param.key] ?? param.default ?? '')}
           onChange={(value) => handleChange(param.key, value)}
           options={param.options?.map((option) => ({ value: String(option.value), label: option.label })) || []}
+          className={fieldErrors[param.key] ? 'field-select-error' : ''}
         />
       )}
       {param.type === 'textarea' && (
-        <textarea value={values[param.key] ?? ''} onChange={(event) => handleChange(param.key, event.target.value)} placeholder={param.placeholder} rows={5} className={inputCls} />
+        <textarea
+          value={values[param.key] ?? ''}
+          onChange={(event) => handleChange(param.key, event.target.value)}
+          placeholder={param.placeholder}
+          rows={5}
+          className={`${inputCls} ${fieldErrors[param.key] ? 'field-control-error' : ''}`}
+          aria-invalid={Boolean(fieldErrors[param.key])}
+        />
       )}
+      {fieldErrors[param.key] && <p className="field-error">{fieldErrors[param.key]}</p>}
       {param.description && <p className="helper-text">{param.description}</p>}
     </div>
   )
 
   const handleSubmit = async () => {
+    if (!validateForm()) return
     setLoading(true)
     setError(null)
     try {
@@ -121,7 +156,10 @@ export function TemplateConfig({ template, onBack }: Props) {
       setResult(nextResult)
     } catch (err) {
       setResult(null)
-      setError(err instanceof Error ? err.message : '生成 JMX 文件失败，请检查后端服务是否启动')
+      showError(err, {
+        title: '生成 JMX 失败',
+        fallbackMessage: '生成 JMX 文件失败，请检查后端服务是否启动。',
+      })
     } finally {
       setLoading(false)
     }
@@ -134,7 +172,10 @@ export function TemplateConfig({ template, onBack }: Props) {
     try {
       await downloadGeneratedJmx(result.savedPath, result.downloadName)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '下载 JMX 文件失败')
+      showError(err, {
+        title: '下载失败',
+        fallbackMessage: '下载 JMX 文件失败，请稍后重试。',
+      })
     } finally {
       setDownloading(false)
     }
@@ -149,7 +190,7 @@ export function TemplateConfig({ template, onBack }: Props) {
         </button>
         <div>
           <h2 className="font-display text-lg font-semibold tracking-[-0.035em] text-fg">
-            <span className="mr-2 rounded-lg bg-[rgba(37,99,235,0.08)] px-2 py-1 font-mono text-[11px] text-accent">{template.icon}</span>
+            <span className="mr-2 rounded-lg bg-accent/10 px-2 py-1 font-mono text-[11px] text-accent">{template.icon}</span>
             {template.name}
           </h2>
           <p className="text-xs leading-5 text-muted">{template.description}</p>
@@ -158,7 +199,15 @@ export function TemplateConfig({ template, onBack }: Props) {
 
       {/* HTTP Request Config */}
       {template.id === 'http-stress' && (
-        <HttpRequestConfig value={httpData} onChange={setHttpData} />
+        <HttpRequestConfig
+          value={httpData}
+          onChange={setHttpData}
+          fieldErrors={{
+            domain: fieldErrors.domain,
+            path: fieldErrors.path,
+          }}
+          onFieldChange={(field) => clearFieldError(field)}
+        />
       )}
 
       {/* Other template params */}
@@ -172,7 +221,7 @@ export function TemplateConfig({ template, onBack }: Props) {
               </div>
               <p className="mt-1 text-xs leading-5 text-muted">{card.description}</p>
             </div>
-            <span className="rounded-full bg-[rgba(37,99,235,0.08)] px-2 py-0.5 font-mono text-[10px] font-semibold text-accent">
+            <span className="rounded-full bg-accent/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-accent">
               {template.samplerType}
             </span>
           </div>

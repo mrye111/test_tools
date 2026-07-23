@@ -17,6 +17,12 @@ export function text(value: unknown, fallback = ""): string {
   return value === undefined || value === null ? fallback : String(value);
 }
 
+export function rowsInput(value: unknown): unknown[] {
+  if (!Array.isArray(value)) return [];
+  if (value.length > 0 && !Array.isArray(value[0]) && !isObject(value[0])) return [value];
+  return value;
+}
+
 export function firstText(args: JsonObject, keys: string[]): string {
   for (const key of keys) {
     const value = args[key];
@@ -36,23 +42,6 @@ export function numberList(value: unknown): number[] {
   return value
     .map((item) => Number(item))
     .filter((item) => Number.isInteger(item) && item >= 0);
-}
-
-export function escapeXml(value: unknown): string {
-  return text(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;")
-    .replace(/\\n/g, "&#10;");
-}
-
-export function safeSheetName(value: unknown): string {
-  const name = text(value, "测试用例")
-    .replace(/[\[\]:*?/\\]/g, "")
-    .trim();
-  return (name || "测试用例").slice(0, 31);
 }
 
 export function safeDownloadName(value: unknown, fallback = "download"): string {

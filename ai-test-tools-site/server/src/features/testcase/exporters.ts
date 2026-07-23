@@ -1,6 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { createZip } from "./zip.js";
-import { escapeXml, safeSheetName } from "./utils.js";
+import { text } from "./utils.js";
+
+function escapeXml(value: unknown): string {
+  return text(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;")
+    .replace(/\\n/g, "&#10;");
+}
+
+function safeSheetName(value: unknown): string {
+  const name = text(value, "测试用例")
+    .replace(/[\[\]:*?/\\]/g, "")
+    .trim();
+  return (name || "测试用例").slice(0, 31);
+}
 
 type RowLike = string[] | Record<string, unknown>;
 
@@ -199,6 +216,156 @@ ${excelStyles()}
 ${sheets.map((sheet) => formattedWorksheet(sheet.name, sheet.rows, options)).join("\n")}
 </Workbook>`;
   return Buffer.from(xml, "utf8");
+}
+
+const EXECUTION_STATUS_HEADER = "执行结果";
+const EXECUTION_STATUS_OPTIONS = ["未执行", "通过", "失败", "阻塞"];
+const EXECUTION_STATUS_DEFAULT = "未执行";
+
+function escapeXmlText(value: unknown): string {
+  return text(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\\n/g, "\n");
+}
+
+function columnName(index: number): string {
+  let name = "";
+  let current = index + 1;
+  while (current > 0) {
+    name = String.fromCharCode(65 + ((current - 1) % 26)) + name;
+    current = Math.floor((current - 1) / 26);
+  }
+  return name;
+}
+
+const XLSX_COLUMN_WIDTHS = [14, 18, 22, 36, 10, 28, 45, 45, 14];
+
+function xlsxStyles(): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="6">
+    <font><sz val="11"/><name val="Calibri"/></font>
+    <font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+    <font><b/><sz val="11"/><color rgb="FFDC2626"/><name val="Calibri"/></font>
+    <font><b/><sz val="11"/><color rgb="FFD97706"/><name val="Calibri"/></font>
+    <font><b/><sz val="11"/><color rgb="FF059669"/><name val="Calibri"/></font>
+    <font><b/><sz val="11"/><color rgb="FF7C3AED"/><name val="Calibri"/></font>
+  </fonts>
+  <fills count="6">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF4F46E5"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFEE2E2"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFEF3C7"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFD1FAE5"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="7">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+  </cellXfs>
+</styleSheet>`;
+}
+
+function xlsxCell(ref: string, style: number, value: unknown): string {
+  return `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${escapeXmlText(value)}</t></is></c>`;
+}
+
+function xlsxPriorityStyleId(priority: string): number {
+  const style = priorityStyle(priority);
+  if (style === "PriorityHigh") return 3;
+  if (style === "PriorityMedium") return 4;
+  if (style === "PriorityLow") return 5;
+  return 2;
+}
+
+function xlsxWorksheet(rows: RowLike[]): string {
+  const headers = [...HEADERS, EXECUTION_STATUS_HEADER];
+  const statusCol = columnName(headers.length - 1);
+  const cols = XLSX_COLUMN_WIDTHS.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join("");
+  const headerRow = `<row r="1" ht="28" customHeight="1">${headers.map((header, index) => xlsxCell(`${columnName(index)}1`, 1, header)).join("")}</row>`;
+  const bodyRows = rows.map((row, rowIndex) => {
+    const cells = rowCells(row);
+    const r = rowIndex + 2;
+    const parts = cells.map((cell, index) => {
+      const style = index === 0 ? 6 : index === 4 ? xlsxPriorityStyleId(cell) : 2;
+      return xlsxCell(`${columnName(index)}${r}`, style, cell);
+    });
+    parts.push(xlsxCell(`${statusCol}${r}`, 2, EXECUTION_STATUS_DEFAULT));
+    return `<row r="${r}">${parts.join("")}</row>`;
+  });
+  const validation = `<dataValidations count="1"><dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="${statusCol}2:${statusCol}1048576"><formula1>&quot;${EXECUTION_STATUS_OPTIONS.join(",")}&quot;</formula1></dataValidation></dataValidations>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols>${cols}</cols><sheetData>${headerRow}${bodyRows.join("")}</sheetData>${validation}</worksheet>`;
+}
+
+export function buildXlsxWorkbook(sheets: Array<{ name: string; rows: RowLike[] }>): Buffer {
+  const sheetOverrides = sheets
+    .map((_, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`)
+    .join("");
+  const sheetRefs = sheets
+    .map((sheet, index) => `<sheet name="${escapeXmlText(safeSheetName(sheet.name))}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
+    .join("");
+  const sheetRels = sheets
+    .map((_, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`)
+    .join("");
+  const entries = [
+    {
+      name: "[Content_Types].xml",
+      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheetOverrides}</Types>`, "utf8"),
+    },
+    {
+      name: "_rels/.rels",
+      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`, "utf8"),
+    },
+    {
+      name: "xl/workbook.xml",
+      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheetRefs}</sheets></workbook>`, "utf8"),
+    },
+    {
+      name: "xl/_rels/workbook.xml.rels",
+      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheetRels}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`, "utf8"),
+    },
+    { name: "xl/styles.xml", data: Buffer.from(xlsxStyles(), "utf8") },
+    ...sheets.map((sheet, index) => ({
+      name: `xl/worksheets/sheet${index + 1}.xml`,
+      data: Buffer.from(xlsxWorksheet(sheet.rows), "utf8"),
+    })),
+  ];
+  return createZip(entries);
+}
+
+export type ExcelExportResult = {
+  buffer: Buffer;
+  extension: "xls" | "xlsx";
+  contentType: string;
+};
+
+export function buildExcelExport(sheets: Array<{ name: string; rows: RowLike[] }>, options: ExcelExportOptions = {}): ExcelExportResult {
+  if (normalizeFormat(options.format) === "default") {
+    return {
+      buffer: buildXlsxWorkbook(sheets),
+      extension: "xlsx",
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    };
+  }
+  return {
+    buffer: buildExcelWorkbook(sheets, options),
+    extension: "xls",
+    contentType: "application/vnd.ms-excel; charset=utf-8",
+  };
 }
 
 function caseTopic(row: string[]): XMindTopic {

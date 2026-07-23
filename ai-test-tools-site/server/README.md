@@ -7,7 +7,7 @@
 - 兼容 MCP JSON-RPC：`initialize`、`ping`、`tools/list`、`tools/call`
 - 兼容 HTTP+SSE MCP 传输：`GET /sse` + `POST /messages?sessionId=...`
 - 额外提供直接调试接口：`POST /rpc`、`GET /tools`、`POST /tools/:name`
-- 注册参考服务的 57 个工具
+- 注册参考服务的 48 个工具
 - 维护内存中的 JMeter 测试计划树，支持创建、路径插入、更新、移动、删除、保存、加载、验证
 - 输出标准 JMeter `.jmx` 的 `TestElement + hashTree` 结构
 
@@ -16,14 +16,10 @@
 ```powershell
 npm run server:build
 npm run server:start
-npm run server:smoke
+npx vitest run server/tests/
 ```
 
-`server:smoke` 会调用全部 57 个工具，并生成：
-
-```text
-server/generated/all-jmeter-elements.jmx
-```
+`server/tests/jmeter-tools.test.ts` 会对全部 48 个已注册工具做集成冒烟，并覆盖前端模板构建链路。
 
 ## 启动方式
 

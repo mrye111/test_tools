@@ -1,0 +1,207 @@
+/* ── AnimatedList — light-mode glassmorphism variant ── */
+
+.animated-list-container {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+}
+
+/* ── Scrollable area ── */
+
+.animated-list-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  scroll-behavior: smooth;
+}
+
+.animated-list-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.animated-list-scroll::-webkit-scrollbar-track {
+  background: oklch(0.96 0.005 235 / 0.5);
+  border-radius: 9999px;
+}
+
+.animated-list-scroll::-webkit-scrollbar-thumb {
+  background: oklch(0.7 0.04 235 / 0.4);
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+
+.animated-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.56 0.24 208 / 0.5);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ── Item wrapper ── */
+
+.animated-list-item {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-md, 12px);
+  transition: box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Item inner content ── */
+
+.animated-list-item-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md, 12px);
+  background: linear-gradient(
+    135deg,
+    oklch(1 0 0 / 0.88),
+    oklch(0.985 0.003 235 / 0.72)
+  );
+  border: 1px solid oklch(0.92 0.008 235 / 0.7);
+  backdrop-filter: blur(14px) saturate(1.1);
+  box-shadow:
+    0 2px 8px -4px oklch(0.18 0.02 235 / 0.06),
+    inset 0 1px 0 oklch(1 0 0 / 0.7);
+  transition:
+    background 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.animated-list-item.selected .animated-list-item-content {
+  background: linear-gradient(
+    135deg,
+    oklch(0.56 0.24 208 / 0.1),
+    oklch(0.7 0.14 218 / 0.06)
+  );
+  border-color: oklch(0.56 0.24 208 / 0.35);
+  box-shadow:
+    0 4px 16px -6px oklch(0.56 0.24 208 / 0.2),
+    inset 0 1px 0 oklch(1 0 0 / 0.6);
+}
+
+/* ── Accent bar (shared layout animation) ── */
+
+.animated-list-item-accent-bar {
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    180deg,
+    oklch(0.56 0.24 208),
+    oklch(0.7 0.14 218)
+  );
+  box-shadow: 0 0 12px oklch(0.56 0.24 208 / 0.4);
+}
+
+/* ── Glow backdrop ── */
+
+.animated-list-item-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    320px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    oklch(0.56 0.24 208 / 0.08),
+    transparent 58%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.animated-list-item:hover .animated-list-item-glow {
+  opacity: 1;
+}
+
+/* ── Item text ── */
+
+.animated-list-item-text {
+  flex: 1;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 520;
+  line-height: 1.5;
+  color: var(--color-fg, oklch(0.18 0.02 235));
+  letter-spacing: -0.01em;
+}
+
+.animated-list-item.selected .animated-list-item-text {
+  color: oklch(0.48 0.27 208);
+  font-weight: 620;
+}
+
+/* ── Ripple effect ── */
+
+.animated-list-ripple {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  margin-top: -10px;
+  border-radius: 9999px;
+  background: oklch(0.56 0.24 208 / 0.2);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Check mark ── */
+
+.animated-list-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-xs, 6px);
+  background: oklch(0.56 0.24 208 / 0.12);
+  color: oklch(0.56 0.24 208);
+  flex-shrink: 0;
+}
+
+/* ── Gradient overlays ── */
+
+.animated-list-top-gradient {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  background: linear-gradient(
+    to bottom,
+    oklch(1 0 0 / 0.88),
+    transparent
+  );
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  border-radius: var(--radius-md, 12px) var(--radius-md, 12px) 0 0;
+}
+
+.animated-list-bottom-gradient {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: linear-gradient(
+    to top,
+    oklch(1 0 0 / 0.88),
+    transparent
+  );
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  border-radius: 0 0 var(--radius-md, 12px) var(--radius-md, 12px);
+}

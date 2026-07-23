@@ -1,8 +1,13 @@
+---
+description: 
+alwaysApply: true
+---
+
 ## Agent skills
 
 ### Issue tracker
 
-Local markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
+GitHub Issues (uses `gh` CLI). See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

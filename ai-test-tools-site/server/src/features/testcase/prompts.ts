@@ -1,19 +1,44 @@
 import type { CsvRuntime } from "./types.js";
 
-const FUNCTIONAL_EXPERT_PROMPT = `你是资深测试专家，擅长根据需求生成完整、可执行、覆盖正反向和边界场景的功能测试用例。
+export const DEFAULT_TESTCASE_SYSTEM_PROMPT = `你是资深软件测试专家。请根据用户提供的需求生成完整、独立、可重复执行且结果可验证的测试用例。
 
-必须输出 CSV，不要输出 Markdown，不要输出解释。
-每行必须严格 8 列：用例编号,功能模块,功能测试点,用例标题,优先级,前置条件,测试步骤,预期结果。
-测试步骤和预期结果必须详细、可执行，并使用 1. 2. 3. 编号。
-优先级只能使用：高、中、低。`;
+【必须应用的 6 种测试设计方法】
+1. 等价类划分：识别有效和无效等价类，每个等价类至少设计 1 条代表性用例。
+2. 边界值分析：覆盖最小值、最小值附近、最大值附近、最大值、空值、超界值、临界长度等正常与异常边界。
+3. 判定表驱动：当存在多个业务条件时，梳理条件和动作组合，覆盖所有有效组合及关键无效组合。
+4. 场景法：覆盖真实用户主流程、替代流程、异常流程、恢复流程和跨步骤业务场景。
+5. 错误猜测法：基于高风险点补充重复提交、并发、网络异常、非法字符、注入、权限绕过、数据一致性等易错场景。
+6. 状态迁移法：识别对象状态、触发事件、合法与非法迁移，验证状态变化、禁止迁移和恢复路径。
 
-const API_EXPERT_PROMPT = `你是资深接口测试专家，擅长根据接口需求生成覆盖正常、异常、鉴权、参数校验、边界和幂等场景的 API 测试用例。
+【内部 5 步工作流】
+1. 深度分析功能结构、角色、业务规则、输入输出、约束、状态和异常处理。
+2. 逐项应用 6 种设计方法，形成候选场景；不要因为需求简单而跳过方法评估。
+3. 建立需求点与候选场景的覆盖关系，消除遗漏和无价值重复。
+4. 将场景编写为可独立执行的用例，补齐前置条件、操作数据和可观察结果。
+5. 输出前自检字段完整性、步骤可执行性、结果可验证性、编号连续性和需求覆盖情况。
 
-必须输出 CSV，不要输出 Markdown，不要输出解释。
-每行必须严格 8 列：用例编号,接口名称,请求方式及路径,用例标题,优先级,前置条件,测试步骤,预期结果。
-测试步骤需要包含请求方法、URL、请求头、请求参数和发送请求动作。
-预期结果需要包含 HTTP 状态码、响应字段、错误码或业务结果断言。
-优先级只能使用：高、中、低。`;
+上述分析和自检只在内部完成，不要输出分析过程、判定表、覆盖矩阵或解释文字。
+
+【用例质量要求】
+- 完整性：覆盖需求中的全部功能点、业务规则和关键风险。
+- 独立性：每条用例可单独执行，不依赖其他用例的执行结果。
+- 可重复性：相同前置条件和数据下可以稳定复现。
+- 可验证性：预期结果必须具体、可观察、可断言，禁止使用“正常”“符合预期”等模糊表述。
+- 清晰性：标题明确描述条件和结果，步骤无歧义并包含必要测试数据。
+- 步骤与结果对应：测试步骤和预期结果都必须使用 1. 2. 3. 编号，编号数量及业务逻辑一一对应。
+- 不得新增测试状态、备注、设计方法等列；设计方法应体现在测试点、标题、步骤和预期结果中。
+- 对需求未明确但执行必需的信息，可在前置条件中写明合理假设，不得虚构确定的业务规则。`;
+
+export type CoverageBatchSpec = {
+  name: string;
+  scope: string;
+  coverageItems: string[];
+};
+
+const FUNCTIONAL_TEST_INSTRUCTION = `当前任务是功能测试用例设计。重点验证页面或业务功能、角色权限、输入校验、流程状态、异常提示、数据持久化和用户可观察结果。`;
+
+const API_TEST_INSTRUCTION = `当前任务是 API 测试用例设计。除 6 种通用方法外，重点覆盖请求方法与路径、鉴权、Header、路径/查询/Body 参数、数据类型、必填与可选、边界、幂等、重复请求、并发和错误响应。
+测试步骤必须明确请求方法、URL、请求头、请求参数和发送动作；预期结果必须包含可验证的 HTTP 状态码、响应字段、业务错误码或数据结果断言。`;
 
 export function csvRuntime(testType = "functional", language = "zh"): CsvRuntime {
   if (language === "en") {
@@ -55,23 +80,26 @@ export function buildGenerateMessages(args: {
   context?: string;
   testType?: string;
   language?: string;
-  maxCases?: number;
-  coverageMode?: string;
-  analysis?: string;
   image?: string;
+  batch?: CoverageBatchSpec;
 }) {
   const testType = args.testType || "functional";
   const runtime = csvRuntime(testType, args.language || "zh");
-  const basePrompt = testType === "api" ? API_EXPERT_PROMPT : FUNCTIONAL_EXPERT_PROMPT;
-  const coverageMode = (["quick", "standard", "expert"].includes(args.coverageMode || "") ? args.coverageMode : "standard") as "quick" | "standard" | "expert";
-  const maxCases = args.maxCases && args.maxCases > 0 ? Math.floor(args.maxCases) : 20;
-  const coverageInstruction = {
-    quick: "快速覆盖：覆盖核心主流程、关键失败场景和基础边界，避免低价值重复用例。",
-    standard: "标准覆盖：覆盖正向、反向、边界、权限、状态、数据校验和异常提示，优先保证场景完整性。",
-    expert: "专家覆盖：在标准覆盖基础上增加组合场景、风险场景、历史缺陷高发点、安全、兼容性和幂等性等高价值场景。",
-  }[coverageMode];
+  const testInstruction = testType === "api" ? API_TEST_INSTRUCTION : FUNCTIONAL_TEST_INSTRUCTION;
 
-  const system = `${basePrompt}
+  const batchInstruction = args.batch
+    ? `
+【当前覆盖批次】
+- 批次名称：${args.batch.name}
+- 范围：${args.batch.scope}
+- 必须覆盖：${args.batch.coverageItems.join("；") || args.batch.scope}
+- 只生成当前批次范围的用例，但必须使用完整需求作为业务约束。
+- 每个独立可验证的条件、边界、角色、状态迁移和异常结果应单独成例，不得只输出少量代表样例。`
+    : "";
+
+  const system = `${DEFAULT_TESTCASE_SYSTEM_PROMPT}${batchInstruction}
+
+${testInstruction}
 
 [CRITICAL SYSTEM OVERRIDE - CSV FORMAT REQUIREMENTS]
 1. DO NOT use tools.
@@ -89,16 +117,13 @@ ${runtime.exampleRow}
 10. Every test case must include detailed steps and expected results.
 11. Priority must be one of 高, 中, 低 / High, Medium, Low.
 12. Language requirement: ${runtime.languageInstruction}
-13. Coverage mode: ${coverageInstruction}
-14. Generate no more than ${maxCases} test cases. This is a hard upper limit, not a target to fill.
-15. Prefer high-value coverage over quantity. Do not create weak or duplicate cases just to approach the upper limit.`;
+13. Cover every requirement and all six design methods with high-value, non-duplicate cases.
+14. Test steps and expected results must use matching numbered lists with one-to-one logical correspondence.
+15. Do not stop at a small representative sample. Output one separate case for every independently verifiable rule, condition, role, boundary, state transition and failure result in the assigned scope.`;
 
   const userText = `Generate test cases for:
 Feature Name: ${args.featureName || "未命名需求"}
 Requirements/Context: ${args.context || ""}
-Coverage Mode: ${coverageMode}
-Maximum Test Cases: ${maxCases}
-${args.analysis ? `\nInternal Test Design Notes:\n${args.analysis}\n` : ""}
 
 Output the CSV content now.`;
 
@@ -127,54 +152,12 @@ Output the CSV content now.`;
   };
 }
 
-export function buildAnalysisMessages(args: {
-  featureName?: string;
-  context?: string;
-  testType?: string;
-  language?: string;
-  coverageMode?: string;
-  maxCases?: number;
-}) {
-  const testType = args.testType || "functional";
-  const coverageMode = args.coverageMode || "standard";
-  const maxCases = args.maxCases && args.maxCases > 0 ? Math.floor(args.maxCases) : 20;
-  const system = `你是资深测试架构师。请在生成测试用例前，内部分析需求并给出测试设计草案。
-
-只输出简洁 JSON，不要 Markdown，不要解释。JSON 字段：
-{
-  "businessRules": ["业务规则"],
-  "inputs": ["输入或参数"],
-  "states": ["状态或流程节点"],
-  "roles": ["角色或权限"],
-  "risks": ["高风险点"],
-  "coverageDimensions": ["需要覆盖的测试维度"],
-  "priorityGuidance": ["当最大条数不足时的取舍建议"]
-}`;
-
-  const user = `功能名称：${args.featureName || "未命名需求"}
-测试类型：${testType}
-覆盖模式：${coverageMode}
-最大条数上限：${maxCases}
-输出语言：${args.language || "zh"}
-需求描述：
-${args.context || ""}`;
-
-  return {
-    messages: [
-      { role: "system" as const, content: system },
-      { role: "user" as const, content: user },
-    ],
-  };
-}
-
 export function buildRepairMessages(args: {
   rawCsv: string;
   testType?: string;
   language?: string;
-  maxCases?: number;
 }) {
   const runtime = csvRuntime(args.testType || "functional", args.language || "zh");
-  const maxCases = args.maxCases && args.maxCases > 0 ? Math.floor(args.maxCases) : 20;
   return {
     runtime,
     messages: [
@@ -185,57 +168,14 @@ export function buildRepairMessages(args: {
 要求：
 1. 只输出 CSV，不要 Markdown，不要解释。
 2. 表头必须是：${runtime.csvColumns}
-3. 最多输出 ${maxCases} 条用例。
-4. 丢弃非用例内容、解释文本、重复标题、空步骤、空预期。
-5. 每条用例必须 8 列，步骤至少 2 步，预期结果明确。
+3. 丢弃非用例内容、解释文本、重复标题、空步骤、空预期。
+4. 每条用例必须严格 8 列，不能增加测试状态、备注或设计方法列。
+5. 测试步骤和预期结果必须使用对应的编号列表，内容明确且可验证。
 6. 用例编号可以临时填写，后端会统一重排。`,
       },
       {
         role: "user" as const,
         content: `需要修复的原始内容：\n${args.rawCsv}`,
-      },
-    ],
-  };
-}
-
-export function buildSupplementMessages(args: {
-  analysis: string;
-  existingRowsCsv: string;
-  featureName?: string;
-  context?: string;
-  testType?: string;
-  language?: string;
-  remaining: number;
-}) {
-  const runtime = csvRuntime(args.testType || "functional", args.language || "zh");
-  return {
-    runtime,
-    messages: [
-      {
-        role: "system" as const,
-        content: `你是资深测试专家。请检查已有用例相对测试设计草案是否漏掉高价值场景。
-
-要求：
-1. 只输出需要补充的 CSV 行，包含表头。
-2. 如果没有高价值缺口，只输出表头，不要解释。
-3. 最多补充 ${Math.max(0, args.remaining)} 条。
-4. 不要重复已有用例标题或等价场景。
-5. 表头必须是：${runtime.csvColumns}
-6. 每条用例必须 8 列，步骤至少 2 步，预期结果明确。`,
-      },
-      {
-        role: "user" as const,
-        content: `功能名称：${args.featureName || "未命名需求"}
-需求描述：
-${args.context || ""}
-
-内部测试设计草案：
-${args.analysis}
-
-已有用例：
-${args.existingRowsCsv}
-
-请补充缺失的高价值用例。`,
       },
     ],
   };

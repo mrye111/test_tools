@@ -1,9 +1,19 @@
 import { defineConfig } from 'vitest/config'
+import { fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      'react': resolve(__dirname, 'node_modules/react'),
+      'react-dom': resolve(__dirname, 'node_modules/react-dom'),
+    },
+  },
   server: {
     watch: {
       // 后端运行时文件变化不应触发前端整页刷新，否则生成中的页面状态会被清空。
@@ -18,6 +28,7 @@ export default defineConfig({
   },
 
   optimizeDeps: {
+    exclude: ['motion', 'motion/react', 'framer-motion'],
     include: [
       'codemirror',
       '@codemirror/state',

@@ -1,11 +1,11 @@
 import type { Express, Request, Response } from "express";
-import { callChatCompletion, parseAiRequestConfig, streamChatCompletion, testAiConnection } from "./ai.js";
-import { healCsvRow, normalizeGeneratedRows, renumberCaseRows, rowsToCases } from "./csv.js";
-import { buildExcelWorkbook, buildXmindWorkbook, type ExcelExportOptions } from "./exporters.js";
-import { buildAnalysisMessages, buildGenerateMessages, buildRepairMessages, buildSupplementMessages } from "./prompts.js";
+import { callChatCompletion, fetchAvailableModels, parseAiRequestConfig, testAiConnection } from "./ai.js";
+import { healCsvRow, rowsToCases } from "./csv.js";
+import { buildExcelExport, buildXmindWorkbook, type ExcelExportOptions } from "./exporters.js";
+import { runGenerationJob } from "./generation.js";
 import { TestCaseStore } from "./store.js";
 import type { GenerateJobRecord, JsonObject, TestSetRecord } from "./types.js";
-import { boolValue, isObject, makeId, nowIso, numberList, parseMaybeJsonObject, safeDownloadName, text } from "./utils.js";
+import { boolValue, isObject, makeId, nowIso, numberList, parseMaybeJsonObject, rowsInput, safeDownloadName, text } from "./utils.js";
 
 const store = new TestCaseStore();
 
@@ -23,12 +23,6 @@ function body(req: Request): JsonObject {
 
 function requireString(value: unknown): string {
   return text(value).trim();
-}
-
-function rowsInput(value: unknown): unknown[] {
-  if (!Array.isArray(value)) return [];
-  if (value.length > 0 && !Array.isArray(value[0]) && !isObject(value[0])) return [value];
-  return value;
 }
 
 function excelExportOptions(data: JsonObject): ExcelExportOptions {
@@ -66,9 +60,10 @@ function jobResponse(job: GenerateJobRecord): JsonObject {
     context: text(job.request.context),
     testType: text(job.request.testType ?? job.request.test_type, "functional"),
     language: text(job.request.language, "zh"),
-    coverageMode: coverageModeFrom(job.request),
-    maxCases: maxCasesFrom(job.request),
     generatedCount: job.generatedCount,
+    generatedCountRaw: job.generatedCountRaw,
+    addedCount: job.addedCount,
+    duplicatesFiltered: job.duplicatesFiltered,
     error: job.error,
     streamText: job.streamText ?? "",
     createdAt: job.createdAt,
@@ -80,225 +75,18 @@ function jobResponse(job: GenerateJobRecord): JsonObject {
   };
 }
 
-function coverageModeFrom(data: JsonObject): string {
-  const mode = text(data.coverageMode ?? data.coverage_mode, "standard");
-  return ["quick", "standard", "expert"].includes(mode) ? mode : "standard";
-}
-
-function maxCasesFrom(data: JsonObject): number {
-  const raw = Number(data.maxCases ?? data.max_cases ?? data.count);
-  if (!Number.isFinite(raw) || raw <= 0) {
-    const mode = coverageModeFrom(data);
-    if (mode === "quick") return 8;
-    if (mode === "expert") return 40;
-    return 20;
-  }
-  return Math.max(1, Math.min(100, Math.floor(raw)));
-}
-
-function isApiRequest(data: JsonObject): boolean {
-  return text(data.test_type ?? data.testType).toLowerCase() === "api";
-}
-
-function generationRequest(data: JsonObject, analysis = "") {
-  const config = parseAiRequestConfig(data);
-  const testType = text(data.test_type ?? data.testType, "functional");
-  const language = text(data.language, "zh");
-  const { runtime, messages } = buildGenerateMessages({
-    featureName: text(data.feature_name ?? data.featureName, "未命名需求"),
-    context: text(data.context),
-    testType,
-    language,
-    coverageMode: coverageModeFrom(data),
-    maxCases: maxCasesFrom(data),
-    analysis,
-    image: typeof data.image === "string" ? data.image : undefined,
-  });
-  return { config, runtime, messages };
-}
-
-async function runInternalAnalysis(data: JsonObject): Promise<string> {
-  const mode = coverageModeFrom(data);
-  if (mode === "quick") return "";
-  try {
-    const config = parseAiRequestConfig(data);
-    const { messages } = buildAnalysisMessages({
-      featureName: text(data.feature_name ?? data.featureName, "未命名需求"),
-      context: text(data.context),
-      testType: text(data.test_type ?? data.testType, "functional"),
-      language: text(data.language, "zh"),
-      coverageMode: mode,
-      maxCases: maxCasesFrom(data),
-    });
-    return await callChatCompletion(config, { messages, temperature: 0.1, maxTokens: 1800, responseJson: true });
-  } catch {
-    return "";
-  }
-}
-
-async function repairGeneratedCsv(data: JsonObject, rawCsv: string): Promise<{ header: string[]; rows: string[][]; csv: string } | null> {
-  if (!rawCsv.trim()) return null;
-  try {
-    const config = parseAiRequestConfig(data);
-    const { runtime, messages } = buildRepairMessages({
-      rawCsv,
-      testType: text(data.test_type ?? data.testType, "functional"),
-      language: text(data.language, "zh"),
-      maxCases: maxCasesFrom(data),
-    });
-    const csv = await callChatCompletion(config, { messages, temperature: 0.1, maxTokens: 6000 });
-    const normalized = normalizeGeneratedRows(csv, runtime.header, { maxRows: maxCasesFrom(data), api: isApiRequest(data) });
-    return { ...normalized, csv };
-  } catch {
-    return null;
-  }
-}
-
-function csvEscape(value: string): string {
-  if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
-}
-
-function rowsToCsvText(header: string[], rows: string[][]): string {
-  return [header, ...rows].map((row) => row.map((cell) => csvEscape(text(cell))).join(",")).join("\n");
-}
-
-function appendUniqueRows(baseRows: string[][], extraRows: string[][], maxRows: number, api: boolean): string[][] {
-  const seen = new Set(baseRows.map((row) => text(row[3]).trim().toLowerCase()).filter(Boolean));
-  const nextRows = [...baseRows];
-  for (const row of extraRows) {
-    const title = text(row[3]).trim().toLowerCase();
-    if (!title || seen.has(title)) continue;
-    seen.add(title);
-    nextRows.push(row);
-    if (nextRows.length >= maxRows) break;
-  }
-  return renumberCaseRows(nextRows.slice(0, maxRows), api);
-}
-
-async function supplementExpertRows(data: JsonObject, analysis: string, header: string[], rows: string[][]): Promise<string[][]> {
-  const maxRows = maxCasesFrom(data);
-  const remaining = maxRows - rows.length;
-  if (coverageModeFrom(data) !== "expert" || remaining <= 0 || !analysis.trim()) return rows;
-  try {
-    const config = parseAiRequestConfig(data);
-    const { runtime, messages } = buildSupplementMessages({
-      analysis,
-      existingRowsCsv: rowsToCsvText(header, rows),
-      featureName: text(data.feature_name ?? data.featureName, "未命名需求"),
-      context: text(data.context),
-      testType: text(data.test_type ?? data.testType, "functional"),
-      language: text(data.language, "zh"),
-      remaining,
-    });
-    const csv = await callChatCompletion(config, { messages, temperature: 0.2, maxTokens: 5000 });
-    const normalized = normalizeGeneratedRows(csv, runtime.header, { maxRows: remaining, api: isApiRequest(data) });
-    return appendUniqueRows(rows, normalized.rows, maxRows, isApiRequest(data));
-  } catch {
-    return rows;
-  }
-}
-
-function stableCsvPrefix(csv: string): string {
-  let inQuotes = false;
-  let lastCompleteIndex = -1;
-  for (let index = 0; index < csv.length; index += 1) {
-    const char = csv[index];
-    const next = csv[index + 1];
-    if (char === '"') {
-      if (inQuotes && next === '"') index += 1;
-      else inQuotes = !inQuotes;
-    } else if ((char === "\n" || char === "\r") && !inQuotes) {
-      if (char === "\r" && next === "\n") index += 1;
-      lastCompleteIndex = index + 1;
-    }
-  }
-  return lastCompleteIndex >= 0 ? csv.slice(0, lastCompleteIndex) : "";
-}
-
-function mergeJobRows(job: GenerateJobRecord, generatedRows: string[][]): string[][] {
-  const oldRows = rowsInput(job.request.rows).map((row) => healCsvRow(Array.isArray(row) ? row.map((cell) => text(cell)) : []));
-  if (job.mode === "supplement") return renumberCaseRows([...oldRows, ...generatedRows], isApiRequest(job.request));
-  if (job.mode === "regenerate_selected") {
-    const nextRows = [...oldRows];
-    generatedRows.forEach((row, index) => {
-      const target = job.selectedIndices[index];
-      if (target !== undefined) nextRows[target] = row;
-    });
-    return renumberCaseRows(nextRows, isApiRequest(job.request));
-  }
-  return renumberCaseRows(generatedRows, isApiRequest(job.request));
-}
-
-async function streamGenerateCsvText(
-  data: JsonObject,
-  onProgress: (snapshot: { csv: string; header: string[]; rows: string[][] }) => void,
-): Promise<{ header: string[]; rows: string[][]; csv: string; analysis: string }> {
-  const analysis = await runInternalAnalysis(data);
-  const { config, runtime, messages } = generationRequest(data, analysis);
-  let csv = "";
-  let lastSignature = "";
-
-  for await (const chunk of streamChatCompletion(config, { messages, temperature: 0.7, maxTokens: 6000 })) {
-    csv += chunk;
-    const stableCsv = stableCsvPrefix(csv);
-    if (!stableCsv) {
-      continue;
-    }
-
-    const partial = normalizeGeneratedRows(stableCsv, runtime.header, { maxRows: maxCasesFrom(data), api: isApiRequest(data) });
-    const lastRow = partial.rows.at(-1)?.join("|") ?? "";
-    const signature = `${partial.header.join("|")}::${partial.rows.length}::${lastRow}`;
-    if (signature !== lastSignature) {
-      lastSignature = signature;
-      onProgress({ csv, header: partial.header, rows: partial.rows });
-    }
-  }
-
-  const normalized = normalizeGeneratedRows(csv, runtime.header, { maxRows: maxCasesFrom(data), api: isApiRequest(data) });
-  return { ...normalized, csv, analysis };
-}
-
-async function runGenerationJob(jobId: string): Promise<void> {
-  const job = store.getJob(jobId);
-  if (!job) return;
-  store.updateJob(jobId, { status: "running", startedAt: nowIso(), streamText: "" });
-  try {
-    let result = await streamGenerateCsvText(job.request, (snapshot) => {
-      const liveRows = mergeJobRows(job, snapshot.rows);
-      store.updateJob(jobId, {
-        streamText: snapshot.csv,
-        generatedCount: liveRows.length,
-        resultHeader: snapshot.header,
-        resultRows: liveRows,
-      });
-    });
-    if (result.rows.length === 0 && result.csv.trim()) {
-      const repaired = await repairGeneratedCsv(job.request, result.csv);
-      if (repaired && repaired.rows.length > 0) result = { ...repaired, analysis: result.analysis };
-    }
-
-    const supplementedRows = await supplementExpertRows(job.request, result.analysis, result.header, result.rows);
-    const nextRows = mergeJobRows(job, supplementedRows);
-
-    store.updateJob(jobId, {
-      status: "completed",
-      generatedCount: nextRows.length,
-      resultHeader: result.header,
-      resultRows: nextRows,
-      streamText: result.csv,
-      finishedAt: nowIso(),
-      error: "",
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    store.updateJob(jobId, { status: "failed", error: message, finishedAt: nowIso() });
-  }
-}
-
 export function registerTestCaseRoutes(app: Express): void {
   app.get("/api/projects", (_req, res) => {
-    ok(res, { data: store.listProjects() });
+    ok(res, {
+      data: store.listProjects().map((project) => {
+        const testSets = store.listTestSets(project.id);
+        return {
+          ...project,
+          testSetCount: testSets.length,
+          testCaseCount: testSets.reduce((total, testSet) => total + testSet.rows.length, 0),
+        };
+      }),
+    });
   });
 
   app.post("/api/projects", (req, res) => {
@@ -370,32 +158,41 @@ export function registerTestCaseRoutes(app: Express): void {
   app.post("/api/test-cases", (req, res) => {
     const data = body(req);
     const testSetId = requireString(data.testSetId);
-    if (!requireString(data.id) || !testSetId) return fail(res, "id and testSetId are required");
+    if (!testSetId) return fail(res, "testSetId is required");
+    const testSet = store.getTestSet(testSetId);
+    if (!testSet) return fail(res, "测试用例集不存在", 404);
+    const row = healCsvRow(Array.isArray(data.row) ? data.row.map((cell) => text(cell)) : []);
+    const id = text(data.id, `${testSetId}_case_${Date.now()}`);
     store.upsertTestCase({
-      id: text(data.id),
+      id,
       testSetId,
-      caseId: text(data.caseId ?? data.id),
-      module: text(data.module),
-      testPoint: text(data.testPoint),
-      title: text(data.title),
-      priority: text(data.priority),
-      precondition: text(data.precondition ?? data.preconditions),
-      steps: text(data.steps),
-      expectedResult: text(data.expectedResult ?? data.expected),
-      row: healCsvRow(Array.isArray(data.row) ? data.row.map((cell) => text(cell)) : []),
+      caseId: text(data.caseId ?? data.id ?? row[0]),
+      module: text(data.module ?? row[1]),
+      testPoint: text(data.testPoint ?? row[2]),
+      title: text(data.title ?? row[3]),
+      priority: text(data.priority ?? row[4], "中"),
+      precondition: text(data.precondition ?? data.preconditions ?? row[5]),
+      steps: text(data.steps ?? row[6]),
+      expectedResult: text(data.expectedResult ?? data.expected ?? row[7]),
+      row,
       ...data,
     });
-    ok(res);
+    ok(res, { data: store.getTestSet(testSetId) ?? testSet });
   });
 
   app.delete("/api/test-cases/:caseId", (req, res) => {
-    store.deleteTestCase(req.params.caseId);
-    ok(res);
+    const requestedTestSetId = text(req.query.test_set_id ?? req.query.testSetId);
+    const testSetId = store.getTestSetIdForCase(req.params.caseId, requestedTestSetId || undefined);
+    if (!testSetId) return fail(res, "测试用例不存在", 404);
+    store.deleteTestCase(req.params.caseId, testSetId);
+    ok(res, { data: store.getTestSet(testSetId) });
   });
 
   app.get("/api/test-cases/:caseId", (req, res) => {
-    if (!projectIdFrom(req)) return fail(res, "project_id is required");
-    const testCase = store.getTestCase(req.params.caseId);
+    const data = body(req);
+    if (!projectIdFrom(req, data)) return fail(res, "project_id is required");
+    const requestedTestSetId = text(req.query.test_set_id ?? req.query.testSetId);
+    const testCase = store.getTestCase(req.params.caseId, requestedTestSetId || undefined);
     if (!testCase) return fail(res, "测试用例不存在", 404);
     ok(res, { data: testCase });
   });
@@ -431,43 +228,20 @@ export function registerTestCaseRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/generate", async (req, res) => {
+  app.post("/api/model-config/models", async (req, res) => {
     try {
-      const data = body(req);
-      const config = parseAiRequestConfig(data);
-      const testType = text(data.test_type ?? data.testType, "functional");
-      const language = text(data.language, "zh");
-      const { messages } = buildGenerateMessages({
-        featureName: text(data.feature_name ?? data.featureName, "未命名需求"),
-        context: text(data.context),
-        testType,
-        language,
-        coverageMode: coverageModeFrom(data),
-        maxCases: maxCasesFrom(data),
-        image: typeof data.image === "string" ? data.image : undefined,
-      });
-      res.status(200);
-      res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      let lineBuffer = "";
-      for await (const chunk of streamChatCompletion(config, { messages, temperature: 0.7, maxTokens: 6000 })) {
-        lineBuffer += chunk;
-        while (lineBuffer.includes("\n")) {
-          const index = lineBuffer.indexOf("\n");
-          res.write(lineBuffer.slice(0, index + 1));
-          lineBuffer = lineBuffer.slice(index + 1);
-        }
-      }
-      if (lineBuffer) res.write(lineBuffer);
-      res.end();
+      const models = await fetchAvailableModels(parseAiRequestConfig(body(req)));
+      ok(res, { data: models });
     } catch (error) {
-      res.status(400).type("text/plain; charset=utf-8").send(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      fail(res, error instanceof Error ? error.message : String(error), 500);
     }
   });
 
   app.post("/api/generate-jobs", (req, res) => {
     const data = body(req);
     const id = makeId("job");
-    const projectId = projectIdFrom(req, data) || "tool-project";
+    const projectId = projectIdFrom(req, data);
+    if (!projectId || !store.projectExists(projectId)) return fail(res, "项目不存在", 404);
     const testSetId = text(data.testSetId ?? data.test_set_id, `tool-result-${id}`);
     const mode = text(data.mode, "create") as GenerateJobRecord["mode"];
     if (!["create", "regenerate_all", "supplement", "regenerate_selected"].includes(mode)) return fail(res, "mode 参数无效");
@@ -477,6 +251,26 @@ export function registerTestCaseRoutes(app: Express): void {
     const selectedIndices = numberList(data.selectedIndices);
     if (mode === "regenerate_selected" && selectedIndices.length === 0) return fail(res, "selectedIndices 不能为空");
     const now = nowIso();
+    if (mode === "create") {
+      const testSetName = text(data.testSetName ?? data.featureName, "未命名用例集").trim();
+      store.upsertTestSet({
+        id: testSetId,
+        projectId,
+        name: testSetName,
+        featureName: testSetName,
+        testType: text(data.testType, "functional"),
+        language: text(data.language, "zh"),
+        context: text(data.context),
+        status: "queued",
+        generationJobId: id,
+        error: "",
+        header: [],
+        rows: [],
+        createdAt: now,
+        updatedAt: now,
+        ownerId: null,
+      });
+    }
     const job: GenerateJobRecord = {
       id,
       projectId,
@@ -494,7 +288,7 @@ export function registerTestCaseRoutes(app: Express): void {
       updatedAt: now,
     };
     store.createJob(job);
-    void runGenerationJob(id);
+    void runGenerationJob(id, store);
     ok(res, { data: { jobId: id, status: "queued", testSetId, mode } });
   });
 
@@ -572,23 +366,23 @@ export function registerTestCaseRoutes(app: Express): void {
     const data = body(req);
     const featureName = text(data.featureName, "测试用例");
     const rows = rowsInput(data.rows) as never[];
-    const workbook = buildExcelWorkbook([{ name: "测试用例", rows }], excelExportOptions(data));
-    res.setHeader("Content-Type", "application/vnd.ms-excel; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${safeDownloadName(featureName)}.xls`);
-    res.send(workbook);
+    const workbook = buildExcelExport([{ name: "测试用例", rows }], excelExportOptions(data));
+    res.setHeader("Content-Type", workbook.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${safeDownloadName(featureName)}.${workbook.extension}`);
+    res.send(workbook.buffer);
   });
 
   app.post("/api/export/excel-all", (req, res) => {
     const data = body(req);
     const projectName = text(data.projectName, "测试用例");
     const testSets = Array.isArray(data.testSets) ? data.testSets.filter(isObject) : [];
-    const workbook = buildExcelWorkbook(
+    const workbook = buildExcelExport(
       testSets.map((set) => ({ name: text(set.featureName, "测试用例"), rows: rowsInput(set.rows) as never[] })),
       excelExportOptions(data),
     );
-    res.setHeader("Content-Type", "application/vnd.ms-excel; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${safeDownloadName(projectName)}.xls`);
-    res.send(workbook);
+    res.setHeader("Content-Type", workbook.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${safeDownloadName(projectName)}.${workbook.extension}`);
+    res.send(workbook.buffer);
   });
 
   app.post("/api/export/xmind", (req, res) => {

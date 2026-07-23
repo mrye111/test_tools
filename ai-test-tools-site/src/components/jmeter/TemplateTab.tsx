@@ -58,7 +58,7 @@ function TemplateCard({ template, onClick }: { template: JmeterTemplate; onClick
       onClick={onClick}
       className="motion-card group flex items-start gap-3 rounded-2xl p-4 text-left"
     >
-      <span className="relative z-[1] flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[rgba(37,99,235,0.08)] font-mono text-[11px] font-bold tracking-[-0.04em] text-accent transition-all duration-300 group-hover:bg-accent group-hover:text-white">
+      <span className="relative z-[1] flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 font-mono text-[11px] font-bold tracking-[-0.04em] text-accent transition-all duration-300 group-hover:bg-accent group-hover:text-white">
         {template.icon}
       </span>
       <div className="min-w-0">
@@ -68,7 +68,7 @@ function TemplateCard({ template, onClick }: { template: JmeterTemplate; onClick
         <div className="relative z-[1] mt-1 text-xs leading-relaxed text-muted">
           {template.description}
         </div>
-        <div className="relative z-[1] mt-2 inline-block rounded-full bg-[rgba(37,99,235,0.08)] px-2 py-0.5 text-[10px] font-medium text-accent">
+        <div className="relative z-[1] mt-2 inline-block rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
           {template.samplerType}
         </div>
       </div>

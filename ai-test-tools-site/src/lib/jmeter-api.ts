@@ -1,3 +1,9 @@
+import { buildUrl, parseJson, downloadBlob } from './httpClient'
+import type { RuntimeAiConfig } from '../shared/api-types'
+
+export type { AiConfig, RuntimeAiConfig, StoredModelConfig, UniversalProvider } from '../shared/api-types'
+export { getPreferredAiConfig, getPrimaryModelLabel, toAiConfig } from '../shared/api-types'
+
 export type JmeterToolSchemaProperty = {
   type?: string
   description?: string
@@ -23,9 +29,33 @@ export type JmeterHealth = {
   tools: number
 }
 
-export type ToolCallResult = {
-  content?: Array<{ type: 'text'; text: string }>
-  error?: string
+/** One construction step of a server-side plan build. */
+export type JmeterBuildStep = {
+  tool: string
+  args?: Record<string, unknown>
+}
+
+/** Template build request for POST /api/jmeter/build. */
+export type JmeterBuildSpec = {
+  planName: string
+  seed: string
+  steps: JmeterBuildStep[]
+}
+
+export type JmeterBuildResponse = {
+  ok: true
+  planName: string
+  path: string
+  filename: string
+  saveMessage: string
+  validation: string
+  tree: string
+  steps: Array<{ tool: string; text: string }>
+}
+
+export type JmeterBuildFailure = {
+  ok: false
+  error: { code: string; message: string; step?: string }
 }
 
 export type AiConfigStatus = {
@@ -36,12 +66,6 @@ export type AiConfigStatus = {
   required?: string[]
 }
 
-export type AiModelConfig = {
-  base_url: string
-  api_key: string
-  model: string
-}
-
 export type AiGenerateToolCall = {
   name: string
   arguments: Record<string, unknown>
@@ -50,6 +74,7 @@ export type AiGenerateToolCall = {
 
 export type AiGenerateResponse = {
   ok: boolean
+  provider?: string
   model: string
   summary: string
   notes?: string[]
@@ -63,32 +88,20 @@ export type AiGenerateResponse = {
   error?: string
 }
 
-const DEFAULT_JMETER_API_BASE = 'http://localhost:3000'
-
-function getApiBase() {
-  const base = import.meta.env.VITE_JMETER_API_BASE ?? DEFAULT_JMETER_API_BASE
-  return base.replace(/\/$/, '')
+export type JmeterTreeNode = {
+  path: string
+  name: string
+  testClass: string
+  enabled: boolean
+  depth: number
+  children: JmeterTreeNode[]
 }
 
-function buildUrl(path: string) {
-  return `${getApiBase()}${path}`
-}
-
-async function parseJson<T>(response: Response): Promise<T> {
-  try {
-    return await response.json() as T
-  } catch {
-    throw new Error(`响应解析失败：${response.status}`)
-  }
-}
-
-function getToolText(data: ToolCallResult) {
-  const text = data.content?.[0]?.text ?? ''
-  if (text.startsWith('Error')) {
-    throw new Error(text)
-  }
-  return text
-}
+export type AiGenerateStreamEvent =
+  | { type: 'status'; stepId: string; phase: 'start' | 'done'; title: string; content: string }
+  | { type: 'tool'; stepId: string; phase: 'start' | 'done'; title: string; content: string; toolName: string; arguments: Record<string, unknown> }
+  | { type: 'done'; title: string; content: string; result: AiGenerateResponse }
+  | { type: 'error'; title: string; content: string; stepId?: string }
 
 function getFilename(path: string) {
   const parts = path.split(/[\\/]/).filter(Boolean)
@@ -119,51 +132,135 @@ export async function getJmeterAiConfig() {
   return parseJson<AiConfigStatus>(response)
 }
 
-export async function callJmeterTool(name: string, args: Record<string, unknown> = {}) {
-  const response = await fetch(buildUrl(`/tools/${encodeURIComponent(name)}`), {
+export async function buildJmeterPlan(spec: JmeterBuildSpec): Promise<JmeterBuildResponse> {
+  const response = await fetch(buildUrl('/api/jmeter/build'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(args),
+    body: JSON.stringify(spec),
   })
 
-  const data = await parseJson<ToolCallResult>(response)
+  const data = await parseJson<JmeterBuildResponse | JmeterBuildFailure>(response)
 
-  if (!response.ok) {
-    throw new Error(data.error ?? `调用 ${name} 失败：${response.status}`)
-  }
-
-  if (data.error) {
-    throw new Error(data.error)
-  }
-
-  return getToolText(data)
-}
-
-export async function generateJmeterWithAi(args: {
-  prompt: string
-  ai_config: AiModelConfig
-  output_path?: string
-  temperature?: number
-  max_tokens?: number
-}) {
-  const response = await fetch(buildUrl('/ai/generate-jmeter'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(args),
-  })
-
-  const data = await parseJson<AiGenerateResponse>(response)
-
-  if (!response.ok || data.ok === false) {
-    throw new Error(data.error ?? `AI 生成 JMX 失败：${response.status}`)
+  if (!response.ok || !data.ok) {
+    const message = data.ok === false ? data.error.message : `生成 JMX 失败：${response.status}`
+    throw new Error(message)
   }
 
   return data
 }
 
-export function extractSavedPath(text: string) {
-  const match = text.match(/^Test plan saved:\s*(.+)$/m)
-  return match?.[1]?.trim() ?? null
+function parseTreeLine(line: string) {
+  const trimmed = line.trim()
+  if (!trimmed) return null
+
+  const match = trimmed.match(/^((?:\/\d+)+)\s+\|\s+(.+?)\s+\|\s+(.+?)\s+\|\s+enabled=(true|false)$/)
+  if (!match) return null
+
+  const [, path, name, testClass, enabledText] = match
+  const depth = path.split('/').filter(Boolean).length - 1
+  return {
+    path,
+    name,
+    testClass,
+    enabled: enabledText === 'true',
+    depth,
+  }
+}
+
+export function parseJmeterTree(text: string): JmeterTreeNode[] {
+  const flatNodes = text
+    .split(/\r?\n/)
+    .map(parseTreeLine)
+    .filter((node): node is NonNullable<ReturnType<typeof parseTreeLine>> => node !== null)
+
+  const rootNodes: JmeterTreeNode[] = []
+  const nodeMap = new Map<string, JmeterTreeNode>()
+
+  for (const flatNode of flatNodes) {
+    const node: JmeterTreeNode = {
+      ...flatNode,
+      children: [],
+    }
+    nodeMap.set(node.path, node)
+
+    const parentPath = node.path.replace(/\/\d+$/, '')
+    if (!parentPath) {
+      rootNodes.push(node)
+      continue
+    }
+
+    const parent = nodeMap.get(parentPath)
+    if (parent) {
+      parent.children.push(node)
+    } else {
+      rootNodes.push(node)
+    }
+  }
+
+  return rootNodes
+}
+
+export async function generateJmeterWithAiStream(
+  args: {
+    prompt: string
+    ai_config: RuntimeAiConfig
+    output_path?: string
+    max_tokens?: number
+  },
+  onEvent: (event: AiGenerateStreamEvent) => void | Promise<void>,
+) {
+  const response = await fetch(buildUrl('/ai/generate-jmeter/stream'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+  })
+
+  if (!response.ok || !response.body) {
+    throw new Error(`AI 流式生成失败：${response.status}`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let finalResult: AiGenerateResponse | null = null
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    let separatorIndex = buffer.indexOf('\n\n')
+    while (separatorIndex >= 0) {
+      const rawBlock = buffer.slice(0, separatorIndex)
+      buffer = buffer.slice(separatorIndex + 2)
+
+      const lines = rawBlock.split(/\r?\n/)
+      const eventName = lines.find((line) => line.startsWith('event:'))?.slice(6).trim() ?? ''
+      const dataLines = lines
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+      const dataText = dataLines.join('\n')
+
+      if (eventName === 'ai-event' && dataText) {
+        const event = JSON.parse(dataText) as AiGenerateStreamEvent
+        await onEvent(event)
+        if (event.type === 'done') {
+          finalResult = event.result
+        }
+        if (event.type === 'error') {
+          throw new Error(event.content)
+        }
+      }
+
+      separatorIndex = buffer.indexOf('\n\n')
+    }
+  }
+
+  if (!finalResult) {
+    throw new Error('AI 流式生成未返回最终结果')
+  }
+
+  return finalResult
 }
 
 export function createJmxDownloadUrl(path: string) {
@@ -184,10 +281,5 @@ export async function downloadGeneratedJmx(path: string, filename?: string) {
   }
 
   const blob = await response.blob()
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename ?? getFilename(path)
-  anchor.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, filename ?? getFilename(path))
 }

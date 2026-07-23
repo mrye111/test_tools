@@ -18,7 +18,8 @@ const renderWithRouter = (ui: React.ReactElement) =>
 describe('ToolCard', () => {
   it('renders the tool title', () => {
     renderWithRouter(<ToolCard tool={mockTool} />)
-    expect(screen.getByText('Jmeter脚本')).toBeInTheDocument()
+    // 卡片标题同时用于正文与悬浮 caption，至少出现一次即可
+    expect(screen.getAllByText('Jmeter脚本').length).toBeGreaterThan(0)
   })
 
   it('renders the tool description', () => {

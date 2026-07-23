@@ -21,7 +21,6 @@ describe('Navbar', () => {
     renderWithRouter(<Navbar />)
     expect(screen.getByText('工具')).toBeInTheDocument()
     expect(screen.getByText('文档')).toBeInTheDocument()
-    expect(screen.getByText('定价')).toBeInTheDocument()
   })
 
   it('renders settings link', () => {

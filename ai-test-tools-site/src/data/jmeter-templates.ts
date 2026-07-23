@@ -207,3 +207,32 @@ export const jmeterTemplates: JmeterTemplate[] = [
     ],
   },
 ]
+
+export const templateParamCards: Record<string, Array<{ title: string; description: string; keys: string[] }>> = {
+  'jdbc-stress': [
+    { title: '数据库连接', description: '配置 JDBC URL、驱动、账号和连接池。', keys: ['db_url', 'db_driver', 'db_user', 'db_pass', 'pool_max'] },
+    { title: 'SQL 语句', description: '填写要执行并采样的查询或脚本。', keys: ['sql'] },
+  ],
+  'tcp-stress': [
+    { title: '连接配置', description: '配置 TCP 服务地址、端口和连接复用方式。', keys: ['server', 'port', 're_use'] },
+    { title: '发送数据', description: '填写每次采样发送给服务端的内容。', keys: ['request_data'] },
+  ],
+  'smtp-stress': [
+    { title: '邮件服务器', description: '配置 SMTP 地址、端口和安全连接。', keys: ['server', 'port', 'use_ssl'] },
+    { title: '邮件内容', description: '配置发件人、收件人、标题和正文。', keys: ['sender', 'receiver', 'subject', 'body'] },
+  ],
+  'ftp-stress': [
+    { title: 'FTP 连接', description: '配置文件服务器、账号、端口和传输动作。', keys: ['server', 'port', 'username', 'password', 'ftp_action'] },
+    { title: '文件路径', description: '配置远程文件和本地文件路径。', keys: ['remote_file', 'local_file'] },
+  ],
+  'ldap-stress': [
+    { title: '目录连接', description: '配置 LDAP 服务地址、端口和 SSL。', keys: ['server', 'port', 'use_ssl'] },
+    { title: '查询配置', description: '配置搜索基、过滤器和返回属性。', keys: ['search_base', 'search_filter', 'attributes'] },
+  ],
+  'jsr223-script': [
+    { title: '脚本配置', description: '选择脚本语言，并填写 JSR223 执行内容。', keys: ['language', 'script'] },
+  ],
+  'system-command': [
+    { title: '命令配置', description: '配置命令、参数、工作目录和解释器。', keys: ['command', 'command_params', 'working_dir', 'interpreter'] },
+  ],
+}

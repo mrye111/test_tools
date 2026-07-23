@@ -1,319 +1,338 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  createGenerateJob,
-  getTestCaseExportFormats,
-  loadStoredModelConfig,
-  waitForGenerateJob,
-} from '../lib/testcase-api'
+import * as testcaseApi from '../lib/testcase-api'
 import { TestCasePage } from './TestCasePage'
 
 vi.mock('../lib/testcase-api', () => ({
   createGenerateJob: vi.fn(),
+  createTestCaseProject: vi.fn(),
+  deleteTestCase: vi.fn(),
+  deleteTestCaseProject: vi.fn(),
+  deleteTestCaseSet: vi.fn(),
   exportTestCaseExcel: vi.fn(),
+  exportTestCaseExcelAll: vi.fn(),
   exportTestCaseXmind: vi.fn(),
-  getTestCaseExportFormats: vi.fn(),
+  exportTestCaseXmindAll: vi.fn(),
+  listTestCaseProjects: vi.fn(),
+  listTestCaseSets: vi.fn(),
   loadStoredModelConfig: vi.fn(),
-  toTestCaseAiConfig: vi.fn((config) => ({
-    base_url: config.baseUrl,
-    api_key: config.apiKey,
-    model: config.modelId,
-  })),
+  updateTestCaseProject: vi.fn(),
+  upsertTestCase: vi.fn(),
   waitForGenerateJob: vi.fn(),
 }))
 
-const modelConfig = {
-  name: '测试模型',
-  baseUrl: 'https://example.test/v1',
-  apiKey: 'test-key',
-  modelId: 'test-model',
-  temperature: 0.2,
+const project = {
+  id: 'project-order',
+  name: '订单中心',
+  createdAt: '2026-07-10T01:00:00.000Z',
+  testSetCount: 3,
+  testCaseCount: 21,
+}
+
+const completedSet = {
+  id: 'set-login',
+  projectId: project.id,
+  name: '登录与会话管理',
+  featureName: '登录与会话管理',
+  testType: 'functional' as const,
+  language: 'zh' as const,
+  context: '登录需求',
+  status: 'completed' as const,
+  header: ['用例编号', '功能模块', '功能测试点', '用例标题', '优先级', '前置条件', '测试步骤', '预期结果'],
+  rows: [['TC001', '登录', '正常登录', '正确账号登录成功', '高', '用户已注册', '输入账号密码', '进入首页']],
+  createdAt: '2026-07-10T01:00:00.000Z',
+  updatedAt: '2026-07-10T01:01:00.000Z',
 }
 
 describe('TestCasePage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    window.localStorage.clear()
-    vi.mocked(loadStoredModelConfig).mockReturnValue(modelConfig)
-    vi.mocked(getTestCaseExportFormats).mockResolvedValue([
-      {
-        key: 'default',
-        name: '默认测试用例格式',
-        description: '默认格式',
-      },
+    vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([])
+    vi.mocked(testcaseApi.listTestCaseSets).mockResolvedValue([])
+    vi.mocked(testcaseApi.loadStoredModelConfig).mockReturnValue({
+      id: 'model-1',
+      name: '测试模型',
+      providerType: 'openrouter',
+      baseUrl: 'https://example.test/v1',
+      apiKey: 'test-key',
+      model: 'test-model',
+      apiFormat: 'openai_responses',
+    })
+    vi.mocked(testcaseApi.waitForGenerateJob).mockImplementation(async () => new Promise(() => undefined))
+  })
+
+  it('没有项目时在页面中央显示添加项目入口', async () => {
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+
+    expect(await screen.findByText('还没有测试用例项目')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '添加项目' })).toBeInTheDocument()
+    expect(screen.queryByText('任务列表')).not.toBeInTheDocument()
+  })
+
+  it('创建项目后直接进入该项目的用例集页面', async () => {
+    vi.mocked(testcaseApi.createTestCaseProject).mockResolvedValue(project)
+    vi.mocked(testcaseApi.listTestCaseProjects)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([project])
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '添加项目' }))
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '订单中心' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '添加项目' }))
+
+    await waitFor(() => expect(testcaseApi.createTestCaseProject).toHaveBeenCalledWith('订单中心'))
+    expect(await screen.findByRole('heading', { name: '订单中心' })).toBeInTheDocument()
+    expect(await screen.findByText('这个项目还没有用例集')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('以大卡片展示项目和当前测试用例条数', async () => {
+    vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([project])
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+
+    const card = await screen.findByRole('button', { name: '订单中心' })
+    expect(within(card).getByText('3 个用例集')).toBeInTheDocument()
+    expect(within(card).getByText('21 条用例')).toBeInTheDocument()
+  })
+
+  it('项目卡片支持重命名，提交后调用更新接口', async () => {
+    vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([project])
+    vi.mocked(testcaseApi.updateTestCaseProject).mockResolvedValue(undefined)
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '重命名项目 订单中心' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: '编辑项目' })).toBeInTheDocument()
+    const input = within(dialog).getByLabelText('项目名称')
+    expect(input).toHaveValue('订单中心')
+    fireEvent.change(input, { target: { value: '订单中心二期' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存修改' }))
+
+    await waitFor(() => expect(testcaseApi.updateTestCaseProject).toHaveBeenCalledWith(project.id, '订单中心二期'))
+    expect(testcaseApi.createTestCaseProject).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('删除项目前展示级联数量，确认后调用删除接口', async () => {
+    vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([project])
+    vi.mocked(testcaseApi.deleteTestCaseProject).mockResolvedValue(undefined)
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '删除项目 订单中心' }))
+
+    expect(await screen.findByText('删除这个项目？')).toBeInTheDocument()
+    expect(screen.getByText('3')).toBeInTheDocument()
+    expect(screen.getByText('21')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
+
+    await waitFor(() => expect(testcaseApi.deleteTestCaseProject).toHaveBeenCalledWith(project.id))
+    await waitFor(() => expect(screen.queryByText('删除这个项目？')).not.toBeInTheDocument())
+  })
+
+  it('用例集列表展示生成状态，完成项可打开维护窗口', async () => {
+    vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([project])
+    vi.mocked(testcaseApi.listTestCaseSets).mockResolvedValue([
+      completedSet,
+      { ...completedSet, id: 'set-thinking', name: '支付流程', status: 'running', rows: [] },
+      { ...completedSet, id: 'set-running', name: '发货流程', status: 'running' },
+      { ...completedSet, id: 'set-failed', name: '退款流程', status: 'failed', rows: [], error: '模型请求超时' },
     ])
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '订单中心' }))
+
+    expect(await screen.findByText('生成完成')).toBeInTheDocument()
+    expect(screen.getByText('AI 分析中')).toBeInTheDocument()
+    expect(screen.getByText('生成中')).toBeInTheDocument()
+    expect(screen.getByText('生成失败')).toBeInTheDocument()
+    expect(screen.getByText('模型请求超时')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^登录与会话管理/ }))
+    expect(await screen.findByText('测试用例维护')).toBeInTheDocument()
+    expect(screen.getByText('正确账号登录成功')).toBeInTheDocument()
+    expect(screen.getByText(/共 1 条用例/)).toBeInTheDocument()
   })
 
-  it('离开用例生成页面后再次进入，会从本地恢复已创建的任务', async () => {
-    vi.mocked(createGenerateJob).mockResolvedValue({
-      jobId: 'job_persisted',
-      status: 'queued',
-      testSetId: 'tool-result-job_persisted',
-      mode: 'create',
+  it('维护窗口支持补充需求、新增用例和删除已有用例', async () => {
+    const addedSet = {
+      ...completedSet,
+      rows: [
+        ...completedSet.rows,
+        ['TC002', '通讯录', '成员搜索', '按姓名搜索成员', '中', '已登录', '1. 输入姓名', '1. 展示成员'],
+      ],
+    }
+    const deletedSet = { ...completedSet, rows: [] }
+    vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([project])
+    vi.mocked(testcaseApi.listTestCaseSets).mockResolvedValue([completedSet])
+    vi.mocked(testcaseApi.createGenerateJob).mockResolvedValue({ jobId: 'job-supplement', status: 'queued', testSetId: completedSet.id, mode: 'supplement' })
+    vi.mocked(testcaseApi.upsertTestCase).mockResolvedValue(addedSet)
+    vi.mocked(testcaseApi.deleteTestCase).mockResolvedValue(deletedSet)
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '订单中心' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^登录与会话管理/ }))
+
+    fireEvent.click(await screen.findByRole('button', { name: '补充需求' }))
+    fireEvent.change(screen.getByLabelText('本次补充说明'), { target: { value: '补充异常登录场景' } })
+    fireEvent.click(screen.getByRole('button', { name: '开始补充' }))
+    await waitFor(() => expect(testcaseApi.createGenerateJob).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'supplement',
+      testSetId: completedSet.id,
+      rows: completedSet.rows,
+      context: '补充异常登录场景',
+    })))
+
+    fireEvent.click(screen.getByRole('button', { name: '新增用例' }))
+    fireEvent.change(screen.getByLabelText('功能模块'), { target: { value: '通讯录' } })
+    fireEvent.change(screen.getByLabelText('功能测试点'), { target: { value: '成员搜索' } })
+    fireEvent.change(screen.getByLabelText('用例标题'), { target: { value: '按姓名搜索成员' } })
+    fireEvent.change(screen.getByLabelText('测试步骤'), { target: { value: '1. 输入姓名' } })
+    fireEvent.change(screen.getByLabelText('预期结果'), { target: { value: '1. 展示成员' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存用例' }))
+    await waitFor(() => expect(testcaseApi.upsertTestCase).toHaveBeenCalledWith(expect.objectContaining({
+      testSetId: completedSet.id,
+      row: expect.arrayContaining(['通讯录', '成员搜索', '按姓名搜索成员']),
+    })))
+
+    fireEvent.click(screen.getByRole('button', { name: '删除用例 TC001' }))
+    expect(await screen.findByText('删除这条用例？')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
+    await waitFor(() => expect(testcaseApi.deleteTestCase).toHaveBeenCalledWith(completedSet.id, 'TC001'))
+  })
+
+  it('补充需求生成内容全部重复时提示已过滤数量', async () => {
+    vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([project])
+    vi.mocked(testcaseApi.listTestCaseSets).mockResolvedValue([completedSet])
+    vi.mocked(testcaseApi.createGenerateJob).mockResolvedValue({ jobId: 'job-supplement-dup', status: 'queued', testSetId: completedSet.id, mode: 'supplement' })
+    vi.mocked(testcaseApi.waitForGenerateJob).mockResolvedValue({
+      jobId: 'job-supplement-dup',
+      status: 'completed',
+      mode: 'supplement',
+      testSetId: completedSet.id,
+      projectId: project.id,
+      generatedCount: 1,
+      generatedCountRaw: 3,
+      addedCount: 0,
+      duplicatesFiltered: 3,
+      error: '',
+      createdAt: '2026-07-10T01:00:00.000Z',
+      resultHeader: completedSet.header,
+      resultRows: completedSet.rows,
     })
-    vi.mocked(waitForGenerateJob).mockImplementation(async () => new Promise(() => undefined))
 
-    const firstRender = render(<TestCasePage />, { wrapper: BrowserRouter })
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '订单中心' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^登录与会话管理/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '补充需求' }))
+    fireEvent.change(screen.getByLabelText('本次补充说明'), { target: { value: '补充异常登录场景' } })
+    fireEvent.click(screen.getByRole('button', { name: '开始补充' }))
 
-    fireEvent.click(screen.getByRole('button', { name: /新建用例/ }))
-    fireEvent.click(screen.getByRole('button', { name: /开始生成/ }))
+    expect(await screen.findByText('生成的 3 条用例与已有用例重复，已自动过滤')).toBeInTheDocument()
+  })
 
+  it('API 测试模式下可粘贴 Swagger 文档生成，上下文包含标记且需求描述可留空', async () => {
+    vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([project])
+    vi.mocked(testcaseApi.listTestCaseSets).mockResolvedValue([])
+    vi.mocked(testcaseApi.createGenerateJob).mockResolvedValue({ jobId: 'job-api', status: 'queued', testSetId: 'set-api', mode: 'create' })
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '订单中心' }))
+    fireEvent.click(await screen.findByRole('button', { name: '添加用例集' }))
+
+    // 功能测试模式不显示 Swagger 输入区
+    expect(screen.queryByLabelText('Swagger/OpenAPI 文档')).not.toBeInTheDocument()
+
+    // 切换测试类型为 API 测试
+    fireEvent.click(screen.getByRole('button', { name: '功能测试' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'API 测试' }))
+
+    const swaggerInput = await screen.findByLabelText('Swagger/OpenAPI 文档')
+    fireEvent.change(swaggerInput, { target: { value: '{"openapi":"3.0.0","paths":{"/login":{"post":{}}}}' } })
+    fireEvent.change(screen.getByLabelText('用例集名称'), { target: { value: '登录接口' } })
+    fireEvent.click(screen.getByRole('button', { name: '开始 AI 生成' }))
+
+    await waitFor(() => expect(testcaseApi.createGenerateJob).toHaveBeenCalledWith(expect.objectContaining({
+      testSetName: '登录接口',
+      testType: 'api',
+    })))
+    const request = vi.mocked(testcaseApi.createGenerateJob).mock.calls[0][0]
+    expect(request.context).toContain('【Swagger/OpenAPI 文档】')
+    expect(request.context).toContain('"openapi":"3.0.0"')
+  })
+
+  it('Swagger 超过 8 万字符且不是 JSON 时阻止提交并提示', async () => {
+    vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([project])
+    vi.mocked(testcaseApi.listTestCaseSets).mockResolvedValue([])
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '订单中心' }))
+    fireEvent.click(await screen.findByRole('button', { name: '添加用例集' }))
+    fireEvent.click(screen.getByRole('button', { name: '功能测试' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'API 测试' }))
+
+    fireEvent.change(screen.getByLabelText('用例集名称'), { target: { value: '登录接口' } })
+    fireEvent.change(await screen.findByLabelText('Swagger/OpenAPI 文档'), { target: { value: `paths:\n${'  /a: get\n'.repeat(8_000)}` } })
+    fireEvent.click(screen.getByRole('button', { name: '开始 AI 生成' }))
+
+    expect(await screen.findByText(/无法自动拆分/)).toBeInTheDocument()
+    expect(testcaseApi.createGenerateJob).not.toHaveBeenCalled()
+  })
+
+  it('开始 AI 生成后关闭窗口并在列表中显示新用例集状态', async () => {    vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([project])
+    vi.mocked(testcaseApi.listTestCaseSets)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ ...completedSet, id: 'set-new', name: '创建订单', status: 'queued', rows: [] }])
+    vi.mocked(testcaseApi.createGenerateJob).mockResolvedValue({ jobId: 'job-new', status: 'queued', testSetId: 'set-new', mode: 'create' })
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '订单中心' }))
+    fireEvent.click(await screen.findByRole('button', { name: '添加用例集' }))
+
+    fireEvent.change(screen.getByLabelText('用例集名称'), { target: { value: '创建订单' } })
+    fireEvent.change(screen.getByLabelText('需求描述'), { target: { value: '用户提交有效商品后创建订单' } })
+    expect(screen.queryByLabelText('覆盖模式')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('最大条数上限')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '开始 AI 生成' }))
+
+    await waitFor(() => expect(testcaseApi.createGenerateJob).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: project.id,
+      testSetName: '创建订单',
+      featureName: '创建订单',
+    })))
+    const request = vi.mocked(testcaseApi.createGenerateJob).mock.calls[0][0]
+    expect(request).not.toHaveProperty('coverageMode')
+    expect(request).not.toHaveProperty('maxCases')
+    expect(await screen.findByText('等待生成')).toBeInTheDocument()
+    expect(screen.queryByText('添加测试用例集')).not.toBeInTheDocument()
+  })
+
+  it('未选择时批量导出当前项目全部已完成用例集，选择后仅导出所选', async () => {
+    const secondSet = { ...completedSet, id: 'set-pay', name: '支付流程' }
+    vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([project])
+    vi.mocked(testcaseApi.listTestCaseSets).mockResolvedValue([completedSet, secondSet])
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '订单中心' }))
+    await screen.findByText('登录与会话管理')
+
+    const excelButtons = screen.getAllByRole('button', { name: 'Excel' })
+    fireEvent.click(excelButtons[0])
+    await waitFor(() => expect(testcaseApi.exportTestCaseExcelAll).toHaveBeenCalledWith(expect.objectContaining({
+      projectName: '订单中心',
+      testSets: expect.arrayContaining([
+        expect.objectContaining({ featureName: '登录与会话管理' }),
+        expect.objectContaining({ featureName: '支付流程' }),
+      ]),
+    })))
+
+    fireEvent.click(screen.getByLabelText('选择用例集 登录与会话管理'))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Excel' })[0])
     await waitFor(() => {
-      expect(screen.getByText('任务列表')).toBeInTheDocument()
+      const lastCall = vi.mocked(testcaseApi.exportTestCaseExcelAll).mock.calls.at(-1)?.[0]
+      expect(lastCall?.testSets).toHaveLength(1)
+      expect(lastCall?.testSets[0].featureName).toBe('登录与会话管理')
     })
-    expect(screen.getByText(/AI 正在生成用例/)).toBeInTheDocument()
-
-    firstRender.unmount()
-    render(<TestCasePage />, { wrapper: BrowserRouter })
-
-    expect(screen.getByText('任务列表')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /登录功能/ })).toBeInTheDocument()
-    expect(screen.queryByText('还没有生成用例')).not.toBeInTheDocument()
-  })
-
-  it('创建生成任务后立即显示任务列表，点击任务可查看实时用例结果', async () => {
-    vi.mocked(createGenerateJob).mockResolvedValue({
-      jobId: 'job_1',
-      status: 'queued',
-      testSetId: 'tool-result-job_1',
-      mode: 'create',
-    })
-    vi.mocked(waitForGenerateJob).mockImplementation(async (_jobId, onTick) => {
-      onTick?.({
-        jobId: 'job_1',
-        status: 'running',
-        mode: 'create',
-        testSetId: 'tool-result-job_1',
-        projectId: '',
-        generatedCount: 0,
-        error: '',
-        featureName: '登录功能',
-        context: '用户名必填，密码必填，登录成功后跳转首页，失败时展示错误提示。',
-        streamText: '好的，我来生成。\n用例编号,功能模块,功能测试点,用例标题,优先级,前置条件,测试步骤,预期结果\nTC001,登录,用户名密码验证,正常登录,高,用户已注册,输入正确用户名和密码,跳转首页\n',
-        createdAt: '2026-06-09T00:00:00.000Z',
-        resultHeader: ['用例编号', '功能模块', '功能测试点', '用例标题', '优先级', '前置条件', '测试步骤', '预期结果'],
-        resultRows: [['TC001', '登录', '用户名密码验证', '正常登录', '高', '用户已注册', '输入正确用户名和密码', '跳转首页']],
-      })
-      return new Promise(() => undefined)
-    })
-
-    render(<TestCasePage />, { wrapper: BrowserRouter })
-
-    fireEvent.click(screen.getByRole('button', { name: /新建用例/ }))
-    fireEvent.click(screen.getByRole('button', { name: /开始生成/ }))
-
-    await waitFor(() => {
-      expect(createGenerateJob).toHaveBeenCalledTimes(1)
-    })
-    expect(createGenerateJob).toHaveBeenCalledWith(expect.objectContaining({
-      coverageMode: 'standard',
-      maxCases: 20,
-    }))
-    await waitFor(() => {
-      expect(screen.queryByText('新建用例生成')).not.toBeInTheDocument()
-    })
-
-    expect(screen.getByText('任务列表')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /登录功能/ }))
-    expect(screen.getByText(/登录功能 正在生成，已解析 1 条用例/)).toBeInTheDocument()
-    expect(screen.queryByText('流式输出预览')).not.toBeInTheDocument()
-    expect(screen.queryByText('好的，我来生成。')).not.toBeInTheDocument()
-    expect(screen.getAllByText('TC001').length).toBeGreaterThan(0)
-    expect(screen.getByText('跳转首页')).toBeInTheDocument()
-  })
-
-  it('快速失败的生成任务仍保留在列表中显示失败状态', async () => {
-    vi.mocked(createGenerateJob).mockResolvedValue({
-      jobId: 'job_failed',
-      status: 'queued',
-      testSetId: 'tool-result-job_failed',
-      mode: 'create',
-    })
-    vi.mocked(waitForGenerateJob).mockResolvedValue({
-      jobId: 'job_failed',
-      status: 'failed',
-      mode: 'create',
-      testSetId: 'tool-result-job_failed',
-      projectId: '',
-      generatedCount: 0,
-      error: 'fetch failed',
-      featureName: '登录功能',
-      context: '用户名必填，密码必填，登录成功后跳转首页，失败时展示错误提示。',
-      streamText: '',
-      createdAt: '2026-06-09T00:00:00.000Z',
-      startedAt: '2026-06-09T00:00:00.000Z',
-      finishedAt: '2026-06-09T00:00:00.010Z',
-      resultHeader: [],
-      resultRows: [],
-    })
-
-    render(<TestCasePage />, { wrapper: BrowserRouter })
-
-    fireEvent.click(screen.getByRole('button', { name: /新建用例/ }))
-    fireEvent.click(screen.getByRole('button', { name: /开始生成/ }))
-
-    await waitFor(() => {
-      expect(screen.getByText('任务列表')).toBeInTheDocument()
-    })
-
-    expect(screen.getByText(/任务状态：失败/)).toBeInTheDocument()
-    expect(screen.getAllByText('fetch failed').length).toBeGreaterThan(0)
-    expect(screen.queryByText('还没有生成用例')).not.toBeInTheDocument()
-  })
-
-  it('已生成的用例支持从当前任务中删除', () => {
-    window.localStorage.setItem('ai_test_tools_testcase_jobs', JSON.stringify([
-      {
-        jobId: 'job_done',
-        status: 'completed',
-        mode: 'create',
-        testSetId: 'tool-result-job_done',
-        projectId: '',
-        featureName: '登录功能',
-        context: '登录需求',
-        generatedCount: 2,
-        error: '',
-        createdAt: '2026-06-09T00:00:00.000Z',
-        resultHeader: ['用例编号', '功能模块', '功能测试点', '用例标题', '优先级', '前置条件', '测试步骤', '预期结果'],
-        resultRows: [
-          ['TC001', '登录', '正向登录', '正常登录成功', '高', '已注册', '1. 输入用户名\\n2. 输入密码', '进入首页'],
-          ['TC002', '登录', '异常登录', '密码错误提示', '中', '已注册', '1. 输入用户名\\n2. 输入错误密码', '提示密码错误'],
-        ],
-      },
-    ]))
-
-    render(<TestCasePage />, { wrapper: BrowserRouter })
-
-    expect(screen.getByText('正常登录成功')).toBeInTheDocument()
-    expect(screen.getByText('密码错误提示')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /删除用例 TC001/ }))
-
-    expect(screen.queryByText('正常登录成功')).not.toBeInTheDocument()
-    expect(screen.getByText('密码错误提示')).toBeInTheDocument()
-    expect(screen.getByText(/共 1 条，任务状态：已完成/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /登录功能[\s\S]*1 条用例/ })).toBeInTheDocument()
-  })
-
-  it('本地缓存中的坏表头会自动恢复为标准表头', () => {
-    window.localStorage.setItem('ai_test_tools_testcase_jobs', JSON.stringify([
-      {
-        jobId: 'job_bad_header',
-        status: 'completed',
-        mode: 'create',
-        testSetId: 'tool-result-job_bad_header',
-        projectId: '',
-        featureName: '登录功能',
-        context: '登录需求',
-        generatedCount: 1,
-        error: '',
-        createdAt: '2026-06-09T00:00:00.000Z',
-        resultHeader: ['这样设计下来，应该能很好地覆盖正向、反向、边界、安全性等各个场景，符合标准覆盖的要求。', '用例编号', '功能模块', '功能测试点', '用例标题', '优先级', '前置条件', '测试步骤,预期结果'],
-        resultRows: [
-          ['TC001', '登录', '正向登录', '正常登录成功', '高', '已注册', '1. 输入用户名\\n2. 输入密码', '进入首页'],
-        ],
-      },
-    ]))
-
-    render(<TestCasePage />, { wrapper: BrowserRouter })
-
-    expect(screen.queryByText(/这样设计下来/)).not.toBeInTheDocument()
-    expect(screen.getByText('用例编号')).toBeInTheDocument()
-    expect(screen.getByText('预期结果')).toBeInTheDocument()
-  })
-
-  it('任务列表中的生成任务支持删除并同步本地缓存', async () => {
-    window.localStorage.setItem('ai_test_tools_testcase_jobs', JSON.stringify([
-      {
-        jobId: 'job_login',
-        status: 'completed',
-        mode: 'create',
-        testSetId: 'tool-result-job_login',
-        projectId: '',
-        featureName: '登录功能',
-        context: '登录需求',
-        generatedCount: 1,
-        error: '',
-        createdAt: '2026-06-09T00:00:00.000Z',
-        resultHeader: ['用例编号', '功能模块', '功能测试点', '用例标题', '优先级', '前置条件', '测试步骤', '预期结果'],
-        resultRows: [
-          ['TC001', '登录', '正向登录', '正常登录成功', '高', '已注册', '1. 输入用户名', '进入首页'],
-        ],
-      },
-      {
-        jobId: 'job_pay',
-        status: 'completed',
-        mode: 'create',
-        testSetId: 'tool-result-job_pay',
-        projectId: '',
-        featureName: '支付功能',
-        context: '支付需求',
-        generatedCount: 1,
-        error: '',
-        createdAt: '2026-06-09T00:10:00.000Z',
-        resultHeader: ['用例编号', '功能模块', '功能测试点', '用例标题', '优先级', '前置条件', '测试步骤', '预期结果'],
-        resultRows: [
-          ['TC001', '支付', '正向支付', '支付成功', '高', '订单已创建', '1. 选择支付方式', '支付完成'],
-        ],
-      },
-    ]))
-
-    render(<TestCasePage />, { wrapper: BrowserRouter })
-
-    expect(screen.getByRole('button', { name: /登录功能/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /支付功能/ })).toBeInTheDocument()
-    expect(screen.getByText('正常登录成功')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /删除任务 1/ }))
-
-    expect(screen.queryByRole('button', { name: /登录功能/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /支付功能/ })).toBeInTheDocument()
-    expect(screen.queryByText('正常登录成功')).not.toBeInTheDocument()
-    expect(screen.getByText('支付成功')).toBeInTheDocument()
-    expect(screen.getByText('共 1 个生成任务')).toBeInTheDocument()
-
-    await waitFor(() => {
-      const storedJobs = JSON.parse(window.localStorage.getItem('ai_test_tools_testcase_jobs') ?? '[]')
-      expect(storedJobs.map((item: { jobId: string }) => item.jobId)).toEqual(['job_pay'])
-    })
-  })
-
-  it('用例结果默认分页显示 10 条并支持切换到下一页', () => {
-    const rows = Array.from({ length: 12 }, (_, index) => {
-      const caseNumber = String(index + 1).padStart(3, '0')
-      return [`TC${caseNumber}`, '登录', '分页测试', `分页用例 ${caseNumber}`, '中', '已打开页面', '1. 执行操作\\n2. 检查结果', '展示正确结果']
-    })
-    window.localStorage.setItem('ai_test_tools_testcase_jobs', JSON.stringify([
-      {
-        jobId: 'job_paged',
-        status: 'completed',
-        mode: 'create',
-        testSetId: 'tool-result-job_paged',
-        projectId: '',
-        featureName: '登录功能',
-        context: '登录需求',
-        generatedCount: rows.length,
-        error: '',
-        createdAt: '2026-06-09T00:00:00.000Z',
-        resultHeader: ['用例编号', '功能模块', '功能测试点', '用例标题', '优先级', '前置条件', '测试步骤', '预期结果'],
-        resultRows: rows,
-      },
-    ]))
-
-    render(<TestCasePage />, { wrapper: BrowserRouter })
-
-    expect(screen.getByText('分页用例 001')).toBeInTheDocument()
-    expect(screen.getByText('分页用例 010')).toBeInTheDocument()
-    expect(screen.queryByText('分页用例 011')).not.toBeInTheDocument()
-    expect(screen.getByText('显示第 1-10 条，共 12 条')).toBeInTheDocument()
-    expect(screen.getByText('1 / 2')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '下一页' }))
-
-    expect(screen.queryByText('分页用例 001')).not.toBeInTheDocument()
-    expect(screen.getByText('分页用例 011')).toBeInTheDocument()
-    expect(screen.getByText('分页用例 012')).toBeInTheDocument()
-    expect(screen.getByText('显示第 11-12 条，共 12 条')).toBeInTheDocument()
   })
 })
