@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Project scratch & review artifacts
+.scratch/
+.tmp/
+shots/
+server/generated/
+/public/codex-demo-report.json
