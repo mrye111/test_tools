@@ -126,7 +126,7 @@ export function GeneratedPlanResult({ result, error, downloading = false, onDown
     return (
       <div key={node.path} className="space-y-1">
         <div
-          className="flex w-full items-center gap-2 rounded-xl border border-transparent px-3 py-2 text-left transition-all hover:bg-[oklch(0.985_0.003_235/0.85)]"
+          className="flex w-full items-center gap-2 rounded-xl border border-transparent px-3 py-2 text-left transition-all hover:bg-[oklch(0.985_0.003_264/0.85)]"
           style={{ paddingLeft: `${12 + node.depth * 18}px` }}
         >
           <span
@@ -144,12 +144,12 @@ export function GeneratedPlanResult({ result, error, downloading = false, onDown
             {hasChildren ? (
               isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />
             ) : (
-              <span className="h-1.5 w-1.5 rounded-full bg-[oklch(0.72_0.015_235)]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-[oklch(0.72_0.015_264)]" />
             )}
           </span>
-          <span className={`h-2 w-2 shrink-0 rounded-full ${node.enabled ? 'bg-[#22c55e]' : 'bg-slate-300'}`} />
+          <span className={`h-2 w-2 shrink-0 rounded-full ${node.enabled ? 'bg-success' : 'bg-muted-soft'}`} />
           <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{node.name}</span>
-          <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-muted">
+          <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-muted">
             {toChineseClassName(node.testClass)}
           </span>
         </div>
@@ -166,7 +166,7 @@ export function GeneratedPlanResult({ result, error, downloading = false, onDown
   return (
     <div className="space-y-4">
       {(error || localError) && (
-        <div className="status-panel danger-panel px-4 py-3 text-sm text-[#b91c1c]">
+        <div className="status-panel danger-panel px-4 py-3 text-sm text-danger">
           <div className="relative z-[1] flex items-start gap-2">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{localError ?? error}</span>

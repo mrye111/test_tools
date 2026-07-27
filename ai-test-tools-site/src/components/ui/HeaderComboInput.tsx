@@ -29,6 +29,8 @@ export function HeaderComboInput({
 }: HeaderComboInputProps) {
   const id = `hc-${Math.random().toString(36).slice(2, 8)}`
   const [open, setOpen] = useState(false)
+  // 关闭退出动画：open 先置 false，面板挂 .dropdown-panel-closing 保留 140ms 再卸载
+  const [closing, setClosing] = useState(false)
   const [highlightIndex, setHighlightIndex] = useState(-1)
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({})
   const [placement, setPlacement] = useState<'bottom' | 'top'>('bottom')
@@ -37,6 +39,7 @@ export function HeaderComboInput({
   const panelRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const blurTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const hasSuggestions = suggestions.length > 0
   const query = value.trim().toLowerCase()
@@ -79,10 +82,34 @@ export function HeaderComboInput({
     return results
   }, [suggestions, query])
 
-  // ── 关闭 ──
+  // ── 关闭（先播退出动画，140ms 与 dropdown-out 时长一致）──
+  // openRef 跟踪面板开关态：已关闭时 close 必须是幂等无操作，否则
+  // 「点击外部关闭 → input blur 延迟 150ms 再次 close」会让面板重新挂载闪退一次。
+  const openRef = useRef(false)
   const close = useCallback(() => {
+    if (!openRef.current) return
+    openRef.current = false
     setOpen(false)
     setHighlightIndex(-1)
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    setClosing(true)
+    closeTimerRef.current = setTimeout(() => setClosing(false), 140)
+  }, [])
+
+  // ── 打开（取消挂起的退出卸载，立即恢复）──
+  const openPanel = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    openRef.current = true
+    setClosing(false)
+    setOpen(true)
+  }, [])
+
+  // 卸载时清理所有定时器
+  useEffect(() => {
+    return () => {
+      if (blurTimerRef.current) clearTimeout(blurTimerRef.current)
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    }
   }, [])
 
   // 点击外部关闭
@@ -166,7 +193,7 @@ export function HeaderComboInput({
     if (!open) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault()
-        setOpen(true)
+        openPanel()
       }
       return
     }
@@ -209,7 +236,7 @@ export function HeaderComboInput({
     return (
       <>
         {item.text.slice(0, item.matchStart)}
-        <mark className="bg-[oklch(0.56_0.24_208/0.16)] text-inherit rounded-sm px-0.5">
+        <mark className="bg-accent/15 text-inherit rounded-sm px-0.5">
           {item.text.slice(item.matchStart, item.matchEnd)}
         </mark>
         {item.text.slice(item.matchEnd)}
@@ -217,14 +244,14 @@ export function HeaderComboInput({
     )
   }
 
-  // ── Portal 面板 ──
-  const panel = open && hasSuggestions
+  // ── Portal 面板（open 或退出动画期间都保持挂载）──
+  const panel = (open || closing) && hasSuggestions
     ? createPortal(
         <div
           ref={panelRef}
           className={`${
             placement === 'top' ? 'dropdown-panel-up' : 'dropdown-panel'
-          } liquid-glass z-[999] overflow-y-auto rounded-xl p-1`}
+          } ${closing ? 'dropdown-panel-closing' : ''} liquid-glass z-[999] overflow-y-auto rounded-xl p-1`}
           style={panelStyle}
         >
           {filtered.length > 0 ? (
@@ -239,7 +266,7 @@ export function HeaderComboInput({
                   }}
                   onMouseEnter={() => setHighlightIndex(idx)}
                   className={`dropdown-item ${
-                    highlightIndex === idx ? 'bg-[linear-gradient(120deg,oklch(0.56_0.24_208/0.1),oklch(0.7_0.14_218/0.07))]' : ''
+                    highlightIndex === idx ? 'bg-accent/10' : ''
                   } ${
                     item.text === value ? 'dropdown-item-selected' : ''
                   }`}
@@ -272,11 +299,11 @@ export function HeaderComboInput({
         value={value}
         onChange={(e) => {
           onChange(e.target.value)
-          if (!open) setOpen(true)
+          if (!open) openPanel()
           setHighlightIndex(-1)
         }}
         onFocus={() => {
-          if (hasSuggestions) setOpen(true)
+          if (hasSuggestions) openPanel()
         }}
         onKeyDown={handleKeyDown}
         onBlur={() => {
@@ -292,7 +319,8 @@ export function HeaderComboInput({
           type="button"
           onClick={() => {
             inputRef.current?.focus()
-            setOpen((c) => !c)
+            if (open) close()
+            else openPanel()
           }}
           className="absolute inset-y-0 right-0 flex w-8 items-center justify-center text-muted transition-colors hover:text-accent"
           tabIndex={-1}

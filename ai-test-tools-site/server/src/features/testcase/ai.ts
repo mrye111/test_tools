@@ -29,6 +29,8 @@ type ChatOptions = {
   maxTokens?: number;
   stream?: boolean;
   responseJson?: boolean;
+  /** 取消信号：客户端断开等场景中止上游请求与流式读取（目前仅流式 parts 管道消费）。 */
+  signal?: AbortSignal;
 };
 
 type FetchedModel = {
@@ -57,6 +59,14 @@ export class EmptyAiResponseError extends Error {
   constructor(message = "AI 请求成功，但模型未返回可见正文。") {
     super(message);
     this.name = "EmptyAiResponseError";
+  }
+}
+
+/** 200 流内携带的供应商错误事件（区别于可忽略的非标准行）：必须抛出，避免被吞后误判为空正文触发误导性重试。 */
+export class AiStreamProviderError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AiStreamProviderError";
   }
 }
 
@@ -801,6 +811,218 @@ export async function* streamChatCompletion(config: AiRequestConfig, options: Ch
     }
     if ("error" in item) throw item.error;
     return;
+  }
+}
+
+/** 类型化流式片段：reasoning 为推理链（reasoning_content），content 为可见正文。 */
+export type ChatCompletionPart = { type: "reasoning" | "content"; text: string };
+
+/** 内部解析用：snapshot 标记来自 response.completed 的整段正文（可能与已收到的 delta 重复）。 */
+type RawStreamPart = ChatCompletionPart & { snapshot?: boolean };
+
+/**
+ * 类型化解析单行 SSE：reasoning_content → reasoning，content → content。
+ * 与 streamJsonTextFromLine 不同：保留 reasoning、不剥离任何代码围栏（``` 交给下游 JSON 解析处理）。
+ */
+function streamPartsFromLine(line: string, endpointType: AiApiFormat): RawStreamPart[] | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  const jsonText = trimmed.startsWith("data:") ? trimmed.slice(5).trim() : trimmed;
+  if (!jsonText || jsonText === "[DONE]" || !jsonText.startsWith("{")) return null;
+
+  const event = JSON.parse(jsonText) as JsonObject;
+
+  // 200 流内携带的错误事件（OpenAI 兼容的 {"error": ...}、Responses API 的 response.failed / error）：
+  // 没有 choices/delta，若按普通帧返回 null 会被静默丢弃，流结束被误判为空正文并触发提额重试。
+  const eventError = isObject(event.error) ? event.error : null;
+  if (eventError) {
+    const detail = text(eventError.message) || text(eventError.code) || "未知错误";
+    throw new AiStreamProviderError(`AI 流式请求失败：${detail}`);
+  }
+  const eventType = text(event.type);
+  if (eventType === "response.failed" || eventType === "error") {
+    const failedResponse = isObject(event.response) ? event.response : null;
+    const failedError = failedResponse && isObject(failedResponse.error) ? failedResponse.error : null;
+    const detail = text(failedError?.message) || text(failedResponse?.status) || eventType;
+    throw new AiStreamProviderError(`AI 流式请求失败：${detail}`);
+  }
+
+  if (endpointType === "openai_responses") {
+    const type = text(event.type);
+    if (type === "response.output_text.delta") {
+      const delta = text(event.delta);
+      return delta ? [{ type: "content", text: delta }] : null;
+    }
+    // o 系列 / gpt-5 等 responses 模型的推理摘要流，归入 reasoning 展示。
+    if (type === "response.reasoning_summary_text.delta" || type === "response.reasoning_text.delta") {
+      const delta = text(event.delta);
+      return delta ? [{ type: "reasoning", text: delta }] : null;
+    }
+    if (type === "response.completed") {
+      const output = extractResponsesOutputText(event);
+      return output ? [{ type: "content", text: output, snapshot: true }] : null;
+    }
+    return null;
+  }
+
+  const choices = Array.isArray(event.choices) ? event.choices : [];
+  const first = choices[0] as JsonObject | undefined;
+  const delta = first && isObject(first.delta) ? first.delta : {};
+  // 兼容把 stream 请求当非流式处理的端点：退化为读取 message 整体。
+  const message = first && isObject(first.message) ? first.message : {};
+  const parts: RawStreamPart[] = [];
+  const reasoning = text(delta.reasoning_content ?? message.reasoning_content);
+  if (reasoning) parts.push({ type: "reasoning", text: reasoning });
+  const content = text(delta.content ?? message.content);
+  if (content) parts.push({ type: "content", text: content });
+  return parts.length ? parts : null;
+}
+
+async function* streamProviderParts(
+  config: AiRequestConfig,
+  options: ChatOptions,
+  span: Span,
+): AsyncGenerator<ChatCompletionPart> {
+  // Anthropic / Gemini 原生端点未实现流式解析：与 streamProviderCompletion 一致，
+  // 静默降级为一次性返回完整正文（单个 content chunk，无 reasoning）。
+  if (config.endpointType === "anthropic" || config.endpointType === "gemini_native") {
+    const content = await callChatCompletion(config, { ...options, stream: false });
+    if (content) yield { type: "content", text: content };
+    return;
+  }
+
+  const { endpoint, payload } = buildOpenAiRequestPayload(config, options, true);
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: buildOpenAiHeaders(config),
+    body: JSON.stringify(payload),
+    signal: options.signal ?? null,
+  });
+  if (!response.ok) {
+    throw new Error(`AI request failed: HTTP ${response.status} ${sanitizeError(await response.text(), config)}`);
+  }
+  if (!response.body) {
+    throw new EmptyAiResponseError("AI 流式请求成功，但响应体为空。");
+  }
+
+  let contentChunks = 0;
+  const emit = function* (rawParts: RawStreamPart[]): Generator<ChatCompletionPart> {
+    for (const part of rawParts) {
+      // response.completed 的整段正文只在之前没有任何 content delta 时兜底使用，避免重复。
+      if (part.snapshot && contentChunks > 0) continue;
+      if (part.type === "content") contentChunks++;
+      yield { type: part.type, text: part.text };
+    }
+  };
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const lines: string[] = [];
+  const drainLines = function* (): Generator<ChatCompletionPart> {
+    for (const line of lines) {
+      try {
+        const rawParts = streamPartsFromLine(line, config.endpointType);
+        if (rawParts) yield* emit(rawParts);
+      } catch (error) {
+        // 供应商错误事件必须上抛；仅忽略无法解析的非标准行，保持长生成不中断。
+        if (error instanceof AiStreamProviderError) throw error;
+      }
+    }
+    lines.length = 0;
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const split = buffer.split(/\r?\n/);
+      buffer = split.pop() ?? "";
+      lines.push(...split);
+      yield* drainLines();
+    }
+    const finalBuffer = `${buffer}${decoder.decode()}`.trim();
+    if (finalBuffer) {
+      lines.push(finalBuffer);
+      yield* drainLines();
+    }
+  } finally {
+    // 消费者提前停止（客户端断开 / 调用方取消）时取消上游读取，释放连接。
+    await reader.cancel().catch(() => undefined);
+  }
+  if (contentChunks === 0) {
+    // 只有 reasoning（推理耗尽输出额度）或完全无输出：触发上层空正文重试。
+    throw new EmptyAiResponseError("AI 流式请求结束，但模型未返回可见正文。");
+  }
+  span.attributes.chunks = contentChunks;
+}
+
+/**
+ * 类型化流式补全：按 {type, text} 产出 reasoning / content 片段。
+ * 供需要实时展示思考过程的调用方使用（如需求分析）；只产出正文 chunk 的
+ * streamChatCompletion 行为不变。流结束没有任何 content chunk 时抛 EmptyAiResponseError。
+ */
+export async function* streamChatCompletionParts(
+  config: AiRequestConfig,
+  options: ChatOptions,
+): AsyncGenerator<ChatCompletionPart> {
+  // 与 streamChatCompletion 相同的队列桥接：span 覆盖整个流式生命周期，错误经队列抛给消费者。
+  type StreamItem = { part: ChatCompletionPart } | { error: unknown } | { done: true };
+  const queue: StreamItem[] = [];
+  let wakeup: (() => void) | null = null;
+  const push = (item: StreamItem) => {
+    queue.push(item);
+    const notify = wakeup;
+    wakeup = null;
+    notify?.();
+  };
+
+  // 内部取消控制器：外部 signal（客户端断开）与消费者提前停止（下方 finally）都会中止上游读取，
+  // 避免 producer 脱离消费者后继续拉流、无界堆积 queue。
+  const abort = new AbortController();
+  const onExternalAbort = () => abort.abort();
+  options.signal?.addEventListener("abort", onExternalAbort, { once: true });
+  // 已中止的 signal 不会再触发 abort 事件，同步补齐。
+  if (options.signal?.aborted) abort.abort();
+
+  const producer = withSpan(
+    { name: "ai.stream-completion-parts", type: "ai", attributes: { model: config.model, provider: config.provider, endpointType: config.endpointType, stream: true } },
+    async (span) => {
+      try {
+        for await (const part of streamProviderParts(config, { ...options, signal: abort.signal }, span)) {
+          push({ part });
+        }
+        push({ done: true });
+      } catch (error) {
+        push({ error });
+        throw error;
+      }
+    },
+  );
+  // 错误已经通过队列交给消费者，这里只需避免未处理的 rejection。
+  producer.catch(() => undefined);
+
+  try {
+    while (true) {
+      if (queue.length === 0) {
+        await new Promise<void>((resolvePromise) => {
+          wakeup = resolvePromise;
+        });
+        continue;
+      }
+      const item = queue.shift() as StreamItem;
+      if ("part" in item) {
+        yield item.part;
+        continue;
+      }
+      if ("error" in item) throw item.error;
+      return;
+    }
+  } finally {
+    options.signal?.removeEventListener("abort", onExternalAbort);
+    abort.abort();
   }
 }
 

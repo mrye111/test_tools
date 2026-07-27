@@ -1,4 +1,4 @@
-import { callChatCompletion, EmptyAiResponseError } from "../testcase/ai.js";
+import { EmptyAiResponseError, streamChatCompletionParts } from "../testcase/ai.js";
 import { resolveGenerationMaxTokens } from "../testcase/model-capabilities.js";
 import type { AiRequestConfig, JsonObject } from "../testcase/types.js";
 import { isObject, parseMaybeJsonObject, text } from "../testcase/utils.js";
@@ -12,6 +12,16 @@ export class AnalysisParseError extends Error {
     this.name = "AnalysisParseError";
   }
 }
+
+/**
+ * 分析过程流式事件：reasoning/content 为模型输出的类型化片段（reasoning 仅用于过程展示，
+ * 不参与结果解析）；attempt 在每次重试边界发出，reason 说明重试原因。
+ */
+export type RequirementAnalysisEvent =
+  | { type: "reasoning" | "content"; text: string }
+  | { type: "attempt"; reason: string };
+
+export type RequirementAnalysisEventSink = (event: RequirementAnalysisEvent) => void;
 
 const FINDING_TYPE_ALIASES: Record<string, FindingType> = {
   risk: "risk",
@@ -85,24 +95,28 @@ function normalizeFindings(raw: unknown, byId: Map<string, RequirementNode>, roo
 }
 
 /**
- * 调用统一供应商完成需求分析（非流式），返回规范化的分解树与分析结论。
- * SSE 只用于阶段推进，最终结果一次性在这里拿到。
+ * 调用统一供应商完成需求分析（流式），返回规范化的分解树与分析结论。
+ * 每次尝试的类型化流式片段（reasoning/content）经 onEvent 实时转发，正文只从
+ * content 片段累积后解析（reasoning 仅用于过程展示，不参与解析）；
  * 模型输出无法解析为 JSON 时，携带上一次输出发起一次修复重试；
  * 两次都失败则记录原始输出预览并抛 AnalysisParseError。
  */
 export async function analyzeRequirementText(
   config: AiRequestConfig,
   requirementText: string,
+  onEvent?: RequirementAnalysisEventSink,
+  signal?: AbortSignal,
 ): Promise<{ title: string; tree: RequirementNode; findings: Finding[] }> {
   const messages = buildAnalysisMessages(requirementText);
   const maxTokens = resolveGenerationMaxTokens(config);
-  const first = await requestAnalysis(config, messages, maxTokens);
+  const first = await requestAnalysis(config, messages, maxTokens, onEvent, signal);
 
   const parsed = parseMaybeJsonObject(first);
   if (parsed) return toAnalysisResult(parsed);
 
   logger.warn({ preview: first.slice(0, 300) }, "需求分析 AI 输出无法解析为 JSON，发起一次修复重试");
-  const repaired = await callChatCompletion(config, {
+  onEvent?.({ type: "attempt", reason: "输出无法解析，正在修复重试" });
+  const repaired = await collectStream(config, {
     messages: [
       ...messages,
       { role: "assistant", content: first },
@@ -111,7 +125,8 @@ export async function analyzeRequirementText(
     temperature: 0.1,
     maxTokens,
     responseJson: true,
-  });
+    signal,
+  }, onEvent);
 
   const reparsed = parseMaybeJsonObject(repaired);
   if (!reparsed) {
@@ -126,19 +141,39 @@ async function requestAnalysis(
   config: AiRequestConfig,
   messages: ReturnType<typeof buildAnalysisMessages>,
   maxTokens: number,
+  onEvent?: RequirementAnalysisEventSink,
+  signal?: AbortSignal,
 ): Promise<string> {
   try {
-    return await callChatCompletion(config, { messages, temperature: 0.2, maxTokens, responseJson: true });
+    return await collectStream(config, { messages, temperature: 0.2, maxTokens, responseJson: true, signal }, onEvent);
   } catch (error) {
     if (!(error instanceof EmptyAiResponseError)) throw error;
     logger.warn({ maxTokens }, "需求分析 AI 返回空正文，提高输出预算重试一次");
-    return callChatCompletion(config, {
+    onEvent?.({ type: "attempt", reason: "输出不完整，正在提高额度重试" });
+    return collectStream(config, {
       messages: [...messages, { role: "user", content: DIRECT_ANSWER_INSTRUCTION }],
       temperature: 0.1,
       maxTokens: Math.min(Math.max(maxTokens * 2, 16_384), 131_072),
       responseJson: true,
-    });
+      signal,
+    }, onEvent);
   }
+}
+
+type StreamRequestOptions = Parameters<typeof streamChatCompletionParts>[1];
+
+/** 消费一次类型化流式调用：片段实时转发给 onEvent，返回仅由 content 片段累积的正文。 */
+async function collectStream(
+  config: AiRequestConfig,
+  options: StreamRequestOptions,
+  onEvent?: RequirementAnalysisEventSink,
+): Promise<string> {
+  let content = "";
+  for await (const part of streamChatCompletionParts(config, options)) {
+    if (part.type === "content") content += part.text;
+    onEvent?.({ type: part.type, text: part.text });
+  }
+  return content;
 }
 
 const DIRECT_ANSWER_INSTRUCTION = "请跳过思考过程，直接输出最终答案：一个完整闭合的 JSON 对象（需求分解树与分析结论），不要任何解释文字或代码块标记。";

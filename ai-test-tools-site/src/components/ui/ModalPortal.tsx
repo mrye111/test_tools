@@ -6,6 +6,8 @@ interface ModalPortalProps {
   onClose?: () => void
   closeOnBackdrop?: boolean
   closeOnEscape?: boolean
+  /** 追加到 backdrop 上的类名（ModalShell 用于挂 .modal-closing 退出态） */
+  className?: string
 }
 
 let activeModalCount = 0
@@ -44,6 +46,7 @@ export function ModalPortal({
   onClose,
   closeOnBackdrop = true,
   closeOnEscape = true,
+  className = '',
 }: ModalPortalProps) {
   useEffect(() => {
     lockBodyScroll()
@@ -67,7 +70,7 @@ export function ModalPortal({
 
   return createPortal(
     <div
-      className="modal-backdrop"
+      className={`modal-backdrop${className ? ` ${className}` : ''}`}
       onClick={closeOnBackdrop ? onClose : undefined}
     >
       {children}

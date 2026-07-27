@@ -103,4 +103,67 @@ describe('analyzeRequirement SSE 消费', () => {
     const result = await analyzeRequirement({ kind: 'text', text: '需求' }, aiConfig, () => {})
     expect(result.title).toBe('登录需求')
   })
+
+  it('解析 stream 事件：reasoning/content/notice 三种 kind 连同文本转发', async () => {
+    mockFetchOnce(sseResponse(
+      'event: stream\n'
+      + 'data: {"kind":"reasoning","text":"先拆解需求"}\n\n'
+      + 'event: stream\n'
+      + 'data: {"kind":"content","text":"{\\"title\\":"}\n\n'
+      + 'event: stream\n'
+      + 'data: {"kind":"notice","text":"当前模型格式不支持过程输出，请耐心等待"}\n\n'
+      + 'event: result\n'
+      + `data: ${JSON.stringify(sampleResult)}\n\n`
+      + 'event: end\n'
+      + 'data: {"ok":true}\n\n',
+    ))
+
+    const events: RequirementAnalysisStreamEvent[] = []
+    await analyzeRequirement({ kind: 'text', text: '需求' }, aiConfig, (e) => { events.push(e) })
+
+    expect(events.slice(0, 3)).toEqual([
+      { type: 'stream', kind: 'reasoning', text: '先拆解需求' },
+      { type: 'stream', kind: 'content', text: '{"title":' },
+      { type: 'stream', kind: 'notice', text: '当前模型格式不支持过程输出，请耐心等待' },
+    ])
+  })
+
+  it('解析 attempt 事件：重试分隔原因原样转发', async () => {
+    mockFetchOnce(sseResponse(
+      'event: stream\n'
+      + 'data: {"kind":"content","text":"不是 JSON"}\n\n'
+      + 'event: attempt\n'
+      + 'data: {"reason":"输出无法解析，正在修复重试"}\n\n'
+      + 'event: result\n'
+      + `data: ${JSON.stringify(sampleResult)}\n\n`
+      + 'event: end\n'
+      + 'data: {"ok":true}\n\n',
+    ))
+
+    const events: RequirementAnalysisStreamEvent[] = []
+    await analyzeRequirement({ kind: 'text', text: '需求' }, aiConfig, (e) => { events.push(e) })
+
+    expect(events.some((e) => e.type === 'attempt' && e.reason === '输出无法解析，正在修复重试')).toBe(true)
+  })
+
+  it('非法 stream/attempt 帧（未知 kind、空文本）被跳过，不中断消费', async () => {
+    mockFetchOnce(sseResponse(
+      'event: stream\n'
+      + 'data: {"kind":"unknown","text":"x"}\n\n'
+      + 'event: stream\n'
+      + 'data: {"kind":"reasoning","text":""}\n\n'
+      + 'event: attempt\n'
+      + 'data: {"reason":""}\n\n'
+      + 'event: result\n'
+      + `data: ${JSON.stringify(sampleResult)}\n\n`
+      + 'event: end\n'
+      + 'data: {"ok":true}\n\n',
+    ))
+
+    const events: RequirementAnalysisStreamEvent[] = []
+    const result = await analyzeRequirement({ kind: 'text', text: '需求' }, aiConfig, (e) => { events.push(e) })
+
+    expect(result.title).toBe('登录需求')
+    expect(events.every((e) => e.type === 'result')).toBe(true)
+  })
 })

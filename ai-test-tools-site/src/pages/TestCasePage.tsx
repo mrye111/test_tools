@@ -23,7 +23,7 @@ import {
 import { CustomSelect } from '../components/ui/CustomSelect'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { useErrorDialog } from '../components/ui/ErrorDialogProvider'
-import { ModalPortal } from '../components/ui/ModalPortal'
+import { ModalShell } from '../components/ui/ModalShell'
 import { Tooltip } from '../components/ui/Tooltip'
 import {
   LANGUAGE_OPTIONS,
@@ -498,7 +498,7 @@ export function TestCasePage() {
                         <Tooltip content="删除项目">
                           <button
                             type="button"
-                            className="project-card-action icon-action h-7 w-7 text-rose-500 hover:text-rose-600"
+                            className="project-card-action icon-action h-7 w-7 text-danger/75 hover:text-danger"
                             aria-label={`删除项目 ${project.name}`}
                             onClick={(event) => { event.stopPropagation(); setDeletingProject(project) }}
                           >
@@ -663,7 +663,7 @@ export function TestCasePage() {
                               <button
                                 type="button"
                                 onClick={() => setDeletingTestSet(testSet)}
-                                className="icon-action h-8 w-8 text-rose-500 hover:text-rose-600"
+                                className="icon-action h-8 w-8 text-danger/75 hover:text-danger"
                                 aria-label={`删除用例集 ${testSet.name}`}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -701,8 +701,8 @@ export function TestCasePage() {
         </main>
       )}
 
-      {showProjectModal && (
-        <ModalPortal onClose={() => !workspace.creatingProject && closeProjectModal()} closeOnBackdrop={!workspace.creatingProject} closeOnEscape={!workspace.creatingProject}>
+      <ModalShell open={showProjectModal} onClose={() => !workspace.creatingProject && closeProjectModal()} closeOnBackdrop={!workspace.creatingProject} closeOnEscape={!workspace.creatingProject}>
+        {showProjectModal && (
           <div className="modal-panel w-full max-w-[480px] rounded-[26px] p-6" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="add-project-title">
             <div className="modal-heading-row">
               <div>
@@ -733,11 +733,11 @@ export function TestCasePage() {
               </button>
             </div>
           </div>
-        </ModalPortal>
-      )}
+        )}
+      </ModalShell>
 
-      {showTestSetModal && (
-        <ModalPortal onClose={() => !workspace.generating && setShowTestSetModal(false)} closeOnBackdrop={!workspace.generating} closeOnEscape={!workspace.generating}>
+      <ModalShell open={showTestSetModal} onClose={() => !workspace.generating && setShowTestSetModal(false)} closeOnBackdrop={!workspace.generating} closeOnEscape={!workspace.generating}>
+        {showTestSetModal && (
           <div className="modal-panel max-h-[90vh] w-full max-w-[720px] overflow-auto rounded-[28px] p-6 max-sm:p-4" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="add-testset-title">
             <div className="modal-heading-row">
               <div><p className="modal-kicker">{workspace.selectedProject?.name}</p><h2 id="add-testset-title">添加测试用例集</h2><span>提交后窗口会关闭，生成进度将在用例集列表中持续更新。</span></div>
@@ -792,11 +792,11 @@ export function TestCasePage() {
               </button>
             </div>
           </div>
-        </ModalPortal>
-      )}
+        )}
+      </ModalShell>
 
-      {workspace.previewSet && (
-        <ModalPortal onClose={() => workspace.setPreviewSetId(null)}>
+      <ModalShell open={Boolean(workspace.previewSet)} onClose={() => workspace.setPreviewSetId(null)}>
+        {workspace.previewSet && (
           <div className="modal-panel testcase-preview-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="testcase-preview-title">
             <div className="testcase-preview-header">
               <div className="min-w-0">
@@ -852,7 +852,7 @@ export function TestCasePage() {
                             type="button"
                             onClick={() => setDeletingCase({ testSet: workspace.previewSet!, row })}
                             disabled={previewBusy}
-                            className="icon-action h-8 w-8 text-rose-500 hover:text-rose-600 disabled:pointer-events-none disabled:opacity-35"
+                            className="icon-action h-8 w-8 text-danger/75 hover:text-danger disabled:pointer-events-none disabled:opacity-35"
                             aria-label={`删除用例 ${row[0] ?? rowIndex + 1}`}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -884,11 +884,11 @@ export function TestCasePage() {
               </div>
             )}
           </div>
-        </ModalPortal>
-      )}
+        )}
+      </ModalShell>
 
-      {showSupplementModal && workspace.previewSet && (
-        <ModalPortal onClose={() => !workspace.generating && setShowSupplementModal(false)} closeOnBackdrop={!workspace.generating} closeOnEscape={!workspace.generating}>
+      <ModalShell open={showSupplementModal && Boolean(workspace.previewSet)} onClose={() => !workspace.generating && setShowSupplementModal(false)} closeOnBackdrop={!workspace.generating} closeOnEscape={!workspace.generating}>
+        {showSupplementModal && workspace.previewSet && (
           <div className="modal-panel w-full max-w-[640px] rounded-[28px] p-6 max-sm:p-4" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="supplement-testcase-title">
             <div className="modal-heading-row">
               <div>
@@ -918,11 +918,11 @@ export function TestCasePage() {
               </button>
             </div>
           </div>
-        </ModalPortal>
-      )}
+        )}
+      </ModalShell>
 
-      {showCaseModal && workspace.previewSet && (
-        <ModalPortal onClose={() => setShowCaseModal(false)}>
+      <ModalShell open={showCaseModal && Boolean(workspace.previewSet)} onClose={() => setShowCaseModal(false)}>
+        {showCaseModal && workspace.previewSet && (
           <div className="modal-panel max-h-[90vh] w-full max-w-[760px] overflow-auto rounded-[28px] p-6 max-sm:p-4" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="add-testcase-title">
             <div className="modal-heading-row">
               <div>
@@ -975,41 +975,38 @@ export function TestCasePage() {
               </button>
             </div>
           </div>
-        </ModalPortal>
-      )}
+        )}
+      </ModalShell>
 
-      {deletingCase && (
-        <ConfirmDialog
-          title="删除这条用例？"
-          description={<>将从「<span className="font-semibold text-fg">{deletingCase.testSet.name}</span>」中删除 <span className="font-semibold text-fg">{deletingCase.row[0]}</span>，删除后用例编号会自动重排。</>}
-          confirmText="确认删除"
-          onCancel={() => setDeletingCase(null)}
-          onConfirm={() => void confirmDeleteCase()}
-          danger
-        />
-      )}
+      <ConfirmDialog
+        open={Boolean(deletingCase)}
+        title="删除这条用例？"
+        description={<>将从「<span className="font-semibold text-fg">{deletingCase?.testSet.name}</span>」中删除 <span className="font-semibold text-fg">{deletingCase?.row[0]}</span>，删除后用例编号会自动重排。</>}
+        confirmText="确认删除"
+        onCancel={() => setDeletingCase(null)}
+        onConfirm={() => void confirmDeleteCase()}
+        danger
+      />
 
-      {deletingProject && (
-        <ConfirmDialog
-          title="删除这个项目？"
-          description={<>将永久删除「<span className="font-semibold text-fg">{deletingProject.name}</span>」及其 <span className="font-semibold text-fg">{deletingProject.testSetCount || 0}</span> 个用例集、<span className="font-semibold text-fg">{deletingProject.testCaseCount || 0}</span> 条用例，此操作不可撤销。</>}
-          confirmText="确认删除"
-          onCancel={() => setDeletingProject(null)}
-          onConfirm={() => void confirmDeleteProject()}
-          danger
-        />
-      )}
+      <ConfirmDialog
+        open={Boolean(deletingProject)}
+        title="删除这个项目？"
+        description={<>将永久删除「<span className="font-semibold text-fg">{deletingProject?.name}</span>」及其 <span className="font-semibold text-fg">{deletingProject?.testSetCount || 0}</span> 个用例集、<span className="font-semibold text-fg">{deletingProject?.testCaseCount || 0}</span> 条用例，此操作不可撤销。</>}
+        confirmText="确认删除"
+        onCancel={() => setDeletingProject(null)}
+        onConfirm={() => void confirmDeleteProject()}
+        danger
+      />
 
-      {deletingTestSet && (
-        <ConfirmDialog
-          title="删除这个用例集？"
-          description={<>将永久删除「<span className="font-semibold text-fg">{deletingTestSet.name}</span>」及其 <span className="font-semibold text-fg">{deletingTestSet.rows.length}</span> 条用例，此操作不可撤销。</>}
-          confirmText="确认删除"
-          onCancel={() => setDeletingTestSet(null)}
-          onConfirm={() => void confirmDeleteTestSet()}
-          danger
-        />
-      )}
+      <ConfirmDialog
+        open={Boolean(deletingTestSet)}
+        title="删除这个用例集？"
+        description={<>将永久删除「<span className="font-semibold text-fg">{deletingTestSet?.name}</span>」及其 <span className="font-semibold text-fg">{deletingTestSet?.rows.length}</span> 条用例，此操作不可撤销。</>}
+        confirmText="确认删除"
+        onCancel={() => setDeletingTestSet(null)}
+        onConfirm={() => void confirmDeleteTestSet()}
+        danger
+      />
     </div>
   )
 }

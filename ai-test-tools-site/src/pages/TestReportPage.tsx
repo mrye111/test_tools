@@ -86,7 +86,7 @@ export function TestReportPage() {
           <div className="grid gap-5 md:grid-cols-2">
             <div>
               <label className="field-label">
-                测试用例执行结果 <span className="text-[#dc2626]">*</span>
+                测试用例执行结果 <span className="text-danger">*</span>
               </label>
               <FileDropZone
                 file={caseFile}
@@ -105,7 +105,7 @@ export function TestReportPage() {
 
             <div>
               <label className="field-label">
-                BUG 清单 <span className="text-[#dc2626]">*</span>
+                BUG 清单 <span className="text-danger">*</span>
               </label>
               <FileDropZone
                 file={bugFile}
@@ -113,7 +113,7 @@ export function TestReportPage() {
                   setBugFile(file)
                   setFieldErrors((current) => ({ ...current, bugFile: undefined }))
                 }}
-                icon={<Bug className="h-6 w-6 text-[#fb7185]" />}
+                icon={<Bug className="h-6 w-6 text-danger" />}
                 accept=".csv,.xlsx,.xls,.json"
                 label="上传 BUG 清单文件"
                 hint="支持 CSV、Excel、JSON"
@@ -170,14 +170,14 @@ function FileDropZone({ file, onFile, icon, accept, label, hint, accent, error }
 
   const palette = {
     accent: {
-      border: 'oklch(0.56 0.24 208 / 0.28)',
-      background: 'oklch(0.56 0.24 208 / 0.05)',
-      strong: 'oklch(0.56 0.24 208)',
+      border: 'oklch(0.58 0.17 262 / 0.28)',
+      background: 'oklch(0.58 0.17 262 / 0.05)',
+      strong: 'oklch(0.58 0.17 262)',
     },
     danger: {
       border: 'oklch(0.72 0.15 20 / 0.28)',
       background: 'oklch(0.72 0.15 20 / 0.05)',
-      strong: '#fb7185',
+      strong: 'oklch(0.55 0.2 25)',
     },
   }[accent]
 
@@ -205,12 +205,12 @@ function FileDropZone({ file, onFile, icon, accept, label, hint, accent, error }
             ? 'oklch(0.72 0.15 25 / 0.68)'
             : dragOver || file
               ? palette.border
-              : 'oklch(0.88 0.01 235)',
+              : 'oklch(0.88 0.01 264)',
           background: error
             ? 'linear-gradient(180deg, oklch(1 0 0 / 0.92), oklch(0.97 0.01 25 / 0.5))'
             : dragOver || file
               ? `linear-gradient(180deg, oklch(1 0 0 / 0.86), ${palette.background})`
-              : 'oklch(0.995 0.002 235 / 0.72)',
+              : 'oklch(0.995 0.002 264 / 0.72)',
           boxShadow: error ? '0 0 0 4px oklch(0.52 0.18 25 / 0.08)' : undefined,
         }}
       >
@@ -224,7 +224,7 @@ function FileDropZone({ file, onFile, icon, accept, label, hint, accent, error }
 
         {file ? (
           <>
-            <div className="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/90 shadow-[0_12px_32px_-20px_oklch(0.2_0.03_208/0.2)]" style={{ color: palette.strong }}>
+            <div className="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/90 shadow-[0_12px_32px_-20px_oklch(0.2_0.03_262/0.2)]" style={{ color: palette.strong }}>
               <FileSpreadsheet className="h-6 w-6" />
             </div>
             <div className="max-w-[240px] truncate text-[14px] font-semibold text-fg">{file.name}</div>
@@ -239,7 +239,7 @@ function FileDropZone({ file, onFile, icon, accept, label, hint, accent, error }
           </>
         ) : (
           <>
-            <div className="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/90 shadow-[0_12px_32px_-20px_oklch(0.2_0.03_208/0.2)]">
+            <div className="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/90 shadow-[0_12px_32px_-20px_oklch(0.2_0.03_262/0.2)]">
               {icon}
             </div>
             <div className="text-[14px] font-semibold text-fg">{label}</div>

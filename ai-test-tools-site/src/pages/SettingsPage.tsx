@@ -75,7 +75,7 @@ export function SettingsPage() {
             <p className="page-subtitle">管理多条统一供应商配置，并指定 JMeter 与用例生成默认使用的当前供应商</p>
           </div>
         </div>
-        <div className="hidden items-center gap-2 rounded-full border border-accent/14 bg-white/64 px-3.5 py-1.5 text-xs font-medium text-accent shadow-[0_18px_40px_-32px_oklch(0.56_0.24_208/0.6)] backdrop-blur sm:flex">
+        <div className="hidden items-center gap-2 rounded-full border border-accent/14 bg-white/64 px-3.5 py-1.5 text-xs font-medium text-accent shadow-[0_18px_40px_-32px_oklch(0.58_0.17_262/0.6)] backdrop-blur sm:flex">
           <ShieldCheck className="h-3.5 w-3.5" />
           浏览器本地保存
         </div>
@@ -132,7 +132,7 @@ export function SettingsPage() {
                     <div
                       className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all duration-300 ${
                         active
-                          ? 'bg-accent text-white shadow-[0_10px_24px_-12px_oklch(0.56_0.24_208/0.7)]'
+                          ? 'bg-accent text-white shadow-[0_10px_24px_-12px_oklch(0.58_0.17_262/0.7)]'
                           : 'bg-accent/8 text-accent'
                       }`}
                     >
@@ -200,40 +200,37 @@ export function SettingsPage() {
           </div>
         )}
 
-        <div className="relative z-[1] mt-5 border-t border-[oklch(0.92_0.008_235)] pt-4">
+        <div className="relative z-[1] mt-5 border-t border-[oklch(0.92_0.008_264)] pt-4">
           <p className="text-[11px] leading-[1.55] text-muted">
             所有统一供应商配置仅保存在当前浏览器的 `localStorage` 中，不会上传到服务器，也不会写入系统目录。
           </p>
         </div>
       </div>
 
-      {showModal && (
-        <ModelConfigModal
-          key={editingModel?.id ?? 'new-provider'}
-          initialConfig={editingModel}
-          onClose={() => {
-            setShowModal(false)
-            setEditingModel(null)
-            refreshState()
-          }}
-          onSave={handleSaveModel}
-        />
-      )}
+      <ModelConfigModal
+        open={showModal}
+        initialConfig={editingModel}
+        onClose={() => {
+          setShowModal(false)
+          setEditingModel(null)
+          refreshState()
+        }}
+        onSave={handleSaveModel}
+      />
 
-      {deletingModel && (
-        <ConfirmDialog
-          title="删除供应商配置？"
-          description={(
-            <span>
-              将删除「<span className="font-semibold text-fg">{deletingModel.name}</span>」及其候选模型配置。此操作只影响当前浏览器本地保存的数据，删除后不可直接恢复。
-            </span>
-          )}
-          confirmText="确认删除"
-          danger
-          onCancel={() => setDeletingModel(null)}
-          onConfirm={handleConfirmDelete}
-        />
-      )}
+      <ConfirmDialog
+        open={Boolean(deletingModel)}
+        title="删除供应商配置？"
+        description={(
+          <span>
+            将删除「<span className="font-semibold text-fg">{deletingModel?.name}</span>」及其候选模型配置。此操作只影响当前浏览器本地保存的数据，删除后不可直接恢复。
+          </span>
+        )}
+        confirmText="确认删除"
+        danger
+        onCancel={() => setDeletingModel(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   )
 }

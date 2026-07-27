@@ -81,7 +81,7 @@ export function HttpRequestConfig({ value, onChange, fieldErrors, onFieldChange 
 
         {/* Curl import panel */}
         {curlOpen && (
-          <div className="relative z-[1] mb-4 animate-fade-up rounded-xl border border-[oklch(0.92_0.008_235/0.8)] bg-[oklch(0.985_0.003_235/0.65)] p-3">
+          <div className="relative z-[1] mb-4 animate-fade-up rounded-xl border border-[oklch(0.92_0.008_264/0.8)] bg-[oklch(0.985_0.003_264/0.65)] p-3">
             <textarea
               value={curlText}
               onChange={(e) => {
@@ -90,7 +90,7 @@ export function HttpRequestConfig({ value, onChange, fieldErrors, onFieldChange 
               }}
               placeholder={'curl -X POST https://api.example.com/v1/users \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer token123" \\\n  -d \'{"name":"test","email":"test@example.com"}\''}
               rows={5}
-              className="field-control font-mono text-[12px] !bg-white"
+              className="field-control font-mono text-[12px]"
               spellCheck={false}
             />
             {curlError && (
@@ -182,7 +182,7 @@ export function HttpRequestConfig({ value, onChange, fieldErrors, onFieldChange 
             />
           </div>
           <div>
-            <label className={labelCls}>域名 <span className="text-[#dc2626]">*</span></label>
+            <label className={labelCls}>域名 <span className="text-danger">*</span></label>
             <input
               type="text"
               value={value.domain}
@@ -201,7 +201,7 @@ export function HttpRequestConfig({ value, onChange, fieldErrors, onFieldChange 
             <input type="number" value={value.port} onChange={(e) => update('port', e.target.value)} placeholder="443" className={inputCls} />
           </div>
           <div>
-            <label className={labelCls}>路径 <span className="text-[#dc2626]">*</span></label>
+            <label className={labelCls}>路径 <span className="text-danger">*</span></label>
             <input
               type="text"
               value={value.path}
@@ -233,8 +233,8 @@ export function HttpRequestConfig({ value, onChange, fieldErrors, onFieldChange 
                 onClick={() => update('bodyType', bt.type)}
                 className={`rounded-lg px-3.5 py-1.5 text-[12px] font-medium transition-all duration-150 ease-out ${
                   value.bodyType === bt.type
-                    ? 'bg-accent text-white shadow-[0_12px_24px_-18px_oklch(0.56_0.24_208/0.8)]'
-                    : 'border border-slate-200 bg-white/70 text-muted hover:border-accent hover:text-accent'
+                    ? 'bg-accent text-white shadow-[0_12px_24px_-18px_oklch(0.58_0.17_262/0.8)]'
+                    : 'border border-border bg-white/70 text-muted hover:border-accent hover:text-accent'
                 }`}
               >
                 {bt.label}
@@ -289,7 +289,7 @@ export function HttpRequestConfig({ value, onChange, fieldErrors, onFieldChange 
                         setJsonFormatError(`格式化失败: ${(e as Error).message}`)
                       }
                     }}
-                    className="rounded-md bg-white/80 px-2 py-0.5 text-[11px] font-medium text-muted shadow-sm ring-1 ring-slate-200 transition-all hover:text-accent hover:ring-accent"
+                    className="rounded-md bg-white/80 px-2 py-0.5 text-[11px] font-medium text-muted shadow-sm ring-1 ring-border transition-all hover:text-accent hover:ring-accent"
                   >
                     格式化
                   </button>
@@ -304,7 +304,7 @@ export function HttpRequestConfig({ value, onChange, fieldErrors, onFieldChange 
                         setJsonFormatError(`压缩失败: ${(e as Error).message}`)
                       }
                     }}
-                    className="rounded-md bg-white/80 px-2 py-0.5 text-[11px] font-medium text-muted shadow-sm ring-1 ring-slate-200 transition-all hover:text-accent hover:ring-accent"
+                    className="rounded-md bg-white/80 px-2 py-0.5 text-[11px] font-medium text-muted shadow-sm ring-1 ring-border transition-all hover:text-accent hover:ring-accent"
                   >
                     压缩
                   </button>
@@ -390,7 +390,7 @@ export function HttpRequestConfig({ value, onChange, fieldErrors, onFieldChange 
                 <button
                   type="button"
                   onClick={handleRemove}
-                  className="icon-action h-10 w-10 shrink-0 hover:text-[#dc2626]"
+                  className="icon-action h-10 w-10 shrink-0 hover:text-danger"
                 >
                   ×
                 </button>

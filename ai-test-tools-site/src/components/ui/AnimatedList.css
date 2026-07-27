@@ -20,18 +20,18 @@
 }
 
 .animated-list-scroll::-webkit-scrollbar-track {
-  background: oklch(0.96 0.005 235 / 0.5);
+  background: oklch(0.96 0.005 264 / 0.5);
   border-radius: 9999px;
 }
 
 .animated-list-scroll::-webkit-scrollbar-thumb {
-  background: oklch(0.7 0.04 235 / 0.4);
+  background: oklch(0.7 0.04 264 / 0.4);
   border-radius: 9999px;
   transition: background 0.2s ease;
 }
 
 .animated-list-scroll::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.56 0.24 208 / 0.5);
+  background: oklch(0.58 0.17 262 / 0.5);
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -64,12 +64,12 @@
   background: linear-gradient(
     135deg,
     oklch(1 0 0 / 0.88),
-    oklch(0.985 0.003 235 / 0.72)
+    oklch(0.985 0.003 264 / 0.72)
   );
-  border: 1px solid oklch(0.92 0.008 235 / 0.7);
+  border: 1px solid oklch(0.92 0.008 264 / 0.7);
   backdrop-filter: blur(14px) saturate(1.1);
   box-shadow:
-    0 2px 8px -4px oklch(0.18 0.02 235 / 0.06),
+    0 2px 8px -4px oklch(0.18 0.02 264 / 0.06),
     inset 0 1px 0 oklch(1 0 0 / 0.7);
   transition:
     background 0.25s ease,
@@ -78,32 +78,23 @@
 }
 
 .animated-list-item.selected .animated-list-item-content {
-  background: linear-gradient(
-    135deg,
-    oklch(0.56 0.24 208 / 0.1),
-    oklch(0.7 0.14 218 / 0.06)
-  );
-  border-color: oklch(0.56 0.24 208 / 0.35);
+  background: oklch(0.58 0.17 262 / 0.08);
+  border-color: oklch(0.58 0.17 262 / 0.3);
   box-shadow:
-    0 4px 16px -6px oklch(0.56 0.24 208 / 0.2),
+    0 4px 16px -6px oklch(0.58 0.17 262 / 0.18),
     inset 0 1px 0 oklch(1 0 0 / 0.6);
 }
 
-/* ── Accent bar (shared layout animation) ── */
+/* ── Accent bar (shared layout animation)：2px 单色主色指示条 ── */
 
 .animated-list-item-accent-bar {
   position: absolute;
   left: 0;
   top: 8px;
   bottom: 8px;
-  width: 3px;
+  width: 2px;
   border-radius: 9999px;
-  background: linear-gradient(
-    180deg,
-    oklch(0.56 0.24 208),
-    oklch(0.7 0.14 218)
-  );
-  box-shadow: 0 0 12px oklch(0.56 0.24 208 / 0.4);
+  background: var(--color-accent);
 }
 
 /* ── Glow backdrop ── */
@@ -114,7 +105,7 @@
   border-radius: inherit;
   background: radial-gradient(
     320px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
-    oklch(0.56 0.24 208 / 0.08),
+    oklch(0.58 0.17 262 / 0.08),
     transparent 58%
   );
   opacity: 0;
@@ -134,12 +125,12 @@
   font-size: 13.5px;
   font-weight: 520;
   line-height: 1.5;
-  color: var(--color-fg, oklch(0.18 0.02 235));
+  color: var(--color-fg, oklch(0.18 0.02 264));
   letter-spacing: -0.01em;
 }
 
 .animated-list-item.selected .animated-list-item-text {
-  color: oklch(0.48 0.27 208);
+  color: oklch(0.5 0.18 262);
   font-weight: 620;
 }
 
@@ -153,7 +144,7 @@
   height: 20px;
   margin-top: -10px;
   border-radius: 9999px;
-  background: oklch(0.56 0.24 208 / 0.2);
+  background: oklch(0.58 0.17 262 / 0.2);
   pointer-events: none;
   z-index: 0;
 }
@@ -167,8 +158,8 @@
   width: 24px;
   height: 24px;
   border-radius: var(--radius-xs, 6px);
-  background: oklch(0.56 0.24 208 / 0.12);
-  color: oklch(0.56 0.24 208);
+  background: oklch(0.58 0.17 262 / 0.12);
+  color: oklch(0.58 0.17 262);
   flex-shrink: 0;
 }
 

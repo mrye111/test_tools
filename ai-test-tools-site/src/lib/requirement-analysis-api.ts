@@ -30,9 +30,13 @@ export type RequirementAnalysisResult = {
 
 export type AnalysisStage = 'parsing' | 'analyzing' | 'finalizing'
 
+export type RequirementStreamChunkKind = 'reasoning' | 'content' | 'notice'
+
 export type RequirementAnalysisStreamEvent =
   | { type: 'stage'; stage: AnalysisStage }
   | { type: 'warning'; warnings: string[] }
+  | { type: 'stream'; kind: RequirementStreamChunkKind; text: string }
+  | { type: 'attempt'; reason: string }
   | { type: 'result'; result: RequirementAnalysisResult }
   | { type: 'error'; message: string }
 
@@ -70,6 +74,18 @@ function parseStreamEvent(eventName: string, dataText: string): RequirementAnaly
   }
   if (eventName === 'warning' && isRecord(data)) {
     return { type: 'warning', warnings: Array.isArray(data.warnings) ? data.warnings.map(String) : [] }
+  }
+  if (eventName === 'stream' && isRecord(data)) {
+    const kind = data.kind
+    const text = typeof data.text === 'string' ? data.text : ''
+    if ((kind === 'reasoning' || kind === 'content' || kind === 'notice') && text) {
+      return { type: 'stream', kind, text }
+    }
+    return null
+  }
+  if (eventName === 'attempt' && isRecord(data)) {
+    const reason = typeof data.reason === 'string' ? data.reason : ''
+    return reason ? { type: 'attempt', reason } : null
   }
   if (eventName === 'result') {
     return { type: 'result', result: data as RequirementAnalysisResult }
@@ -177,4 +193,112 @@ export async function exportRequirementXmind(args: {
   }
   const blob = await response.blob()
   downloadBlob(blob, `${args.title || '需求分析'}.xmind`)
+}
+
+/* ── 分析记录（ADR 0004：分析结果持久化为记录）── */
+
+export type AnalysisRecordSummary = {
+  id: string
+  name: string
+  chartType: RequirementChartType
+  createdAt: string
+  updatedAt: string
+  findingsCount: Record<FindingType, number>
+  truncated: boolean
+}
+
+export type AnalysisRecord = {
+  id: string
+  name: string
+  chartType: RequirementChartType
+  title: string
+  tree: RequirementNode
+  findings: Finding[]
+  sourceText: string
+  truncated: boolean
+  warnings: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type AnalysisRecordListResult = {
+  records: AnalysisRecordSummary[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export type CreateAnalysisRecordInput = {
+  name?: string
+  chartType?: RequirementChartType
+  title: string
+  tree: RequirementNode
+  findings?: Finding[]
+  sourceText: string
+  truncated?: boolean
+  warnings?: string[]
+}
+
+export type UpdateAnalysisRecordInput = {
+  name?: string
+  chartType?: RequirementChartType
+}
+
+/** 统一解析记录接口响应：success:false 或 HTTP 错误都抛出服务端 error 文案。 */
+async function parseRecordResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+  let data: { success?: boolean; error?: string }
+  try {
+    data = await response.json() as { success?: boolean; error?: string }
+  } catch {
+    throw new Error(`${fallbackMessage}：${response.status}`)
+  }
+  if (!response.ok || data.success === false) {
+    throw new Error(data.error || `${fallbackMessage}：${response.status}`)
+  }
+  return data as T
+}
+
+/** GET /api/requirement-analysis/records（updatedAt 倒序，分页）。 */
+export async function listAnalysisRecords(args: { page?: number; pageSize?: number } = {}): Promise<AnalysisRecordListResult> {
+  const page = args.page ?? 1
+  const pageSize = args.pageSize ?? 10
+  const response = await fetch(buildUrl(`/api/requirement-analysis/records?page=${page}&pageSize=${pageSize}`))
+  return parseRecordResponse<AnalysisRecordListResult>(response, '获取分析记录失败')
+}
+
+/** GET /api/requirement-analysis/records/:id。 */
+export async function getAnalysisRecord(id: string): Promise<AnalysisRecord> {
+  const response = await fetch(buildUrl(`/api/requirement-analysis/records/${encodeURIComponent(id)}`))
+  const data = await parseRecordResponse<{ record: AnalysisRecord }>(response, '获取分析记录失败')
+  return data.record
+}
+
+/** POST /api/requirement-analysis/records（name 缺省时后端回退 title）。 */
+export async function createAnalysisRecord(input: CreateAnalysisRecordInput): Promise<AnalysisRecord> {
+  const response = await fetch(buildUrl('/api/requirement-analysis/records'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  const data = await parseRecordResponse<{ record: AnalysisRecord }>(response, '保存分析记录失败')
+  return data.record
+}
+
+/** PATCH /api/requirement-analysis/records/:id（重命名 / 图表类型回写）。 */
+export async function updateAnalysisRecord(id: string, patch: UpdateAnalysisRecordInput): Promise<AnalysisRecord> {
+  const response = await fetch(buildUrl(`/api/requirement-analysis/records/${encodeURIComponent(id)}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  const data = await parseRecordResponse<{ record: AnalysisRecord }>(response, '更新分析记录失败')
+  return data.record
+}
+
+/** DELETE /api/requirement-analysis/records/:id。 */
+export async function deleteAnalysisRecord(id: string): Promise<void> {
+  const response = await fetch(buildUrl(`/api/requirement-analysis/records/${encodeURIComponent(id)}`), {
+    method: 'DELETE',
+  })
+  await parseRecordResponse(response, '删除分析记录失败')
 }

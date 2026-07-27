@@ -98,7 +98,7 @@ export function TemplateConfig({ template, onBack }: Props) {
     <div key={param.key} className={param.type === 'textarea' ? 'col-span-2 max-sm:col-span-1' : ''}>
       <label className={labelCls}>
         {param.label}
-        {param.required && <span className="ml-0.5 text-[#dc2626]">*</span>}
+        {param.required && <span className="ml-0.5 text-danger">*</span>}
       </label>
       {param.type === 'text' && (
         <input
@@ -252,7 +252,7 @@ export function TemplateConfig({ template, onBack }: Props) {
       />
 
       {/* Submit */}
-      <div className="sticky bottom-0 -mx-6 -mb-6 border-t border-slate-200/80 bg-white/82 px-6 py-4 backdrop-blur-xl max-sm:-mx-4 max-sm:px-4">
+      <div className="sticky bottom-0 -mx-6 -mb-6 border-t border-border/80 bg-white/82 px-6 py-4 backdrop-blur-xl max-sm:-mx-4 max-sm:px-4">
         <div className="flex items-center justify-between">
           <span className="font-mono text-[12px] text-muted">模板: {template.samplerType}</span>
           <button

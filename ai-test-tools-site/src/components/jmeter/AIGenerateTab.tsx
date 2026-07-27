@@ -97,7 +97,7 @@ export function AIGenerateTab({ tools, loading, backendError }: Props) {
               <CheckCircle2 className="h-4 w-4" />
               <span className="font-semibold">当前模型已配置</span>
             </div>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-[#475569]">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
               <span>名称: {modelConfig.name}</span>
               <span>模型: {getPrimaryModelLabel(modelConfig)}</span>
               <span>格式: {modelConfig.apiFormat}</span>
@@ -163,16 +163,15 @@ export function AIGenerateTab({ tools, loading, backendError }: Props) {
         </div>
       </div>
 
-      {showConfig && (
-        <ModelConfigModal
-          onClose={() => setShowConfig(false)}
-          onSave={(config) => {
-            upsertStoredModelConfig(config)
-            setModelConfig(loadStoredModelConfig())
-            setShowConfig(false)
-          }}
-        />
-      )}
+      <ModelConfigModal
+        open={showConfig}
+        onClose={() => setShowConfig(false)}
+        onSave={(config) => {
+          upsertStoredModelConfig(config)
+          setModelConfig(loadStoredModelConfig())
+          setShowConfig(false)
+        }}
+      />
 
       <AiGenerationExecutionModal
         open={showExecutionModal}

@@ -64,7 +64,7 @@ export function JmeterPage() {
             </Link>
           </Tooltip>
           <div>
-            <h1 className="page-title">Jmeter <span className="text-gradient">脚本生成器</span></h1>
+            <h1 className="page-title">Jmeter 脚本生成器</h1>
             <p className="page-subtitle">
               模板选择与 AI 生成两种方式，直接驱动后端生成 .jmx 测试计划
             </p>
@@ -103,7 +103,7 @@ export function JmeterPage() {
                 i + 1
               } group flex items-center gap-3.5 rounded-[20px] px-5 py-3.5 text-left transition-all duration-300 ${
                 isActive
-                  ? '!border-accent/50 !bg-gradient-to-br !from-accent !to-accent-strong !text-white !shadow-[0_24px_46px_-30px_oklch(0.56_0.24_208/0.75)]'
+                  ? '!border-accent/50 !bg-none !bg-accent !text-white !shadow-[0_24px_46px_-30px_oklch(0.58_0.17_262/0.75)]'
                   : ''
               }`}
             >

@@ -17,8 +17,19 @@ const analysisPayload = JSON.stringify({
   findings: [{ type: "risk", title: "验证码暴力破解", detail: "未说明错误次数限制", nodeId: "m1" }],
 });
 
-function aiJsonResponse() {
-  return new Response(JSON.stringify({ choices: [{ message: { content: analysisPayload } }] }), {
+/** 新管道走流式 SSE 解析：mock 统一供应商返回 chat.completion chunk 帧序列。 */
+function aiSseResponse(deltas: Array<Record<string, unknown>> = [{ content: analysisPayload }]) {
+  const frames = deltas
+    .map((delta) => `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`)
+    .join("");
+  return new Response(`${frames}data: [DONE]\n\n`, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
+function anthropicJsonResponse() {
+  return new Response(JSON.stringify({ content: [{ type: "text", text: analysisPayload }] }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
@@ -50,6 +61,10 @@ async function postFileAnalyze(baseUrl: string, headers: Record<string, string>)
   return response.text();
 }
 
+function aiConfigHeader(config: Record<string, unknown>) {
+  return { "x-ai-config": encodeURIComponent(JSON.stringify(config)) };
+}
+
 describe("POST /api/requirement-analysis/analyze（文件上传）", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -58,14 +73,12 @@ describe("POST /api/requirement-analysis/analyze（文件上传）", () => {
   it("回归：octet-stream 上传时从 x-ai-config 头读取供应商配置，而不是把文件 Buffer 当作配置", async () => {
     const originalFetch = globalThis.fetch;
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      if (String(input).includes("ai.test")) return aiJsonResponse();
+      if (String(input).includes("ai.test")) return aiSseResponse();
       return originalFetch(input, init);
     });
 
     await withServer(async (baseUrl) => {
-      const body = await postFileAnalyze(baseUrl, {
-        "x-ai-config": encodeURIComponent(JSON.stringify(runtimeConfig)),
-      });
+      const body = await postFileAnalyze(baseUrl, aiConfigHeader(runtimeConfig));
       // 修复前：文件 Buffer 被误当配置对象，apiKey 丢失，报 api_key is required
       expect(body).not.toContain("api_key is required");
       expect(body).toContain('"stage":"analyzing"');
@@ -80,6 +93,76 @@ describe("POST /api/requirement-analysis/analyze（文件上传）", () => {
     await withServer(async (baseUrl) => {
       const body = await postFileAnalyze(baseUrl, {});
       expect(body).toContain("api_key is required");
+    });
+  });
+
+  it("流式片段桥接为 stream 事件并按 kind 合帧（多个 delta 合并为少量 SSE 帧）", async () => {
+    const originalFetch = globalThis.fetch;
+    const reasoningChunks = ["先", "拆", "解", "需", "求"];
+    const splitAt = Math.floor(analysisPayload.length / 2);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input).includes("ai.test")) {
+        return aiSseResponse([
+          ...reasoningChunks.map((text) => ({ reasoning_content: text })),
+          { content: analysisPayload.slice(0, splitAt) },
+          { content: analysisPayload.slice(splitAt) },
+        ]);
+      }
+      return originalFetch(input, init);
+    });
+
+    await withServer(async (baseUrl) => {
+      const body = await postFileAnalyze(baseUrl, aiConfigHeader(runtimeConfig));
+      expect(body).toContain("event: stream");
+      expect(body).toContain('"kind":"reasoning"');
+      expect(body).toContain('"kind":"content"');
+      // 7 个上游 delta 经 ~90ms 合帧后远少于 7 个 SSE 帧。
+      const streamFrameCount = (body.match(/event: stream/g) ?? []).length;
+      expect(streamFrameCount).toBeGreaterThan(0);
+      expect(streamFrameCount).toBeLessThan(7);
+      expect(body).toContain("event: result");
+    });
+  });
+
+  it("空正文（只有 reasoning）重试时发出 attempt 分隔事件", async () => {
+    const originalFetch = globalThis.fetch;
+    let aiCalls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input).includes("ai.test")) {
+        aiCalls += 1;
+        return aiCalls === 1
+          ? aiSseResponse([{ reasoning_content: "思考占满了输出额度……" }])
+          : aiSseResponse();
+      }
+      return originalFetch(input, init);
+    });
+
+    await withServer(async (baseUrl) => {
+      const body = await postFileAnalyze(baseUrl, aiConfigHeader(runtimeConfig));
+      expect(body).toContain("event: attempt");
+      expect(body).toContain("输出不完整，正在提高额度重试");
+      expect(body).toContain("event: result");
+    });
+  });
+
+  it("anthropic 格式在分析阶段发一次不支持过程输出的 notice，结果不受影响", async () => {
+    const originalFetch = globalThis.fetch;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input).includes("ai.test")) return anthropicJsonResponse();
+      return originalFetch(input, init);
+    });
+
+    await withServer(async (baseUrl) => {
+      const body = await postFileAnalyze(baseUrl, aiConfigHeader({
+        ...runtimeConfig,
+        provider: "claude",
+        endpointType: "anthropic",
+        model: "claude-test",
+      }));
+      expect(body).toContain('"kind":"notice"');
+      expect(body).toContain("当前模型格式不支持过程输出，请耐心等待");
+      expect(body).toContain("event: result");
+      expect(body).toContain("登录模块");
     });
   });
 });

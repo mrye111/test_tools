@@ -1,28 +1,95 @@
 import express, { type Express, type Request, type Response } from "express";
+import { randomUUID } from "node:crypto";
 import { parseAiRequestConfig } from "../testcase/ai.js";
 import type { JsonObject } from "../testcase/types.js";
-import { isObject, safeDownloadName, text } from "../testcase/utils.js";
+import { boolValue, isObject, nowIso, safeDownloadName, text } from "../testcase/utils.js";
 import { sendSseEvent } from "../../ai-generator.js";
 import { analyzeRequirementText } from "./ai.js";
 import { buildRequirementXmind } from "./exporters.js";
 import { DocumentParseError, parseRequirementDocument, truncateText } from "./parsers.js";
-import type { Finding, RequirementAnalysisResult, RequirementChartType, RequirementNode } from "./types.js";
+import { RequirementAnalysisStore, toAnalysisRecordSummary } from "./store.js";
+import type { AnalysisRecord, Finding, RequirementAnalysisResult, RequirementChartType, RequirementNode } from "./types.js";
 
 type AnalysisStage = "parsing" | "analyzing" | "finalizing";
 
+type StreamChunkKind = "reasoning" | "content" | "notice";
+
 const ANALYZE_BODY_LIMIT = "10mb";
+/** 流式片段的合帧窗口：同 kind 相邻 delta 在此窗口内合并为一个 stream 事件，避免几百个 SSE 小帧。 */
+const STREAM_COALESCE_MS = 90;
+const STREAM_UNSUPPORTED_NOTICE = "当前模型格式不支持过程输出，请耐心等待";
 
 function flushSse(res: Response): void {
   (res as Response & { flush?: () => void }).flush?.();
 }
 
 function emit(res: Response, event: string, data: unknown): void {
+  // 客户端断开后跳过写入，避免 write-after-end；未发出的事件随断流一起放弃（ADR 0004）。
+  if (res.writableEnded || res.destroyed) return;
   sendSseEvent(res, event, JSON.stringify(data));
   flushSse(res);
 }
 
 function emitStage(res: Response, stage: AnalysisStage): void {
   emit(res, "stage", { stage });
+}
+
+/**
+ * stream 事件的合帧发送器：reasoning/content 先进缓冲按窗口合并；
+ * flush() 立即发出缓冲内容（attempt/stage/result/error 等事件发出前必须调用，保证顺序）。
+ */
+function createStreamEmitter(res: Response): {
+  push: (kind: StreamChunkKind, text: string) => void;
+  flush: () => void;
+} {
+  const pending: Record<"reasoning" | "content", string> = { reasoning: "", content: "" };
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  // 客户端断开（中途断流视为放弃）：清理合帧定时器与缓冲，之后的 push/flush 均为无操作。
+  let closed = false;
+  res.on("close", () => {
+    closed = true;
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    pending.reasoning = "";
+    pending.content = "";
+  });
+
+  const flush = (): void => {
+    if (closed) return;
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    for (const kind of ["reasoning", "content"] as const) {
+      const buffered = pending[kind];
+      if (!buffered) continue;
+      pending[kind] = "";
+      emit(res, "stream", { kind, text: buffered });
+    }
+  };
+
+  const push = (kind: StreamChunkKind, text: string): void => {
+    if (closed || !text) return;
+    // notice 不参与合帧，立即发出（发出前 flush 缓冲，保持事件顺序）。
+    if (kind === "notice") {
+      flush();
+      emit(res, "stream", { kind: "notice", text });
+      return;
+    }
+    pending[kind] += text;
+    if (!timer) {
+      timer = setTimeout(() => {
+        timer = null;
+        flush();
+      }, STREAM_COALESCE_MS);
+      // 合帧定时器不应阻止进程退出（如测试收尾）。
+      (timer as { unref?: () => void }).unref?.();
+    }
+  };
+
+  return { push, flush };
 }
 
 function beginSse(res: Response): void {
@@ -34,6 +101,7 @@ function beginSse(res: Response): void {
 }
 
 function endSse(res: Response, ok: boolean): void {
+  if (res.writableEnded || res.destroyed) return;
   res.write(`event: end\ndata: ${JSON.stringify({ ok })}\n\n`);
   res.end();
 }
@@ -116,21 +184,43 @@ async function handleAnalyze(req: Request, res: Response): Promise<void> {
     if (warnings.length) emit(res, "warning", { warnings });
 
     const config = parseAiRequestConfig(resolveAiConfigSource(req));
+    // 客户端断开即中止上游 AI 流（中途断流视为放弃），释放上游连接，避免无界队列堆积。
+    const abort = new AbortController();
+    res.on("close", () => abort.abort());
 
     emitStage(res, "analyzing");
-    const analysis = await analyzeRequirementText(config, sourceText);
+    const stream = createStreamEmitter(res);
+    // anthropic / gemini_native 的流式管道是静默降级为一次性返回，没有增量过程可展示。
+    if (config.endpointType === "anthropic" || config.endpointType === "gemini_native") {
+      stream.push("notice", STREAM_UNSUPPORTED_NOTICE);
+    }
+    try {
+      const analysis = await analyzeRequirementText(config, sourceText, (event) => {
+        if (event.type === "attempt") {
+          // 重试分隔：先把缓冲的流式片段发出，再立即发 attempt，保证顺序。
+          stream.flush();
+          emit(res, "attempt", { reason: event.reason });
+          return;
+        }
+        stream.push(event.type, event.text);
+      }, abort.signal);
+      stream.flush();
 
-    emitStage(res, "finalizing");
-    const result: RequirementAnalysisResult = {
-      title: analysis.title,
-      tree: analysis.tree,
-      findings: analysis.findings,
-      sourceText,
-      truncated,
-      warnings,
-    };
-    emit(res, "result", result);
-    endSse(res, true);
+      emitStage(res, "finalizing");
+      const result: RequirementAnalysisResult = {
+        title: analysis.title,
+        tree: analysis.tree,
+        findings: analysis.findings,
+        sourceText,
+        truncated,
+        warnings,
+      };
+      emit(res, "result", result);
+      endSse(res, true);
+    } catch (error) {
+      stream.flush();
+      throw error;
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     emit(res, "error", { message });
@@ -149,7 +239,124 @@ function headerAiConfig(req: Request): JsonObject {
   }
 }
 
-export function registerRequirementRoutes(app: Express): void {
+const RECORD_NOT_FOUND_ERROR = "分析记录不存在。";
+const RECORDS_DEFAULT_PAGE_SIZE = 10;
+const RECORDS_MAX_PAGE_SIZE = 50;
+
+/** 默认 store 与测试用例侧同为模块级单例；集成测试可通过 registerRequirementRoutes 第二参数注入临时目录 store。 */
+const defaultAnalysisRecordStore = new RequirementAnalysisStore();
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** 分页参数：非法/缺省回退 fallback，下限 1。 */
+function parsePageParam(value: unknown, fallback: number): number {
+  const parsed = Number.parseInt(text(value), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function registerAnalysisRecordRoutes(app: Express, store: RequirementAnalysisStore): void {
+  app.get("/api/requirement-analysis/records", (req, res) => {
+    try {
+      const page = parsePageParam(req.query.page, 1);
+      const pageSize = Math.min(RECORDS_MAX_PAGE_SIZE, parsePageParam(req.query.pageSize, RECORDS_DEFAULT_PAGE_SIZE));
+      // ISO 时间可直接按字典序比较；updatedAt 倒序，最新编辑的在前；id 作为稳定 tie-breaker 保证分页一致性。
+      const sorted = store.listRecords().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+      const records = sorted.slice((page - 1) * pageSize, page * pageSize).map(toAnalysisRecordSummary);
+      res.json({ success: true, records, total: sorted.length, page, pageSize });
+    } catch (error) {
+      res.status(500).json({ success: false, error: errorMessage(error) });
+    }
+  });
+
+  app.get("/api/requirement-analysis/records/:id", (req, res) => {
+    try {
+      const record = store.getRecord(req.params.id);
+      if (!record) {
+        res.status(404).json({ success: false, error: RECORD_NOT_FOUND_ERROR });
+        return;
+      }
+      res.json({ success: true, record });
+    } catch (error) {
+      res.status(500).json({ success: false, error: errorMessage(error) });
+    }
+  });
+
+  app.post("/api/requirement-analysis/records", (req, res) => {
+    try {
+      const data: JsonObject = isObject(req.body) ? req.body : {};
+      const tree = normalizeNode(data.tree);
+      if (!tree) {
+        res.status(400).json({ success: false, error: "缺少有效的需求分解树（tree）。" });
+        return;
+      }
+      const title = text(data.title).trim() || tree.title;
+      const findings = Array.isArray(data.findings)
+        ? data.findings.map(normalizeFinding).filter((item): item is Finding => item !== null)
+        : [];
+      const now = nowIso();
+      const record: AnalysisRecord = {
+        id: `rec_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`,
+        name: text(data.name).trim() || title,
+        chartType: normalizeChartType(data.chartType),
+        title,
+        tree,
+        findings,
+        sourceText: text(data.sourceText),
+        truncated: boolValue(data.truncated),
+        warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => text(item).trim()).filter(Boolean) : [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      store.createRecord(record);
+      res.json({ success: true, record });
+    } catch (error) {
+      res.status(500).json({ success: false, error: errorMessage(error) });
+    }
+  });
+
+  app.patch("/api/requirement-analysis/records/:id", (req, res) => {
+    try {
+      const data: JsonObject = isObject(req.body) ? req.body : {};
+      const patch: Partial<Pick<AnalysisRecord, "name" | "chartType">> = {};
+      const name = text(data.name).trim();
+      // name 去空白后非空才更新（空串视为不改名）；chartType 未传则保持原值，避免 normalize 回退覆盖。
+      if (name) patch.name = name;
+      if (data.chartType !== undefined) {
+        // 非法 chartType 返回 400 而非静默回退 mindmap 覆盖用户已有配置。
+        const chartType = text(data.chartType).trim();
+        if (chartType !== "tree" && chartType !== "logic" && chartType !== "mindmap") {
+          res.status(400).json({ success: false, error: "无效的图表类型（chartType），可选：tree / logic / mindmap。" });
+          return;
+        }
+        patch.chartType = chartType;
+      }
+      const record = store.updateRecord(req.params.id, patch);
+      if (!record) {
+        res.status(404).json({ success: false, error: RECORD_NOT_FOUND_ERROR });
+        return;
+      }
+      res.json({ success: true, record });
+    } catch (error) {
+      res.status(500).json({ success: false, error: errorMessage(error) });
+    }
+  });
+
+  app.delete("/api/requirement-analysis/records/:id", (req, res) => {
+    try {
+      if (!store.deleteRecord(req.params.id)) {
+        res.status(404).json({ success: false, error: RECORD_NOT_FOUND_ERROR });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ success: false, error: errorMessage(error) });
+    }
+  });
+}
+
+export function registerRequirementRoutes(app: Express, store: RequirementAnalysisStore = defaultAnalysisRecordStore): void {
   app.post(
     "/api/requirement-analysis/analyze",
     express.raw({ type: "application/octet-stream", limit: ANALYZE_BODY_LIMIT }),
@@ -181,4 +388,6 @@ export function registerRequirementRoutes(app: Express): void {
       res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
+
+  registerAnalysisRecordRoutes(app, store);
 }

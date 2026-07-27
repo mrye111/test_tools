@@ -23,7 +23,7 @@ export function HomePage() {
           绘制玻璃带（无 backdrop-blur），内容渲染两遍实现无缝循环，hover 暂停 */}
       <section
         aria-label="平台能力"
-        className="relative z-10 -mt-16 mb-14 w-full overflow-hidden border-y border-white/55 bg-gradient-to-b from-white/62 to-white/42 py-4 shadow-[0_20px_48px_-32px_oklch(0.3_0.08_214/0.4)]"
+        className="relative z-10 -mt-16 mb-14 w-full overflow-hidden border-y border-white/55 bg-gradient-to-b from-white/62 to-white/42 py-4 shadow-[0_20px_48px_-32px_oklch(0.3_0.08_262/0.4)]"
       >
         <div className="flex w-max animate-marquee hover:[animation-play-state:paused]">
           {[0, 1].map((copy) => (
@@ -33,7 +33,7 @@ export function HomePage() {
                   <span className="font-display text-sm font-medium tracking-wide text-muted">
                     {cap}
                   </span>
-                  <span className="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-accent to-accent-cyan" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-accent" />
                 </span>
               ))}
             </div>

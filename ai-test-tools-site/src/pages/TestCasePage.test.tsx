@@ -84,7 +84,8 @@ describe('TestCasePage', () => {
     await waitFor(() => expect(testcaseApi.createTestCaseProject).toHaveBeenCalledWith('订单中心'))
     expect(await screen.findByRole('heading', { name: '订单中心' })).toBeInTheDocument()
     expect(await screen.findByText('这个项目还没有用例集')).toBeInTheDocument()
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    // 弹窗退出动画（200ms）结束后才真正卸载
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
   it('以大卡片展示项目和当前测试用例条数', async () => {
@@ -305,7 +306,8 @@ describe('TestCasePage', () => {
     expect(request).not.toHaveProperty('coverageMode')
     expect(request).not.toHaveProperty('maxCases')
     expect(await screen.findByText('等待生成')).toBeInTheDocument()
-    expect(screen.queryByText('添加测试用例集')).not.toBeInTheDocument()
+    // 弹窗退出动画（200ms）结束后才真正卸载
+    await waitFor(() => expect(screen.queryByText('添加测试用例集')).not.toBeInTheDocument())
   })
 
   it('未选择时批量导出当前项目全部已完成用例集，选择后仅导出所选', async () => {

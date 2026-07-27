@@ -75,7 +75,7 @@ export function JsonEditor({ value, onChange, placeholder, minHeight, toolbar, e
       {/* 编辑器 */}
       <div
         ref={editorRef}
-        className="overflow-hidden rounded-xl border border-slate-200 bg-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] transition-all focus-within:border-accent focus-within:shadow-[0_0_0_4px_oklch(0.56_0.24_208/0.1)] [&_.cm-content]:px-3 [&_.cm-content]:py-2 [&_.cm-editor]:font-mono [&_.cm-editor]:text-sm [&_.cm-gutters]:border-r [&_.cm-gutters]:border-slate-200 [&_.cm-gutters]:bg-slate-50"
+        className="overflow-hidden rounded-xl border border-slate-200 bg-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] transition-all focus-within:border-accent focus-within:shadow-[var(--shadow-focus-ring)] [&_.cm-content]:px-3 [&_.cm-content]:py-2 [&_.cm-editor]:font-mono [&_.cm-editor]:text-sm [&_.cm-gutters]:border-r [&_.cm-gutters]:border-slate-200 [&_.cm-gutters]:bg-slate-50"
         style={minHeight ? { minHeight } : undefined}
       />
 

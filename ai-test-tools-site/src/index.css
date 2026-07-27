@@ -9,25 +9,25 @@
   --font-body: "MiSans", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, monospace;
 
-  /* ── Color: aurora multi-chrome palette ── */
-  --color-accent: oklch(0.58 0.17 214);
-  --color-accent-strong: oklch(0.5 0.18 222);
-  --color-accent-soft: oklch(0.66 0.15 206);
-  --color-accent-cyan: oklch(0.74 0.13 192);
-  --color-accent-mint: oklch(0.66 0.16 165);
-  --color-accent-blue: oklch(0.62 0.17 242);
-  --color-accent-muted: oklch(0.93 0.03 205);
+  /* ── Color: BigModel 蓝白极简 ── */
+  --color-accent: oklch(0.55 0.21 262);
+  --color-accent-strong: oklch(0.47 0.23 264);
+  --color-accent-soft: oklch(0.66 0.14 260);
+  --color-accent-cyan: oklch(0.74 0.11 255);
+  --color-accent-mint: oklch(0.68 0.14 245);
+  --color-accent-blue: oklch(0.6 0.19 264);
+  --color-accent-muted: oklch(0.94 0.025 262);
   --color-accent-on: #ffffff;
   --color-surface: oklch(1 0 0);
-  --color-surface-2: oklch(0.985 0.004 208);
-  --color-muted: oklch(0.47 0.03 208);
-  --color-muted-soft: oklch(0.66 0.02 208);
-  --color-border: oklch(0.91 0.012 208);
-  --color-border-strong: oklch(0.82 0.02 208);
-  --color-bg: oklch(0.982 0.006 208);
-  --color-bg-deep: oklch(0.958 0.01 208);
-  --color-fg: oklch(0.2 0.03 208);
-  --color-fg-soft: oklch(0.3 0.03 208);
+  --color-surface-2: oklch(0.985 0.004 262);
+  --color-muted: oklch(0.47 0.03 262);
+  --color-muted-soft: oklch(0.66 0.02 262);
+  --color-border: oklch(0.91 0.012 262);
+  --color-border-strong: oklch(0.82 0.02 262);
+  --color-bg: oklch(0.982 0.006 262);
+  --color-bg-deep: oklch(0.958 0.01 262);
+  --color-fg: oklch(0.2 0.03 262);
+  --color-fg-soft: oklch(0.3 0.03 262);
   --color-danger: oklch(0.55 0.2 25);
   --color-danger-bg: oklch(0.97 0.012 25);
   --color-success: oklch(0.55 0.15 160);
@@ -44,13 +44,13 @@
 
   /* ── Shadows ── */
 
-  --shadow-elev-low: 0 2px 12px -6px oklch(0.45 0.12 208 / 0.08);
-  --shadow-elev-raised: 0 16px 44px -24px oklch(0.5 0.16 208 / 0.14);
-  --shadow-elev-high: 0 28px 70px -34px oklch(0.5 0.18 208 / 0.2);
+  --shadow-elev-low: 0 2px 12px -6px oklch(0.45 0.12 262 / 0.08);
+  --shadow-elev-raised: 0 16px 44px -24px oklch(0.5 0.16 262 / 0.14);
+  --shadow-elev-high: 0 28px 70px -34px oklch(0.5 0.18 262 / 0.2);
 
-  --shadow-focus-ring: 0 0 0 4px oklch(0.58 0.17 214 / 0.18);
-  --shadow-glow-accent: 0 0 40px -8px oklch(0.58 0.17 214 / 0.42);
-  --shadow-glow-cyan: 0 0 44px -10px oklch(0.74 0.13 192 / 0.42);
+  --shadow-focus-ring: 0 0 0 4px oklch(0.58 0.17 262 / 0.18);
+  --shadow-glow-accent: 0 0 40px -8px oklch(0.58 0.17 262 / 0.42);
+  --shadow-glow-cyan: 0 0 44px -10px oklch(0.74 0.13 262 / 0.42);
 
   /* ── Animations ── */
   --animate-card-in: card-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
@@ -59,9 +59,29 @@
   --animate-fade-up: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-shimmer: shimmer 2.4s ease-in-out infinite;
   --animate-marquee: marquee-x 32s linear infinite;
+  --animate-aurora: aurora 60s linear infinite;
 
   --breakpoint-phone: 640px;
   --breakpoint-tablet: 1024px;
+
+  /* ── Aurora 背景组件所需变量（替代 addVariablesForColors 插件）── */
+  --white: #ffffff;
+  --black: #000000;
+  --transparent: transparent;
+  --blue-300: #93c5fd;
+  --blue-400: #60a5fa;
+  --blue-500: #3b82f6;
+  --indigo-300: #a5b4fc;
+  --violet-200: #ddd6fe;
+}
+
+@keyframes aurora {
+  from {
+    background-position: 50% 50%, 50% 50%;
+  }
+  to {
+    background-position: 350% 50%, 350% 50%;
+  }
 }
 
 /* ── Keyframes ──────────────────────────────────────────────── */
@@ -87,8 +107,8 @@
 }
 
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 oklch(0.58 0.17 214 / 0.35); }
-  50% { opacity: 0.72; transform: scale(0.74); box-shadow: 0 0 0 8px oklch(0.58 0.17 214 / 0); }
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 oklch(0.58 0.17 262 / 0.35); }
+  50% { opacity: 0.72; transform: scale(0.74); box-shadow: 0 0 0 8px oklch(0.58 0.17 262 / 0); }
 }
 
 @keyframes shimmer-pass {
@@ -102,7 +122,7 @@
 }
 
 @keyframes modal-in {
-  from { opacity: 0; transform: translateY(26px) scale(0.93); }
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
@@ -165,8 +185,8 @@
 }
 
 @keyframes border-glow {
-  0%, 100% { border-color: oklch(0.58 0.17 214 / 0.28); }
-  50% { border-color: oklch(0.58 0.17 214 / 0.52); }
+  0%, 100% { border-color: oklch(0.58 0.17 262 / 0.28); }
+  50% { border-color: oklch(0.58 0.17 262 / 0.52); }
 }
 
 @keyframes slide-in-right {
@@ -187,11 +207,6 @@
   to { transform: translateX(-50%); }
 }
 
-@keyframes shine-sweep {
-  from { transform: translateX(-160%) skewX(-18deg); }
-  to { transform: translateX(260%) skewX(-18deg); }
-}
-
 /* ── Base ───────────────────────────────────────────────────── */
 
 html {
@@ -205,30 +220,17 @@ body {
   font-family: var(--font-body);
   color: var(--color-fg);
   background:
-    radial-gradient(42% 32% at 10% 6%, oklch(0.62 0.24 208 / 0.16) 0, transparent 70%),
-    radial-gradient(38% 30% at 90% 10%, oklch(0.72 0.14 218 / 0.16) 0, transparent 70%),
-    radial-gradient(44% 34% at 82% 92%, oklch(0.64 0.169 168 / 0.12) 0, transparent 70%),
-    radial-gradient(34% 28% at 14% 86%, oklch(0.62 0.2 235 / 0.1) 0, transparent 70%),
-    linear-gradient(180deg, oklch(0.992 0.004 208) 0%, oklch(0.978 0.008 208) 52%, oklch(0.965 0.012 208) 100%);
+    radial-gradient(52% 30% at 50% -4%, oklch(0.72 0.1 262 / 0.06) 0, transparent 68%),
+    linear-gradient(180deg, oklch(0.995 0.002 262) 0%, oklch(0.985 0.004 262) 100%);
   background-attachment: fixed;
   min-height: 100vh;
   overflow-x: hidden;
 }
 
-/* Dot-grid texture overlay */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image: radial-gradient(oklch(0.58 0.17 214 / 0.1) 1px, transparent 1.2px);
-  background-size: 26px 26px;
-  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, black 0%, transparent 78%);
-}
+/* 极简白底：无纹理叠加（BigModel 式干净） */
 
 ::selection {
-  background: oklch(0.58 0.17 214 / 0.2);
+  background: oklch(0.58 0.17 262 / 0.2);
   color: var(--color-fg);
 }
 
@@ -248,12 +250,12 @@ body::before {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, oklch(0.63 0.21 208 / 0.4), oklch(0.74 0.13 192 / 0.4));
+  background: linear-gradient(180deg, oklch(0.63 0.21 262 / 0.4), oklch(0.74 0.13 262 / 0.4));
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, oklch(0.58 0.17 214 / 0.6), oklch(0.74 0.13 192 / 0.6));
+  background: linear-gradient(180deg, oklch(0.58 0.17 262 / 0.6), oklch(0.74 0.13 262 / 0.6));
 }
 
 /* ── Page Layout ────────────────────────────────────────────── */
@@ -296,31 +298,29 @@ body::before {
 /* ── Navigation ─────────────────────────────────────────────── */
 
 .glass-nav {
-  border-bottom: 1px solid oklch(1 0 0 / 0.6);
-  background: linear-gradient(180deg, oklch(1 0 0 / 0.72), oklch(0.99 0.005 208 / 0.58));
+  border-bottom: 1px solid var(--color-border);
+  background: linear-gradient(180deg, oklch(1 0 0 / 0.72), oklch(0.99 0.005 262 / 0.58));
   backdrop-filter: blur(16px) saturate(1.45);
   -webkit-backdrop-filter: blur(16px) saturate(1.45);
-  box-shadow: 0 12px 40px -24px oklch(0.5 0.16 208 / 0.22);
+  box-shadow: 0 12px 40px -24px oklch(0.5 0.16 262 / 0.22);
   transition: background 300ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .brand-mark {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, oklch(0.52 0.19 250) 0%, oklch(0.6 0.17 218) 46%, oklch(0.68 0.14 190) 100%);
-  background-size: 160% 160%;
+  background: linear-gradient(180deg, oklch(0.58 0.2 262), oklch(0.53 0.21 262));
   box-shadow:
-    0 12px 28px -14px oklch(0.58 0.17 214 / 0.7),
-    inset 0 1px 0 oklch(1 0 0 / 0.32);
-  transition: transform 320ms cubic-bezier(0.22, 1.15, 0.36, 1), box-shadow 320ms cubic-bezier(0.22, 1.15, 0.36, 1), background-position 480ms cubic-bezier(0.22, 1, 0.36, 1);
+    0 10px 24px -12px oklch(0.55 0.21 262 / 0.55),
+    inset 0 1px 0 oklch(1 0 0 / 0.28);
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 300ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .brand-mark:hover {
-  transform: translateY(-1px) rotate(-3deg);
-  background-position: 90% 60%;
+  transform: translateY(-1px);
   box-shadow:
-    0 18px 40px -16px oklch(0.58 0.17 214 / 0.85),
-    inset 0 1px 0 oklch(1 0 0 / 0.4);
+    0 14px 30px -14px oklch(0.56 0.16 262 / 0.65),
+    inset 0 1px 0 oklch(1 0 0 / 0.32);
 }
 
 /* Nav pill */
@@ -337,13 +337,13 @@ body::before {
 .nav-pill:hover {
   color: var(--color-fg);
   background: oklch(1 0 0 / 0.8);
-  box-shadow: 0 4px 14px -8px oklch(0.5 0.16 208 / 0.3);
+  box-shadow: 0 4px 14px -8px oklch(0.5 0.16 262 / 0.3);
 }
 
 .nav-pill-active {
   color: var(--color-accent);
-  background: linear-gradient(120deg, oklch(0.58 0.17 214 / 0.12), oklch(0.74 0.13 192 / 0.1));
-  box-shadow: inset 0 0 0 1px oklch(0.58 0.17 214 / 0.16);
+  background: oklch(0.58 0.17 262 / 0.1);
+  box-shadow: inset 0 0 0 1px oklch(0.58 0.17 262 / 0.14);
   font-weight: 620;
 }
 
@@ -360,8 +360,8 @@ body::before {
 .motion-card {
   position: relative;
   overflow: hidden;
-  border: 1px solid oklch(1 0 0 / 0.78);
-  background: linear-gradient(150deg, oklch(1 0 0 / 0.9), oklch(0.985 0.008 208 / 0.78));
+  border: 1px solid var(--color-border);
+  background: linear-gradient(150deg, oklch(1 0 0 / 0.9), oklch(0.985 0.008 262 / 0.78));
   box-shadow:
     inset 0 1px 0 oklch(1 0 0 / 0.95),
     var(--shadow-elev-raised);
@@ -383,29 +383,29 @@ body::before {
 
 .motion-card:hover {
   transform: translateY(-3px);
-  border-color: oklch(0.58 0.17 214 / 0.35);
+  border-color: oklch(0.58 0.17 262 / 0.35);
   box-shadow:
     inset 0 1px 0 oklch(1 0 0 / 0.95),
-    0 24px 56px -28px oklch(0.5 0.2 208 / 0.32),
-    0 0 0 1px oklch(0.58 0.17 214 / 0.14);
+    0 24px 56px -28px oklch(0.5 0.2 262 / 0.32),
+    0 0 0 1px oklch(0.58 0.17 262 / 0.14);
 }
 
 .motion-card:active {
   transform: translateY(-3px) scale(0.99);
 }
 
-/* Hover border gradient reveal */
+/* Hover border reveal（单色主色描边） */
 .motion-card-hover-glow::after {
   content: '';
   position: absolute;
   inset: -1px;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, oklch(0.58 0.17 214 / 0.5), oklch(0.74 0.13 192 / 0.28) 42%, oklch(0.66 0.16 165 / 0.4));
+  background: linear-gradient(135deg, oklch(0.58 0.17 262 / 0.45), oklch(0.58 0.17 262 / 0.18) 55%, oklch(0.58 0.17 262 / 0.35));
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
   opacity: 0;
-  transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 300ms cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
 }
 
@@ -432,27 +432,19 @@ body::before {
 /* Liquid glass surface — translucent, saturated, specular */
 .liquid-glass {
   position: relative;
-  border: 1px solid oklch(1 0 0 / 0.66);
-  background: linear-gradient(135deg, oklch(1 0 0 / 0.68), oklch(0.99 0.008 208 / 0.44));
+  border: 1px solid var(--color-border);
+  background: linear-gradient(135deg, oklch(1 0 0 / 0.68), oklch(0.99 0.008 262 / 0.44));
   backdrop-filter: blur(16px) saturate(1.5);
   -webkit-backdrop-filter: blur(16px) saturate(1.5);
   box-shadow:
     inset 0 1px 0 oklch(1 0 0 / 0.85),
     inset 0 -1px 0 oklch(1 0 0 / 0.22),
-    0 24px 60px -32px oklch(0.5 0.2 208 / 0.3);
+    0 24px 60px -32px oklch(0.5 0.2 262 / 0.3);
 }
 
 /* Gradient display text */
 .text-gradient {
-  background: linear-gradient(100deg, oklch(0.52 0.18 248) 0%, oklch(0.58 0.17 222) 38%, oklch(0.64 0.15 195) 72%, oklch(0.6 0.17 168) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-/* Bright variant for dark stages (Lightfall hero) */
-.text-gradient-bright {
-  background: linear-gradient(100deg, #7dd3fc 0%, #22d3ee 42%, #2dd4bf 72%, #6ee7b7 100%);
+  background: linear-gradient(100deg, oklch(0.52 0.18 264) 0%, oklch(0.58 0.17 262) 38%, oklch(0.64 0.15 262) 72%, oklch(0.6 0.17 245) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -463,73 +455,43 @@ body::before {
   animation: gradient-shift 9s ease-in-out infinite;
 }
 
-.text-gradient-warm {
-  background: linear-gradient(100deg, oklch(0.6 0.17 168), oklch(0.64 0.15 195) 55%, oklch(0.62 0.17 242));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
 /* Small glass chip / tag */
 .glass-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   border-radius: 9999px;
-  border: 1px solid oklch(1 0 0 / 0.78);
-  background: linear-gradient(135deg, oklch(1 0 0 / 0.85), oklch(0.99 0.008 208 / 0.62));
-  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.9), 0 8px 22px -14px oklch(0.5 0.18 208 / 0.35);
+  border: 1px solid var(--color-border);
+  background: linear-gradient(135deg, oklch(1 0 0 / 0.85), oklch(0.99 0.008 262 / 0.62));
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.9), 0 8px 22px -14px oklch(0.5 0.18 262 / 0.35);
 }
 
-/* Dark variant — Lightfall 深色舞台上的玻璃胶囊 */
+/* Dark variant — 深色表面的玻璃胶囊 */
 .glass-chip-dark {
   border-color: rgb(255 255 255 / 0.16);
   background: linear-gradient(135deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0.05));
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), 0 8px 22px -14px rgb(0 0 0 / 0.5);
 }
 
-/* ── Hero Dark Stage (Lightfall) ────────────────────────────── */
-
-.hero-dark {
-  background:
-    radial-gradient(90% 70% at 50% 0%, oklch(0.34 0.1 210 / 0.55) 0%, transparent 72%),
-    linear-gradient(180deg, oklch(0.18 0.045 214) 0%, oklch(0.14 0.035 218) 100%);
+/* 进度条/时间线共用的主色渐变填充（AI 生成执行弹窗）：渐变 stops 单一出处，主色调整时同步生效 */
+.progress-accent-fill {
+  background-image: linear-gradient(90deg, oklch(0.5 0.18 262) 0%, oklch(0.58 0.17 262) 50%, oklch(0.66 0.15 262) 100%);
+  box-shadow: 0 0 24px oklch(0.58 0.17 262 / 0.45);
 }
 
-/* 底部渐隐到页面浅色背景，消除深色舞台与浅色内容的割裂感 */
-.hero-dark::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1;
-  height: 104px;
-  background: linear-gradient(180deg, transparent, var(--color-bg));
-  pointer-events: none;
+.progress-accent-fill-y {
+  background-image: linear-gradient(180deg, oklch(0.5 0.18 262), oklch(0.58 0.17 262), oklch(0.66 0.15 262));
 }
 
-/* Lightfall 画布绝对定位铺满舞台（覆盖组件 CSS 的 relative，不占据文档流） */
-.hero-dark .lightfall-container {
-  position: absolute;
-  inset: 0;
-}
-
-/* 深色舞台上的选中文本配色 */
-.hero-dark ::selection {
-  background: rgb(34 211 238 / 0.35);
-  color: #fff;
-}
-
-/* ── Footer Dark Band（与 Hero 舞台同族的深色收边带）───────────── */
+/* ── Footer Dark Band（近黑蓝调收边带，BigModel 式黑页脚）───────── */
 
 .footer-dark {
   background:
-    radial-gradient(70% 130% at 50% 130%, oklch(0.32 0.09 210 / 0.45) 0%, transparent 70%),
-    linear-gradient(180deg, oklch(0.17 0.042 212) 0%, oklch(0.135 0.032 216) 100%);
+    radial-gradient(70% 130% at 50% 130%, oklch(0.3 0.06 262 / 0.4) 0%, transparent 70%),
+    linear-gradient(180deg, oklch(0.16 0.018 262) 0%, oklch(0.12 0.014 264) 100%);
 }
 
-/* 顶部光晕发线，与 Hero 底部渐隐呼应 */
+/* 顶部蓝色光晕发线 */
 .footer-dark::before {
   content: '';
   position: absolute;
@@ -537,23 +499,8 @@ body::before {
   left: 8%;
   right: 8%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, oklch(0.74 0.13 192 / 0.4), oklch(0.66 0.16 165 / 0.3), transparent);
+  background: linear-gradient(90deg, transparent, oklch(0.6 0.19 264 / 0.45), transparent);
   pointer-events: none;
-}
-
-/* Dark variant — 深色舞台上的玻璃次按钮（双类选择器提升优先级，确保覆盖浅色版） */
-.secondary-action.secondary-action-dark {
-  border-color: rgb(255 255 255 / 0.18);
-  background: linear-gradient(135deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0.06));
-  color: #fff;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14);
-}
-
-.secondary-action.secondary-action-dark:hover {
-  border-color: rgb(255 255 255 / 0.34);
-  background: linear-gradient(135deg, rgb(255 255 255 / 0.18), rgb(255 255 255 / 0.09));
-  color: #fff;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), 0 14px 32px -16px rgb(0 0 0 / 0.6);
 }
 
 /* ── Buttons ────────────────────────────────────────────────── */
@@ -573,12 +520,11 @@ body::before {
   user-select: none;
   white-space: nowrap;
   transition:
-    transform 240ms cubic-bezier(0.22, 1.15, 0.36, 1),
-    border-color 240ms cubic-bezier(0.22, 1, 0.36, 1),
-    background 240ms cubic-bezier(0.22, 1, 0.36, 1),
-    background-position 420ms cubic-bezier(0.22, 1, 0.36, 1),
-    color 240ms cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .btn-ripple {
@@ -589,71 +535,52 @@ body::before {
   animation: ripple 600ms ease-out;
 }
 
-/* Primary — aurora gradient with travelling shine */
+/* Primary — 极简纯色主按钮：单一主色 + 内高光，hover 加深微浮 */
 .primary-action {
-  border: 1px solid oklch(0.58 0.17 214 / 0.55);
-  background: linear-gradient(115deg, oklch(0.56 0.19 248) 0%, oklch(0.6 0.17 218) 42%, oklch(0.66 0.15 195) 74%, oklch(0.7 0.13 175) 108%);
-  background-size: 180% 180%;
-  background-position: 0% 50%;
+  border: 1px solid oklch(0.5 0.22 262 / 0.5);
+  background: linear-gradient(180deg, oklch(0.58 0.2 262), oklch(0.53 0.21 262));
   color: var(--color-accent-on);
   box-shadow:
-    0 16px 38px -16px oklch(0.58 0.17 214 / 0.6),
-    inset 0 1px 0 oklch(1 0 0 / 0.3);
-}
-
-.primary-action::after {
-  content: '';
-  position: absolute;
-  top: -20%;
-  bottom: -20%;
-  width: 42%;
-  left: 0;
-  background: linear-gradient(105deg, transparent, oklch(1 0 0 / 0.38), transparent);
-  transform: translateX(-180%) skewX(-18deg);
-  pointer-events: none;
+    0 12px 28px -14px oklch(0.55 0.21 262 / 0.5),
+    inset 0 1px 0 oklch(1 0 0 / 0.22);
 }
 
 .primary-action:hover {
-  transform: translateY(-2px);
-  background-position: 82% 50%;
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, oklch(0.6 0.19 262), oklch(0.55 0.21 262));
   box-shadow:
-    0 24px 52px -20px oklch(0.58 0.17 214 / 0.72),
-    0 0 0 1px oklch(0.58 0.17 214 / 0.2),
-    inset 0 1px 0 oklch(1 0 0 / 0.36);
-}
-
-.primary-action:hover::after {
-  animation: shine-sweep 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+    0 18px 38px -16px oklch(0.55 0.21 262 / 0.6),
+    inset 0 1px 0 oklch(1 0 0 / 0.26);
 }
 
 .primary-action:active {
-  transform: translateY(1px) scale(0.98);
+  transform: translateY(0.5px) scale(0.99);
   box-shadow:
-    0 8px 20px -12px oklch(0.58 0.17 214 / 0.55),
-    inset 0 1px 0 oklch(1 0 0 / 0.24);
+    0 6px 16px -10px oklch(0.55 0.21 262 / 0.45),
+    inset 0 1px 0 oklch(1 0 0 / 0.18);
 }
 
 /* Secondary — liquid glass（绘制玻璃，无运行时模糊，保证 hover 动画走合成器） */
 .secondary-action,
 .icon-action {
-  border: 1px solid oklch(1 0 0 / 0.82);
-  background: linear-gradient(135deg, oklch(1 0 0 / 0.88), oklch(0.99 0.008 208 / 0.66));
+  border: 1px solid var(--color-border);
+  background: linear-gradient(135deg, oklch(1 0 0 / 0.88), oklch(0.99 0.008 262 / 0.66));
   color: var(--color-fg-soft);
   box-shadow:
     inset 0 1px 0 oklch(1 0 0 / 0.92),
-    0 8px 22px -14px oklch(0.5 0.16 208 / 0.22);
+    0 8px 22px -14px oklch(0.5 0.16 262 / 0.22);
 }
 
 .secondary-action:hover,
 .icon-action:hover {
   transform: translateY(-1.5px);
-  border-color: oklch(0.58 0.17 214 / 0.4);
+  border-color: oklch(0.58 0.17 262 / 0.4);
   color: var(--color-accent);
-  background: linear-gradient(135deg, oklch(1 0 0 / 0.88), oklch(0.99 0.006 208 / 0.62));
+  background: linear-gradient(135deg, oklch(1 0 0 / 0.88), oklch(0.99 0.006 262 / 0.62));
   box-shadow:
     inset 0 1px 0 oklch(1 0 0 / 0.9),
-    0 14px 32px -16px oklch(0.5 0.18 208 / 0.35),
-    0 0 0 1px oklch(0.58 0.17 214 / 0.1);
+    0 14px 32px -16px oklch(0.5 0.18 262 / 0.35),
+    0 0 0 1px oklch(0.58 0.17 262 / 0.1);
 }
 
 .secondary-action:active,
@@ -677,7 +604,7 @@ body::before {
 .field-control {
   width: 100%;
   border-radius: 12px;
-  border: 1px solid oklch(0.92 0.008 235 / 0.88);
+  border: 1px solid oklch(0.92 0.008 264 / 0.88);
   background: oklch(1 0 0 / 0.84);
   padding: 10px 12px;
   font-size: 13px;
@@ -690,11 +617,11 @@ body::before {
 }
 
 .field-control::placeholder {
-  color: oklch(0.65 0.015 235);
+  color: oklch(0.65 0.015 264);
 }
 
 .field-control:hover {
-  border-color: oklch(0.75 0.02 235);
+  border-color: oklch(0.75 0.02 264);
   background: oklch(1 0 0);
 }
 
@@ -735,7 +662,7 @@ select.field-control {
 
 select.field-control:disabled {
   cursor: not-allowed;
-  color: oklch(0.65 0.015 235);
+  color: oklch(0.65 0.015 264);
 }
 
 select.field-control::-ms-expand {
@@ -797,14 +724,14 @@ textarea.field-control {
   z-index: 500;
   padding: 6px 12px;
   border-radius: 8px;
-  background: linear-gradient(135deg, oklch(0.32 0.09 208 / 0.95), oklch(0.26 0.06 235 / 0.95));
+  background: linear-gradient(135deg, oklch(0.32 0.09 262 / 0.95), oklch(0.26 0.06 264 / 0.95));
   color: oklch(1 0 0);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.45;
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: 0 10px 28px -12px oklch(0.4 0.14 208 / 0.5);
+  box-shadow: 0 10px 28px -12px oklch(0.4 0.14 262 / 0.5);
   backdrop-filter: blur(10px);
 }
 
@@ -850,9 +777,9 @@ textarea.field-control {
   justify-content: center;
   padding: 16px;
   background:
-    radial-gradient(60% 50% at 30% 20%, oklch(0.58 0.17 214 / 0.16) 0, transparent 70%),
-    radial-gradient(55% 45% at 75% 80%, oklch(0.74 0.13 192 / 0.14) 0, transparent 70%),
-    oklch(0.22 0.04 235 / 0.42);
+    radial-gradient(60% 50% at 30% 20%, oklch(0.58 0.17 262 / 0.16) 0, transparent 70%),
+    radial-gradient(55% 45% at 75% 80%, oklch(0.74 0.13 262 / 0.14) 0, transparent 70%),
+    oklch(0.22 0.04 264 / 0.42);
   backdrop-filter: blur(14px) saturate(1.35);
   -webkit-backdrop-filter: blur(14px) saturate(1.35);
   animation: fade-up 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -861,15 +788,31 @@ textarea.field-control {
 .modal-panel {
   position: relative;
   border: 1px solid oklch(1 0 0 / 0.74);
-  background: linear-gradient(165deg, oklch(1 0 0 / 0.92), oklch(0.975 0.01 208 / 0.86));
+  background: linear-gradient(165deg, oklch(1 0 0 / 0.92), oklch(0.975 0.01 262 / 0.86));
   backdrop-filter: blur(20px) saturate(1.5);
   -webkit-backdrop-filter: blur(20px) saturate(1.5);
   box-shadow:
-    0 42px 110px -44px oklch(0.5 0.22 208 / 0.5),
+    0 42px 110px -44px oklch(0.5 0.22 262 / 0.5),
     0 0 0 1px oklch(1 0 0 / 0.14),
     inset 0 1px 0 oklch(1 0 0 / 0.92);
-  animation: modal-in 0.44s cubic-bezier(0.22, 1.25, 0.36, 1) both;
+  animation: modal-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
   overflow: hidden;
+}
+
+/* 退出态：ModalShell 关闭时挂 .modal-closing，与进入对称 */
+.modal-backdrop.modal-closing {
+  animation: backdrop-out 0.2s cubic-bezier(0.4, 0, 1, 1) both;
+  /* 退出动画期间禁用指针交互：避免二次点击背景或面板内按钮（如重复触发删除确认） */
+  pointer-events: none;
+}
+
+.modal-closing .modal-panel {
+  animation: modal-out 0.2s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes backdrop-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 /* Aurora top edge on modal panels */
@@ -880,7 +823,7 @@ textarea.field-control {
   left: 10%;
   right: 10%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, oklch(0.58 0.17 214 / 0.55), oklch(0.74 0.13 192 / 0.55), transparent);
+  background: linear-gradient(90deg, transparent, oklch(0.58 0.17 262 / 0.55), oklch(0.74 0.13 262 / 0.55), transparent);
   pointer-events: none;
 }
 
@@ -890,9 +833,8 @@ textarea.field-control {
   position: relative;
   overflow: hidden;
   border-radius: 18px;
-  border: 1px solid oklch(0.58 0.17 214 / 0.22);
-  background:
-    linear-gradient(135deg, oklch(0.58 0.17 214 / 0.1), oklch(0.74 0.13 192 / 0.07) 55%, oklch(1 0 0 / 0.7));
+  border: 1px solid oklch(0.58 0.17 262 / 0.2);
+  background: linear-gradient(135deg, oklch(0.58 0.17 262 / 0.08), oklch(1 0 0 / 0.72));
   box-shadow: var(--shadow-elev-low);
 }
 
@@ -936,6 +878,21 @@ textarea.field-control {
   transform-origin: bottom;
 }
 
+/* 退出态：与进入对称（组件关闭时挂 .dropdown-panel-closing） */
+.dropdown-panel-closing {
+  animation: dropdown-out 0.14s cubic-bezier(0.4, 0, 1, 1) both;
+  transform-origin: top;
+}
+
+.dropdown-panel-closing.dropdown-panel-up {
+  transform-origin: bottom;
+}
+
+@keyframes dropdown-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-4px) scale(0.98); }
+}
+
 .dropdown-item {
   display: flex;
   align-items: center;
@@ -948,17 +905,17 @@ textarea.field-control {
 }
 
 .dropdown-item:hover {
-  background: oklch(0.58 0.17 214 / 0.07);
+  background: oklch(0.58 0.17 262 / 0.07);
 }
 
 .dropdown-item-selected {
-  background: linear-gradient(120deg, oklch(0.58 0.17 214 / 0.12), oklch(0.74 0.13 192 / 0.09));
+  background: oklch(0.58 0.17 262 / 0.1);
   color: var(--color-accent);
   font-weight: 620;
 }
 
 .dropdown-item-selected:hover {
-  background: linear-gradient(120deg, oklch(0.58 0.17 214 / 0.16), oklch(0.74 0.13 192 / 0.12));
+  background: oklch(0.58 0.17 262 / 0.14);
 }
 
 /* ── Table ──────────────────────────────────────────────────── */
@@ -966,11 +923,72 @@ textarea.field-control {
 .table-shell {
   overflow: auto;
   border-radius: 18px;
-  border: 1px solid oklch(1 0 0 / 0.72);
-  background: linear-gradient(160deg, oklch(1 0 0 / 0.86), oklch(0.99 0.006 208 / 0.66));
+  border: 1px solid var(--color-border);
+  background: linear-gradient(160deg, oklch(1 0 0 / 0.86), oklch(0.99 0.006 262 / 0.66));
   backdrop-filter: blur(16px) saturate(1.45);
   -webkit-backdrop-filter: blur(16px) saturate(1.45);
   box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.85), var(--shadow-elev-low);
+}
+
+/* ── Minimal Table（极简表格：透明表头、发丝分隔、行 hover 淡染）── */
+
+.minimal-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+
+.minimal-table th {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-align: left;
+}
+
+.minimal-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid oklch(0.94 0.008 262);
+  background: transparent;
+  color: var(--color-fg);
+  vertical-align: middle;
+}
+
+.minimal-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.minimal-table tbody tr {
+  transition: background-color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.minimal-table tbody tr:hover {
+  background: oklch(0.55 0.21 262 / 0.04);
+}
+
+.minimal-table tbody tr.is-selected {
+  background: oklch(0.55 0.21 262 / 0.055);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.minimal-table tbody tr.is-selected:hover {
+  background: oklch(0.55 0.21 262 / 0.08);
+}
+
+/* 行内操作：默认安静，行 hover / 聚焦时显现（触屏常显由 opacity 0.45 保底） */
+.minimal-table .row-actions {
+  opacity: 0.45;
+  transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.minimal-table tbody tr:hover .row-actions,
+.minimal-table tbody tr:focus-within .row-actions {
+  opacity: 1;
 }
 
 .testcase-table-shell {
@@ -992,7 +1010,7 @@ textarea.field-control {
   position: sticky;
   top: 0;
   z-index: 4;
-  background: oklch(0.985 0.003 235);
+  background: oklch(0.985 0.003 264);
   background-clip: padding-box;
   font-size: 12px;
   font-weight: 680;
@@ -1000,7 +1018,7 @@ textarea.field-control {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 12px 14px;
-  border-bottom: 1px solid oklch(0.92 0.008 235);
+  border-bottom: 1px solid oklch(0.92 0.008 264);
 }
 
 .testcase-cell {
@@ -1024,12 +1042,12 @@ textarea.field-control {
 .testcase-result-table td:first-child {
   z-index: 2;
   background-color: white;
-  box-shadow: 12px 0 22px -22px oklch(0.18 0.02 235 / 0.3);
+  box-shadow: 12px 0 22px -22px oklch(0.18 0.02 264 / 0.3);
 }
 
 .testcase-result-table th:first-child {
   z-index: 5;
-  background: oklch(0.985 0.003 235);
+  background: oklch(0.985 0.003 264);
 }
 
 .testcase-result-table td:last-child,
@@ -1037,7 +1055,7 @@ textarea.field-control {
   position: sticky;
   right: 0;
   background-clip: padding-box;
-  box-shadow: -12px 0 22px -22px oklch(0.18 0.02 235 / 0.3);
+  box-shadow: -12px 0 22px -22px oklch(0.18 0.02 264 / 0.3);
 }
 
 .testcase-result-table td:last-child {
@@ -1047,19 +1065,19 @@ textarea.field-control {
 
 .testcase-result-table th:last-child {
   z-index: 5;
-  background: oklch(0.985 0.003 235);
+  background: oklch(0.985 0.003 264);
 }
 
 .testcase-result-table tbody tr:nth-child(even) > :is(td:first-child, td:last-child) {
-  background-color: oklch(0.985 0.003 235);
+  background-color: oklch(0.985 0.003 264);
 }
 
 .testcase-result-table tbody tr:hover > :is(td:first-child, td:last-child) {
-  background-color: oklch(0.972 0.012 235);
+  background-color: oklch(0.972 0.012 264);
 }
 
 .table-shell thead {
-  background: oklch(0.985 0.003 235 / 0.94);
+  background: oklch(0.985 0.003 264 / 0.94);
   color: var(--color-fg-soft);
 }
 
@@ -1068,14 +1086,14 @@ textarea.field-control {
 }
 
 .table-shell tbody tr:hover {
-  background: oklch(0.95 0.02 235 / 0.55);
+  background: oklch(0.95 0.02 264 / 0.55);
 }
 
 /* ── Test Case Project Workspace ───────────────────────────── */
 
 .testcase-workspace {
-  --testcase-ink: oklch(0.22 0.025 235);
-  --testcase-line: oklch(0.91 0.01 235);
+  --testcase-ink: oklch(0.22 0.025 264);
+  --testcase-line: oklch(0.91 0.01 264);
   width: min(100% - 48px, 1320px);
   padding-top: 24px;
 }
@@ -1113,11 +1131,11 @@ textarea.field-control {
   height: 58px;
   display: grid;
   place-items: center;
-  border: 1px solid oklch(0.58 0.17 214 / 0.15);
+  border: 1px solid oklch(0.58 0.17 262 / 0.15);
   border-radius: 18px;
   color: var(--color-accent);
-  background: oklch(0.58 0.17 214 / 0.055);
-  box-shadow: 0 18px 38px -28px oklch(0.45 0.17 235 / 0.6);
+  background: oklch(0.58 0.17 262 / 0.055);
+  box-shadow: 0 18px 38px -28px oklch(0.45 0.17 264 / 0.6);
 }
 
 .empty-state-kicker,
@@ -1195,25 +1213,25 @@ textarea.field-control {
   display: flex;
   flex-direction: column;
   text-align: left;
-  border: 1px solid oklch(1 0 0 / 0.72);
+  border: 1px solid var(--color-border);
   border-radius: 18px;
-  background: linear-gradient(150deg, oklch(1 0 0 / 0.84), oklch(0.99 0.006 208 / 0.62));
+  background: linear-gradient(150deg, oklch(1 0 0 / 0.84), oklch(0.99 0.006 262 / 0.62));
   backdrop-filter: blur(16px) saturate(1.45);
   -webkit-backdrop-filter: blur(16px) saturate(1.45);
-  box-shadow: 0 8px 24px -20px oklch(0.45 0.14 208 / 0.3), inset 0 1px 0 oklch(1 0 0 / 0.9);
+  box-shadow: 0 8px 24px -20px oklch(0.45 0.14 262 / 0.3), inset 0 1px 0 oklch(1 0 0 / 0.9);
   animation: card-in 0.4s calc(var(--project-index) * 45ms) cubic-bezier(0.22, 1, 0.36, 1) both;
   transition: transform 220ms cubic-bezier(0.22, 1.15, 0.36, 1), border-color 220ms, box-shadow 220ms, background 220ms;
 }
 
 .project-management-card:hover {
   transform: translateY(-3px);
-  border-color: oklch(0.58 0.17 214 / 0.38);
-  background: linear-gradient(150deg, oklch(1 0 0 / 0.94), oklch(0.99 0.005 208 / 0.74));
-  box-shadow: 0 22px 46px -26px oklch(0.5 0.2 208 / 0.35), 0 0 0 1px oklch(0.58 0.17 214 / 0.12), inset 0 1px 0 oklch(1 0 0 / 0.95);
+  border-color: oklch(0.58 0.17 262 / 0.38);
+  background: linear-gradient(150deg, oklch(1 0 0 / 0.94), oklch(0.99 0.005 262 / 0.74));
+  box-shadow: 0 22px 46px -26px oklch(0.5 0.2 262 / 0.35), 0 0 0 1px oklch(0.58 0.17 262 / 0.12), inset 0 1px 0 oklch(1 0 0 / 0.95);
 }
 
 .project-management-card:focus-visible {
-  outline: 3px solid oklch(0.58 0.17 214 / 0.22);
+  outline: 3px solid oklch(0.58 0.17 262 / 0.22);
   outline-offset: 3px;
 }
 
@@ -1232,10 +1250,10 @@ textarea.field-control {
   height: 36px;
   display: grid;
   place-items: center;
-  border: 1px solid oklch(0.58 0.17 214 / 0.1);
+  border: 1px solid oklch(0.58 0.17 262 / 0.1);
   border-radius: 10px;
   color: var(--color-accent);
-  background: oklch(0.96 0.018 235);
+  background: oklch(0.96 0.018 264);
   transition: border-color 170ms ease, background-color 170ms ease, color 170ms ease;
 }
 
@@ -1246,13 +1264,13 @@ textarea.field-control {
   display: grid;
   place-items: center;
   border-radius: 9px;
-  color: oklch(0.55 0.025 235);
+  color: oklch(0.55 0.025 264);
   transition: color 180ms ease, background 180ms ease, transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .project-management-card:hover .project-card-open {
   color: var(--color-accent);
-  background: oklch(0.58 0.17 214 / 0.07);
+  background: oklch(0.58 0.17 262 / 0.07);
   transform: translate(1px, -1px);
 }
 
@@ -1301,7 +1319,7 @@ textarea.field-control {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: oklch(0.48 0.025 235);
+  color: oklch(0.48 0.025 264);
   font-size: 11px;
   font-weight: 540;
 }
@@ -1309,12 +1327,12 @@ textarea.field-control {
 .testcase-set-panel {
   min-height: 540px;
   overflow: hidden;
-  border: 1px solid oklch(1 0 0 / 0.72);
+  border: 1px solid var(--color-border);
   border-radius: 18px;
-  background: linear-gradient(155deg, oklch(1 0 0 / 0.88), oklch(0.99 0.005 208 / 0.7));
+  background: linear-gradient(155deg, oklch(1 0 0 / 0.88), oklch(0.99 0.005 262 / 0.7));
   backdrop-filter: blur(18px) saturate(1.5);
   -webkit-backdrop-filter: blur(18px) saturate(1.5);
-  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.9), 0 18px 48px -34px oklch(0.45 0.14 208 / 0.26);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.9), 0 18px 48px -34px oklch(0.45 0.14 262 / 0.26);
   padding: 0;
   animation: page-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -1328,8 +1346,8 @@ textarea.field-control {
   align-items: center;
   justify-content: space-between;
   gap: 28px;
-  border-bottom: 1px solid oklch(0.925 0.008 235);
-  background: oklch(0.992 0.003 235);
+  border-bottom: 1px solid oklch(0.925 0.008 264);
+  background: oklch(0.992 0.003 264);
 }
 
 .testcase-set-toolbar-main {
@@ -1342,7 +1360,7 @@ textarea.field-control {
 .testcase-set-heading {
   min-width: 0;
   padding-left: 14px;
-  border-left: 1px solid oklch(0.9 0.01 235);
+  border-left: 1px solid oklch(0.9 0.01 264);
 }
 
 .testcase-set-total {
@@ -1352,10 +1370,10 @@ textarea.field-control {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid oklch(0.9 0.012 235);
+  border: 1px solid oklch(0.9 0.012 264);
   border-radius: 8px;
-  background: oklch(0.965 0.008 235);
-  color: oklch(0.48 0.035 235);
+  background: oklch(0.965 0.008 264);
+  color: oklch(0.48 0.035 264);
   font-size: 10px;
   font-weight: 700;
 }
@@ -1379,7 +1397,7 @@ textarea.field-control {
 }
 
 .testcase-export-note {
-  color: oklch(0.54 0.025 235);
+  color: oklch(0.54 0.025 264);
   font-size: 10px;
   line-height: 1.3;
 }
@@ -1387,10 +1405,10 @@ textarea.field-control {
 .testcase-set-table-wrap {
   overflow: auto;
   margin: 16px 18px 18px;
-  border: 1px solid oklch(0.905 0.01 235);
+  border: 1px solid oklch(0.905 0.01 264);
   border-radius: 12px;
-  background: oklch(0.993 0.003 235);
-  box-shadow: 0 5px 16px -12px oklch(0.2 0.025 235 / 0.18);
+  background: oklch(0.993 0.003 264);
+  box-shadow: 0 5px 16px -12px oklch(0.2 0.025 264 / 0.18);
 }
 
 .testcase-set-table {
@@ -1408,34 +1426,41 @@ textarea.field-control {
 .testcase-set-table th:nth-child(6) { width: 238px; }
 
 .testcase-set-table th {
-  height: 44px;
+  height: 42px;
   padding: 0 16px;
-  border-bottom: 1px solid oklch(0.895 0.01 235);
-  background: oklch(0.968 0.005 235);
-  color: oklch(0.44 0.025 235);
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-muted);
   font-size: 11px;
-  font-weight: 720;
-  letter-spacing: 0.06em;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
 
 .testcase-set-table td {
-  height: 76px;
-  padding: 13px 16px;
-  border-bottom: 1px solid oklch(0.935 0.007 235);
-  background: oklch(0.993 0.003 235);
+  height: 64px;
+  padding: 12px 16px;
+  border-bottom: 1px solid oklch(0.94 0.008 262);
+  background: transparent;
   vertical-align: middle;
 }
 
 .testcase-set-table tbody tr:last-child td { border-bottom: 0; }
-.testcase-set-table tbody tr td { transition: background-color 180ms cubic-bezier(0.22, 1, 0.36, 1); }
-.testcase-set-table tbody tr:hover td { background: oklch(0.978 0.009 235); }
-.testcase-set-table tbody tr.is-selected td { background: oklch(0.965 0.025 235); }
-.testcase-set-table tbody tr.is-selected:hover td { background: oklch(0.953 0.032 235); }
+.testcase-set-table tbody tr td { transition: background-color 160ms cubic-bezier(0.22, 1, 0.36, 1); }
+.testcase-set-table tbody tr:hover td { background: oklch(0.55 0.21 262 / 0.04); }
+.testcase-set-table tbody tr.is-selected td { background: oklch(0.55 0.21 262 / 0.055); }
+.testcase-set-table tbody tr.is-selected { box-shadow: inset 2px 0 0 var(--color-accent); }
+.testcase-set-table tbody tr.is-selected:hover td { background: oklch(0.55 0.21 262 / 0.08); }
+
+/* 行内操作：默认安静，行 hover / 聚焦时显现 */
+.testcase-set-table .testset-row-actions { opacity: 0.45; transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1); }
+.testcase-set-table tbody tr:hover .testset-row-actions,
+.testcase-set-table tbody tr:focus-within .testset-row-actions { opacity: 1; }
 
 /* 行入场级联动画（最多级联 8 行，prefers-reduced-motion 由全局规则兜底） */
 .testcase-set-table tbody tr { animation: fade-up 0.42s calc(min(var(--row-index, 0), 8) * 45ms) cubic-bezier(0.16, 1, 0.3, 1) both; }
 
-.testcase-empty-row:hover td { background: oklch(0.993 0.003 235) !important; }
+.testcase-empty-row:hover td { background: transparent !important; }
 .testcase-empty-row td { height: 356px; padding: 0 !important; }
 
 .testcase-table-empty {
@@ -1455,11 +1480,11 @@ textarea.field-control {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid oklch(0.89 0.018 235);
+  border: 1px solid oklch(0.89 0.018 264);
   border-radius: 13px;
-  background: oklch(0.965 0.013 235);
-  color: oklch(0.48 0.09 235);
-  box-shadow: 0 8px 22px -16px oklch(0.35 0.08 235 / 0.3);
+  background: oklch(0.965 0.013 264);
+  color: oklch(0.48 0.09 264);
+  box-shadow: 0 8px 22px -16px oklch(0.35 0.08 264 / 0.3);
 }
 
 .testcase-table-empty-copy { margin: 16px 0 20px; }
@@ -1467,13 +1492,13 @@ textarea.field-control {
 .testcase-table-empty-copy p { max-width: 420px; margin-top: 7px; color: var(--color-muted); font-size: 12px; line-height: 1.7; }
 
 .testcase-skeleton-row td { height: 76px; }
-.testcase-skeleton-row:hover td { background: oklch(0.993 0.003 235) !important; }
+.testcase-skeleton-row:hover td { background: oklch(0.993 0.003 264) !important; }
 .testcase-skeleton-row span,
 .testcase-skeleton-name i,
 .testcase-skeleton-name b {
   display: block;
   border-radius: 7px;
-  background: linear-gradient(90deg, oklch(0.94 0.006 235) 25%, oklch(0.975 0.004 235) 50%, oklch(0.94 0.006 235) 75%);
+  background: linear-gradient(90deg, oklch(0.94 0.006 264) 25%, oklch(0.975 0.004 264) 50%, oklch(0.94 0.006 264) 75%);
   background-size: 220% 100%;
   animation: shimmer 1.8s ease-in-out infinite;
 }
@@ -1510,7 +1535,7 @@ textarea.field-control {
 }
 
 .testset-name-button:disabled { cursor: default; }
-.testset-name-button:focus-visible { outline: 2px solid oklch(0.62 0.17 235 / 0.58); outline-offset: 4px; border-radius: 8px; }
+.testset-name-button:focus-visible { outline: 2px solid oklch(0.62 0.17 264 / 0.58); outline-offset: 4px; border-radius: 8px; }
 
 .testset-name-icon {
   width: 36px;
@@ -1519,14 +1544,14 @@ textarea.field-control {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid oklch(0.9 0.014 235);
+  border: 1px solid oklch(0.9 0.014 264);
   border-radius: 10px;
-  background: oklch(0.965 0.01 235);
-  color: oklch(0.5 0.06 235);
+  background: oklch(0.965 0.01 264);
+  color: oklch(0.5 0.06 264);
 }
 .testcase-set-table tbody tr:hover .testset-name-icon {
-  border-color: oklch(0.58 0.17 214 / 0.28);
-  background: oklch(0.58 0.17 214 / 0.08);
+  border-color: oklch(0.58 0.17 262 / 0.28);
+  background: oklch(0.58 0.17 262 / 0.08);
   color: var(--color-accent);
 }
 
@@ -1551,7 +1576,7 @@ textarea.field-control {
 
 .testset-title-line svg {
   flex: none;
-  color: oklch(0.62 0.04 235);
+  color: oklch(0.62 0.04 264);
   opacity: 0;
   transform: translateX(-3px);
   transition: opacity 170ms ease, transform 170ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -1576,7 +1601,7 @@ textarea.field-control {
   width: 3px;
   height: 3px;
   border-radius: 50%;
-  background: oklch(0.72 0.02 235);
+  background: oklch(0.72 0.02 264);
 }
 
 .testset-name-button em {
@@ -1604,9 +1629,9 @@ textarea.field-control {
 }
 
 .testset-status.is-complete { color: oklch(0.43 0.12 155); border-color: oklch(0.86 0.055 155); background: oklch(0.95 0.025 155); }
-.testset-status.is-thinking { color: oklch(0.47 0.12 208); border-color: oklch(0.88 0.05 208); background: oklch(0.96 0.025 208); }
-.testset-status.is-running { color: var(--color-accent); border-color: oklch(0.88 0.045 235); background: oklch(0.96 0.025 235); }
-.testset-status.is-queued { color: oklch(0.49 0.04 235); border-color: oklch(0.88 0.015 235); background: oklch(0.95 0.008 235); }
+.testset-status.is-thinking { color: oklch(0.47 0.12 262); border-color: oklch(0.88 0.05 262); background: oklch(0.96 0.025 262); }
+.testset-status.is-running { color: var(--color-accent); border-color: oklch(0.88 0.045 264); background: oklch(0.96 0.025 264); }
+.testset-status.is-queued { color: oklch(0.49 0.04 264); border-color: oklch(0.88 0.015 264); background: oklch(0.95 0.008 264); }
 .testset-status.is-failed { color: oklch(0.51 0.17 25); border-color: oklch(0.87 0.06 25); background: oklch(0.96 0.025 25); }
 
 .testset-count-cell {
@@ -1618,7 +1643,7 @@ textarea.field-control {
 
 .testset-count-cell strong { color: var(--testcase-ink); font-size: 14px; font-weight: 700; }
 .testset-count-cell span { color: var(--color-muted); font-size: 10px; }
-.testset-date { color: oklch(0.49 0.028 235); font-size: 11px; white-space: nowrap; }
+.testset-date { color: oklch(0.49 0.028 264); font-size: 11px; white-space: nowrap; }
 .testset-actions-cell { padding-right: 12px !important; }
 .testset-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
 
@@ -1632,15 +1657,15 @@ textarea.field-control {
   border: 1px solid transparent;
   border-radius: 9px;
   background: transparent;
-  color: oklch(0.46 0.035 235);
+  color: oklch(0.46 0.035 264);
   font-size: 10px;
   font-weight: 650;
   transition: color 170ms ease, background-color 170ms ease, border-color 170ms ease;
 }
 
 .testcase-row-export-button:hover {
-  border-color: oklch(0.88 0.014 235);
-  background: oklch(0.96 0.009 235);
+  border-color: oklch(0.88 0.014 264);
+  background: oklch(0.96 0.009 264);
   color: var(--testcase-ink);
 }
 
@@ -1683,10 +1708,10 @@ textarea.field-control {
   gap: 6px;
   margin-top: 0;
   padding: 4px 11px;
-  border: 1px solid oklch(0.915 0.01 235);
+  border: 1px solid oklch(0.915 0.01 264);
   border-radius: 999px;
-  background: oklch(0.972 0.006 235);
-  color: oklch(0.40 0.03 235);
+  background: oklch(0.972 0.006 264);
+  color: oklch(0.40 0.03 264);
   font-size: 11px;
   font-weight: 580;
   line-height: 1.35;
@@ -1731,7 +1756,7 @@ textarea.field-control {
   border: 1px solid var(--testcase-line);
   border-radius: 16px;
   background: white;
-  box-shadow: 0 1px 2px oklch(0.2 0.02 235 / 0.05), inset 0 1px 0 oklch(1 0 0 / 0.9);
+  box-shadow: 0 1px 2px oklch(0.2 0.02 264 / 0.05), inset 0 1px 0 oklch(1 0 0 / 0.9);
 }
 
 .testcase-preview-table-wrap .testcase-result-table { width: 100%; min-width: 760px; table-layout: auto; }
@@ -1739,15 +1764,15 @@ textarea.field-control {
 .testcase-preview-table-wrap .testcase-result-table th {
   white-space: nowrap;
   padding: 13px 16px;
-  background: oklch(0.968 0.005 235);
-  border-bottom: 1px solid oklch(0.895 0.01 235);
+  background: oklch(0.968 0.005 264);
+  border-bottom: 1px solid oklch(0.895 0.01 264);
   font-size: 11px;
   font-weight: 720;
   letter-spacing: 0.07em;
-  color: oklch(0.44 0.025 235);
+  color: oklch(0.44 0.025 264);
 }
-.testcase-preview-table-wrap .testcase-result-table td { border-bottom: 1px solid oklch(0.94 0.006 235); color: oklch(0.36 0.025 235); }
-.testcase-preview-table-wrap .testcase-result-table tr:nth-child(even) { background: oklch(0.985 0.003 235); }
+.testcase-preview-table-wrap .testcase-result-table td { border-bottom: 1px solid oklch(0.94 0.006 264); color: oklch(0.36 0.025 264); }
+.testcase-preview-table-wrap .testcase-result-table tr:nth-child(even) { background: oklch(0.985 0.003 264); }
 /* 操作列冻结在右侧，宽度收紧到刚好容纳一个图标按钮（三重宽度锁定，避免自动布局下被拉伸） */
 .testcase-preview-table-wrap .testcase-result-table th.testcase-maintain-action-col {
   position: sticky;
@@ -1757,7 +1782,7 @@ textarea.field-control {
   min-width: 64px;
   max-width: 64px;
   text-align: center;
-  box-shadow: -1px 0 0 oklch(0.92 0.008 235);
+  box-shadow: -1px 0 0 oklch(0.92 0.008 264);
 }
 .testcase-preview-table-wrap .testcase-result-table .testcase-maintain-action-cell {
   position: sticky;
@@ -1768,24 +1793,24 @@ textarea.field-control {
   max-width: 64px;
   text-align: center;
   background-color: white;
-  box-shadow: -1px 0 0 oklch(0.92 0.008 235);
+  box-shadow: -1px 0 0 oklch(0.92 0.008 264);
 }
 /* 预期结果列（倒数第二列）与操作列一起冻结在右侧 */
 .testcase-preview-table-wrap .testcase-result-table th:nth-last-child(2) {
   position: sticky;
   right: 64px;
   z-index: 4;
-  box-shadow: -1px 0 0 oklch(0.92 0.008 235), -14px 0 26px -18px oklch(0.18 0.02 235 / 0.4);
+  box-shadow: -1px 0 0 oklch(0.92 0.008 264), -14px 0 26px -18px oklch(0.18 0.02 264 / 0.4);
 }
 .testcase-preview-table-wrap .testcase-result-table td:nth-last-child(2) {
   position: sticky;
   right: 64px;
   z-index: 2;
   background-color: white;
-  box-shadow: -1px 0 0 oklch(0.92 0.008 235), -14px 0 26px -18px oklch(0.18 0.02 235 / 0.4);
+  box-shadow: -1px 0 0 oklch(0.92 0.008 264), -14px 0 26px -18px oklch(0.18 0.02 264 / 0.4);
 }
 .testcase-preview-table-wrap .testcase-result-table tbody tr:nth-child(even) > :is(td:nth-last-child(2), td.testcase-maintain-action-cell) {
-  background-color: oklch(0.985 0.003 235);
+  background-color: oklch(0.985 0.003 264);
 }
 
 /* 单元格留白与行 hover 反馈（冻结单元格同步变色） */
@@ -1802,30 +1827,30 @@ textarea.field-control {
   letter-spacing: 0.04em;
   line-height: 1.6;
 }
-.testcase-method-badge.is-get { color: oklch(0.5 0.14 235); background: oklch(0.94 0.03 235); }
+.testcase-method-badge.is-get { color: oklch(0.5 0.14 264); background: oklch(0.94 0.03 264); }
 .testcase-method-badge.is-post { color: oklch(0.5 0.12 155); background: oklch(0.94 0.04 155); }
 .testcase-method-badge.is-put { color: oklch(0.52 0.12 75); background: oklch(0.95 0.05 85); }
 .testcase-method-badge.is-delete { color: oklch(0.52 0.16 25); background: oklch(0.95 0.03 25); }
-.testcase-method-badge.is-patch { color: oklch(0.5 0.14 208); background: oklch(0.94 0.03 208); }
+.testcase-method-badge.is-patch { color: oklch(0.5 0.14 262); background: oklch(0.94 0.03 262); }
 .testcase-method-badge.is-head,
-.testcase-method-badge.is-options { color: oklch(0.52 0.02 235); background: oklch(0.95 0.01 235); }
+.testcase-method-badge.is-options { color: oklch(0.52 0.02 264); background: oklch(0.95 0.01 264); }
 .testcase-method-path-text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
 
 .testcase-preview-table-wrap .testcase-result-table tbody tr { transition: background-color 150ms ease; }
-.testcase-preview-table-wrap .testcase-result-table tbody tr:nth-child(even) > td:first-child { background-color: oklch(0.985 0.003 235); }
-.testcase-preview-table-wrap .testcase-result-table tbody tr:hover { background-color: oklch(0.966 0.009 235); }
-.testcase-preview-table-wrap .testcase-result-table tbody tr:hover > :is(td:first-child, td:nth-last-child(2), td.testcase-maintain-action-cell) { background-color: oklch(0.966 0.009 235); }
+.testcase-preview-table-wrap .testcase-result-table tbody tr:nth-child(even) > td:first-child { background-color: oklch(0.985 0.003 264); }
+.testcase-preview-table-wrap .testcase-result-table tbody tr:hover { background-color: oklch(0.966 0.009 264); }
+.testcase-preview-table-wrap .testcase-result-table tbody tr:hover > :is(td:first-child, td:nth-last-child(2), td.testcase-maintain-action-cell) { background-color: oklch(0.966 0.009 264); }
 /* 用例编号列：等宽字体强化标识符观感 */
 .testcase-preview-table-wrap .testcase-result-table td:first-child {
   font-family: var(--font-mono);
   font-size: 11.5px;
   letter-spacing: 0.015em;
-  color: oklch(0.42 0.03 235);
+  color: oklch(0.42 0.03 264);
 }
 /* 冻结首列：细分割线 + 柔和投影 */
 .testcase-preview-table-wrap .testcase-result-table td:first-child,
 .testcase-preview-table-wrap .testcase-result-table th:first-child {
-  box-shadow: 1px 0 0 oklch(0.93 0.008 235), 14px 0 26px -18px oklch(0.18 0.02 235 / 0.35);
+  box-shadow: 1px 0 0 oklch(0.93 0.008 264), 14px 0 26px -18px oklch(0.18 0.02 264 / 0.35);
 }
 
 /* 预览表格分页 */
@@ -1850,15 +1875,15 @@ textarea.field-control {
   border: 1px solid transparent;
   border-radius: 9px;
   background: transparent;
-  color: oklch(0.42 0.03 235);
+  color: oklch(0.42 0.03 264);
   font-size: 12px;
   font-weight: 620;
   transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
 }
-.testcase-page-button:hover { background: oklch(0.955 0.008 235); }
+.testcase-page-button:hover { background: oklch(0.955 0.008 264); }
 .testcase-page-button.is-active {
-  border-color: oklch(0.58 0.17 214 / 0.3);
-  background: oklch(0.58 0.17 214 / 0.09);
+  border-color: oklch(0.58 0.17 262 / 0.3);
+  background: oklch(0.58 0.17 262 / 0.09);
   color: var(--color-accent);
 }
 .testcase-page-ellipsis { padding: 0 2px; color: var(--color-muted-soft); font-size: 12px; }
@@ -1908,7 +1933,7 @@ textarea.field-control {
 /* ── Skeleton Loading ───────────────────────────────────────── */
 
 .skeleton {
-  background: linear-gradient(90deg, oklch(0.9 0.01 235 / 0.6) 25%, oklch(0.85 0.01 235 / 0.4) 50%, oklch(0.9 0.01 235 / 0.6) 75%);
+  background: linear-gradient(90deg, oklch(0.9 0.01 264 / 0.6) 25%, oklch(0.85 0.01 264 / 0.4) 50%, oklch(0.9 0.01 264 / 0.6) 75%);
   background-size: 200% 100%;
   animation: shimmer 2.4s ease-in-out infinite;
   border-radius: var(--radius-sm);
@@ -1934,9 +1959,9 @@ textarea.field-control {
 }
 
 .badge-accent {
-  background: linear-gradient(120deg, oklch(0.58 0.17 214 / 0.12), oklch(0.74 0.13 192 / 0.1));
+  background: oklch(0.58 0.17 262 / 0.1);
   color: var(--color-accent);
-  border: 1px solid oklch(0.58 0.17 214 / 0.24);
+  border: 1px solid oklch(0.58 0.17 262 / 0.22);
 }
 
 .badge-success {
@@ -1952,22 +1977,22 @@ textarea.field-control {
 }
 
 .badge-muted {
-  background: oklch(0.92 0.008 235 / 0.6);
+  background: oklch(0.92 0.008 264 / 0.6);
   color: var(--color-muted);
-  border: 1px solid oklch(0.88 0.01 235);
+  border: 1px solid oklch(0.88 0.01 264);
 }
 
 /* ── Divider ────────────────────────────────────────────────── */
 
 .divider {
   height: 1px;
-  background: oklch(0.92 0.008 235);
+  background: oklch(0.92 0.008 264);
   margin: 16px 0;
 }
 
 .divider-soft {
   height: 1px;
-  background: linear-gradient(to right, transparent, oklch(0.92 0.008 235), transparent);
+  background: linear-gradient(to right, transparent, oklch(0.92 0.008 264), transparent);
 }
 
 /* ── Empty State ────────────────────────────────────────────── */
@@ -1980,7 +2005,7 @@ textarea.field-control {
   padding: 48px 24px;
   text-align: center;
   border-radius: var(--radius-lg);
-  border: 1px dashed oklch(0.82 0.015 235 / 0.7);
+  border: 1px dashed oklch(0.82 0.015 264 / 0.7);
   background: oklch(1 0 0 / 0.5);
 }
 
@@ -1991,9 +2016,9 @@ textarea.field-control {
   width: 48px;
   height: 48px;
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, oklch(0.58 0.17 214 / 0.12), oklch(0.74 0.13 192 / 0.1));
+  background: oklch(0.58 0.17 262 / 0.09);
   color: var(--color-accent);
-  box-shadow: inset 0 0 0 1px oklch(0.58 0.17 214 / 0.16);
+  box-shadow: inset 0 0 0 1px oklch(0.58 0.17 262 / 0.14);
   margin-bottom: 16px;
 }
 
@@ -2109,10 +2134,10 @@ textarea.field-control {
   --df-ink-soft: var(--color-fg-soft);
   --df-muted: var(--color-muted);
   --df-muted-soft: var(--color-muted-soft);
-  --df-line: oklch(0.92 0.008 235 / 0.82);
-  --df-line-strong: oklch(0.86 0.012 235 / 0.9);
+  --df-line: oklch(0.92 0.008 264 / 0.82);
+  --df-line-strong: oklch(0.86 0.012 264 / 0.9);
   --df-accent: var(--color-accent);
-  --df-accent-soft: oklch(0.58 0.17 214 / 0.08);
+  --df-accent-soft: oklch(0.58 0.17 262 / 0.08);
   --df-mono: var(--font-mono);
   position: relative;
   isolation: isolate;
@@ -2129,8 +2154,8 @@ textarea.field-control {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(46rem 32rem at 4% 0%, oklch(0.58 0.17 214 / 0.1), transparent 64%),
-    radial-gradient(40rem 30rem at 100% 92%, oklch(0.62 0.22 240 / 0.08), transparent 66%);
+    radial-gradient(46rem 32rem at 4% 0%, oklch(0.58 0.17 262 / 0.1), transparent 64%),
+    radial-gradient(40rem 30rem at 100% 92%, oklch(0.62 0.22 264 / 0.08), transparent 66%);
 }
 
 .data-factory-ambient::after {
@@ -2138,7 +2163,7 @@ textarea.field-control {
   position: absolute;
   inset: 0;
   opacity: 0.5;
-  background-image: radial-gradient(circle, oklch(0.6 0.015 235 / 0.16) 0.75px, transparent 0.9px);
+  background-image: radial-gradient(circle, oklch(0.6 0.015 264 / 0.16) 0.75px, transparent 0.9px);
   background-size: 24px 24px;
   mask-image: linear-gradient(to bottom, black, transparent 78%);
 }
@@ -2186,7 +2211,7 @@ textarea.field-control {
 .data-factory-back:hover,
 .data-factory-icon-button:hover {
   transform: translateY(-1px);
-  border-color: oklch(0.58 0.17 214 / 0.36);
+  border-color: oklch(0.58 0.17 262 / 0.36);
   color: var(--df-accent);
   background: oklch(1 0 0 / 0.95);
   box-shadow: var(--shadow-elev-raised), inset 0 1px 0 oklch(1 0 0 / 0.8);
@@ -2270,7 +2295,7 @@ textarea.field-control {
   justify-content: center;
   gap: 6px;
   padding: 9px 14px;
-  border-right: 1px solid oklch(0.92 0.008 235 / 0.7);
+  border-right: 1px solid oklch(0.92 0.008 264 / 0.7);
 }
 
 .data-factory-summary > div:nth-child(2) { border-right: 0; }
@@ -2283,11 +2308,11 @@ textarea.field-control {
   border: 0;
   border-radius: 11px;
   color: #fff;
-  background: linear-gradient(135deg, oklch(0.2 0.03 235) 0%, oklch(0.35 0.16 235) 55%, var(--color-accent) 100%);
-  box-shadow: 0 12px 24px -16px oklch(0.58 0.17 214 / 0.6), inset 0 1px 0 oklch(1 0 0 / 0.18);
+  background: linear-gradient(135deg, oklch(0.2 0.03 264) 0%, oklch(0.35 0.16 264) 55%, var(--color-accent) 100%);
+  box-shadow: 0 12px 24px -16px oklch(0.58 0.17 262 / 0.6), inset 0 1px 0 oklch(1 0 0 / 0.18);
 }
 
-.data-factory-summary-live span { color: oklch(0.9 0.02 235); }
+.data-factory-summary-live span { color: oklch(0.9 0.02 264); }
 
 /* Shell — one frosted panel hosting rail / browser / workbench */
 
@@ -2299,7 +2324,7 @@ textarea.field-control {
   overflow: hidden;
   border: 1px solid var(--df-line);
   border-radius: var(--radius-xl);
-  background-image: linear-gradient(180deg, oklch(1 0 0 / 0.82), oklch(0.985 0.003 235 / 0.68));
+  background-image: linear-gradient(180deg, oklch(1 0 0 / 0.82), oklch(0.985 0.003 264 / 0.68));
   box-shadow: var(--shadow-elev-raised), inset 0 1px 0 oklch(1 0 0 / 0.82);
   backdrop-filter: blur(22px) saturate(1.12);
   animation: df-enter 520ms 60ms cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -2314,7 +2339,7 @@ textarea.field-control {
   overflow: hidden;
   padding: 20px 12px 16px;
   border-right: 1px solid var(--df-line);
-  background: linear-gradient(180deg, oklch(1 0 0 / 0.5), oklch(0.97 0.005 235 / 0.42));
+  background: linear-gradient(180deg, oklch(1 0 0 / 0.5), oklch(0.97 0.005 264 / 0.42));
 }
 
 .data-factory-rail-label {
@@ -2368,10 +2393,10 @@ textarea.field-control {
 }
 
 .data-factory-category.is-active {
-  border-color: oklch(0.58 0.17 214 / 0.32);
+  border-color: oklch(0.58 0.17 262 / 0.32);
   color: var(--df-accent);
-  background: linear-gradient(180deg, oklch(1 0 0 / 0.94), oklch(0.58 0.17 214 / 0.08));
-  box-shadow: 0 14px 28px -20px oklch(0.58 0.17 214 / 0.5), inset 0 1px 0 oklch(1 0 0 / 0.9);
+  background: linear-gradient(180deg, oklch(1 0 0 / 0.94), oklch(0.58 0.17 262 / 0.08));
+  box-shadow: 0 14px 28px -20px oklch(0.58 0.17 262 / 0.5), inset 0 1px 0 oklch(1 0 0 / 0.9);
 }
 
 .data-factory-category-icon {
@@ -2391,10 +2416,10 @@ textarea.field-control {
 }
 
 .data-factory-category.is-active .data-factory-category-icon {
-  border-color: oklch(0.58 0.17 214 / 0.5);
+  border-color: oklch(0.58 0.17 262 / 0.5);
   color: #fff;
-  background: linear-gradient(180deg, oklch(0.58 0.17 214 / 0.94), var(--color-accent));
-  box-shadow: 0 10px 20px -12px oklch(0.58 0.17 214 / 0.7), inset 0 1px 0 oklch(1 0 0 / 0.24);
+  background: linear-gradient(180deg, oklch(0.58 0.17 262 / 0.94), var(--color-accent));
+  box-shadow: 0 10px 20px -12px oklch(0.58 0.17 262 / 0.7), inset 0 1px 0 oklch(1 0 0 / 0.24);
 }
 
 .data-factory-category > span:nth-child(2) {
@@ -2415,7 +2440,7 @@ textarea.field-control {
   font-size: 8.5px;
 }
 
-.data-factory-category.is-active small { color: oklch(0.55 0.14 235); }
+.data-factory-category.is-active small { color: oklch(0.55 0.14 264); }
 .data-factory-mobile-category { display: none; }
 
 /* Tool browser */
@@ -2439,7 +2464,7 @@ textarea.field-control {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border: 1px solid oklch(0.58 0.17 214 / 0.22);
+  border: 1px solid oklch(0.58 0.17 262 / 0.22);
   border-radius: 13px;
   color: var(--df-accent);
   background: var(--df-accent-soft);
@@ -2528,7 +2553,7 @@ textarea.field-control {
   gap: 8px;
   overflow-y: auto;
   padding: 2px 4px 12px 2px;
-  scrollbar-color: oklch(0.82 0.015 235) transparent;
+  scrollbar-color: oklch(0.82 0.015 264) transparent;
   scrollbar-width: thin;
 }
 
@@ -2545,7 +2570,7 @@ textarea.field-control {
   text-align: left;
   color: var(--df-ink);
   background: oklch(1 0 0 / 0.72);
-  box-shadow: 0 10px 24px -24px oklch(0.18 0.02 235 / 0.5), inset 0 1px 0 oklch(1 0 0 / 0.7);
+  box-shadow: 0 10px 24px -24px oklch(0.18 0.02 264 / 0.5), inset 0 1px 0 oklch(1 0 0 / 0.7);
   transition:
     transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
     border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -2555,15 +2580,15 @@ textarea.field-control {
 
 .data-factory-tool-card:hover {
   transform: translateX(3px);
-  border-color: oklch(0.58 0.17 214 / 0.3);
+  border-color: oklch(0.58 0.17 262 / 0.3);
   background: oklch(1 0 0 / 0.94);
-  box-shadow: 0 16px 30px -24px oklch(0.58 0.17 214 / 0.5), inset 0 1px 0 oklch(1 0 0 / 0.8);
+  box-shadow: 0 16px 30px -24px oklch(0.58 0.17 262 / 0.5), inset 0 1px 0 oklch(1 0 0 / 0.8);
 }
 
 .data-factory-tool-card.is-selected {
-  border-color: oklch(0.58 0.17 214 / 0.4);
-  background: linear-gradient(90deg, oklch(0.58 0.17 214 / 0.1), oklch(1 0 0 / 0.9) 58%);
-  box-shadow: inset 3px 0 0 var(--df-accent), 0 16px 30px -24px oklch(0.58 0.17 214 / 0.55);
+  border-color: oklch(0.58 0.17 262 / 0.4);
+  background: linear-gradient(90deg, oklch(0.58 0.17 262 / 0.1), oklch(1 0 0 / 0.9) 58%);
+  box-shadow: inset 3px 0 0 var(--df-accent), 0 16px 30px -24px oklch(0.58 0.17 262 / 0.55);
 }
 
 .data-factory-tool-number {
@@ -2581,10 +2606,10 @@ textarea.field-control {
   height: 40px;
   align-items: center;
   justify-content: center;
-  border: 1px solid oklch(0.58 0.17 214 / 0.16);
+  border: 1px solid oklch(0.58 0.17 262 / 0.16);
   border-radius: 12px;
-  color: oklch(0.5 0.15 235);
-  background: oklch(0.58 0.17 214 / 0.06);
+  color: oklch(0.5 0.15 264);
+  background: oklch(0.58 0.17 262 / 0.06);
 }
 
 .data-factory-tool-copy { min-width: 0; }
@@ -2603,7 +2628,7 @@ textarea.field-control {
   justify-content: center;
   gap: 8px;
   padding: 24px;
-  border: 1px dashed oklch(0.82 0.015 235 / 0.8);
+  border: 1px dashed oklch(0.82 0.015 264 / 0.8);
   border-radius: 16px;
   color: var(--df-muted-soft);
   background: oklch(1 0 0 / 0.4);
@@ -2620,8 +2645,8 @@ textarea.field-control {
   min-height: 0;
   overflow: auto;
   background:
-    linear-gradient(oklch(0.6 0.015 235 / 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.6 0.015 235 / 0.06) 1px, transparent 1px);
+    linear-gradient(oklch(0.6 0.015 264 / 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.6 0.015 264 / 0.06) 1px, transparent 1px);
   background-size: 28px 28px;
 }
 
@@ -2654,16 +2679,16 @@ textarea.field-control {
   height: 64px;
   align-items: center;
   justify-content: center;
-  border: 1px solid oklch(0.58 0.17 214 / 0.4);
+  border: 1px solid oklch(0.58 0.17 262 / 0.4);
   border-radius: 20px;
   color: #fff;
-  background: linear-gradient(135deg, oklch(0.2 0.03 235) 0%, oklch(0.35 0.16 235) 52%, var(--color-accent) 100%);
-  box-shadow: 0 22px 44px -24px oklch(0.45 0.17 235 / 0.75), inset 0 1px 0 oklch(1 0 0 / 0.2);
+  background: linear-gradient(135deg, oklch(0.2 0.03 264) 0%, oklch(0.35 0.16 264) 52%, var(--color-accent) 100%);
+  box-shadow: 0 22px 44px -24px oklch(0.45 0.17 264 / 0.75), inset 0 1px 0 oklch(1 0 0 / 0.2);
 }
 
 .data-factory-orbit {
   position: absolute;
-  border: 1px solid oklch(0.58 0.17 214 / 0.25);
+  border: 1px solid oklch(0.58 0.17 262 / 0.25);
   border-radius: 50%;
 }
 
@@ -2676,7 +2701,7 @@ textarea.field-control {
   height: 7px;
   border-radius: 50%;
   background: var(--df-accent);
-  box-shadow: 0 0 0 4px oklch(0.58 0.17 214 / 0.12);
+  box-shadow: 0 0 0 4px oklch(0.58 0.17 262 / 0.12);
 }
 
 .data-factory-orbit.orbit-one { inset: 14px; animation: df-spin 11s linear infinite; }
@@ -2713,7 +2738,7 @@ textarea.field-control {
   gap: 9px;
   margin-top: 24px;
   padding: 11px 18px;
-  border: 1px solid oklch(0.58 0.17 214 / 0.3);
+  border: 1px solid oklch(0.58 0.17 262 / 0.3);
   border-radius: 13px;
   color: var(--df-accent);
   background: oklch(1 0 0 / 0.8);
@@ -2729,7 +2754,7 @@ textarea.field-control {
 
 .data-factory-start-button:hover {
   transform: translateY(-2px);
-  border-color: oklch(0.58 0.17 214 / 0.5);
+  border-color: oklch(0.58 0.17 262 / 0.5);
   background: oklch(1 0 0 / 0.96);
   box-shadow: var(--shadow-elev-raised), var(--shadow-glow-accent);
 }
@@ -2768,7 +2793,7 @@ textarea.field-control {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border: 1px solid oklch(0.58 0.17 214 / 0.24);
+  border: 1px solid oklch(0.58 0.17 262 / 0.24);
   border-radius: 14px;
   color: var(--df-accent);
   background: var(--df-accent-soft);
@@ -2796,7 +2821,7 @@ textarea.field-control {
   padding: 22px;
   border: 1px solid var(--df-line);
   border-radius: 20px;
-  background-image: linear-gradient(180deg, oklch(1 0 0 / 0.88), oklch(0.985 0.003 235 / 0.74));
+  background-image: linear-gradient(180deg, oklch(1 0 0 / 0.88), oklch(0.985 0.003 264 / 0.74));
   box-shadow: var(--shadow-elev-low), inset 0 1px 0 oklch(1 0 0 / 0.82);
   backdrop-filter: blur(14px);
 }
@@ -2815,7 +2840,7 @@ textarea.field-control {
   height: 29px;
   align-items: center;
   justify-content: center;
-  border: 1px solid oklch(0.58 0.17 214 / 0.22);
+  border: 1px solid oklch(0.58 0.17 262 / 0.22);
   border-radius: 9px;
   color: var(--df-accent);
   background: var(--df-accent-soft);
@@ -2847,11 +2872,11 @@ textarea.field-control {
   padding: 3px;
   border: 1px solid var(--df-line-strong);
   border-radius: 999px;
-  background: oklch(0.94 0.006 235);
+  background: oklch(0.94 0.006 264);
   transition: background 200ms cubic-bezier(0.16, 1, 0.3, 1), border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.data-factory-switch span { width: 19px; height: 19px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px oklch(0.18 0.02 235 / 0.2); transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+.data-factory-switch span { width: 19px; height: 19px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px oklch(0.18 0.02 264 / 0.2); transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1); }
 .data-factory-switch.is-active { border-color: var(--df-accent); background: var(--df-accent); }
 .data-factory-switch.is-active span { transform: translateX(19px); }
 
@@ -2860,10 +2885,10 @@ textarea.field-control {
   align-items: center;
   gap: 13px;
   padding: 16px;
-  border: 1px dashed oklch(0.58 0.17 214 / 0.3);
+  border: 1px dashed oklch(0.58 0.17 262 / 0.3);
   border-radius: 14px;
   color: var(--df-accent);
-  background: oklch(0.58 0.17 214 / 0.05);
+  background: oklch(0.58 0.17 262 / 0.05);
 }
 
 .data-factory-parameter-empty strong { display: block; color: var(--df-ink-soft); font-size: 12.5px; }
@@ -2893,15 +2918,15 @@ textarea.field-control {
   position: relative;
   overflow: hidden;
   padding: 10px 18px;
-  border: 1px solid oklch(0.58 0.17 214 / 0.6);
+  border: 1px solid oklch(0.58 0.17 262 / 0.6);
   color: #fff;
-  background: linear-gradient(180deg, oklch(0.58 0.17 214 / 0.92), var(--color-accent));
-  box-shadow: 0 18px 34px -22px oklch(0.58 0.17 214 / 0.6), inset 0 1px 0 oklch(1 0 0 / 0.22);
+  background: linear-gradient(180deg, oklch(0.58 0.17 262 / 0.92), var(--color-accent));
+  box-shadow: 0 18px 34px -22px oklch(0.58 0.17 262 / 0.6), inset 0 1px 0 oklch(1 0 0 / 0.22);
 }
 
 .data-factory-primary:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 22px 44px -24px oklch(0.58 0.17 214 / 0.7), var(--shadow-glow-accent), inset 0 1px 0 oklch(1 0 0 / 0.22);
+  box-shadow: 0 22px 44px -24px oklch(0.58 0.17 262 / 0.7), var(--shadow-glow-accent), inset 0 1px 0 oklch(1 0 0 / 0.22);
 }
 
 .data-factory-primary:active:not(:disabled) { transform: translateY(0) scale(0.99); }
@@ -2916,7 +2941,7 @@ textarea.field-control {
 
 .data-factory-secondary:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: oklch(0.58 0.17 214 / 0.34);
+  border-color: oklch(0.58 0.17 262 / 0.34);
   color: var(--df-accent);
   background: oklch(1 0 0 / 0.95);
   box-shadow: var(--shadow-elev-low), inset 0 1px 0 oklch(1 0 0 / 0.75);
@@ -2933,30 +2958,30 @@ textarea.field-control {
 /* Result console — deliberate dark glass accent panel */
 
 .data-factory-result-step {
-  border-color: oklch(0.32 0.04 235 / 0.85);
+  border-color: oklch(0.32 0.04 264 / 0.85);
   background:
     linear-gradient(oklch(1 0 0 / 0.03) 1px, transparent 1px),
     linear-gradient(90deg, oklch(1 0 0 / 0.03) 1px, transparent 1px),
-    linear-gradient(180deg, oklch(0.24 0.032 235), oklch(0.2 0.028 235));
+    linear-gradient(180deg, oklch(0.24 0.032 264), oklch(0.2 0.028 264));
   background-size: 26px 26px, 26px 26px, 100% 100%;
-  box-shadow: 0 26px 52px -34px oklch(0.18 0.02 235 / 0.85), inset 0 1px 0 oklch(1 0 0 / 0.07);
+  box-shadow: 0 26px 52px -34px oklch(0.18 0.02 264 / 0.85), inset 0 1px 0 oklch(1 0 0 / 0.07);
 }
 
 .data-factory-result-heading { grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; }
-.data-factory-result-step .data-factory-step-heading > span { border-color: oklch(1 0 0 / 0.14); color: oklch(0.82 0.1 235); background: oklch(1 0 0 / 0.06); }
-.data-factory-result-step .data-factory-step-heading h4 { color: oklch(0.96 0.008 235); }
-.data-factory-result-step .data-factory-step-heading p { color: oklch(0.68 0.03 235); }
+.data-factory-result-step .data-factory-step-heading > span { border-color: oklch(1 0 0 / 0.14); color: oklch(0.82 0.1 264); background: oklch(1 0 0 / 0.06); }
+.data-factory-result-step .data-factory-step-heading h4 { color: oklch(0.96 0.008 264); }
+.data-factory-result-step .data-factory-step-heading p { color: oklch(0.68 0.03 264); }
 
 .data-factory-copy {
   min-height: 36px;
   padding: 8px 13px;
   border: 1px solid oklch(1 0 0 / 0.14);
-  color: oklch(0.82 0.025 235);
+  color: oklch(0.82 0.025 264);
   background: oklch(1 0 0 / 0.06);
   backdrop-filter: blur(8px);
 }
 
-.data-factory-copy:hover:not(:disabled) { border-color: oklch(0.72 0.12 235 / 0.6); color: #fff; background: oklch(1 0 0 / 0.1); }
+.data-factory-copy:hover:not(:disabled) { border-color: oklch(0.72 0.12 264 / 0.6); color: #fff; background: oklch(1 0 0 / 0.1); }
 .data-factory-copy:disabled { cursor: not-allowed; opacity: 0.38; }
 
 .data-factory-result {
@@ -2965,24 +2990,24 @@ textarea.field-control {
   overflow: hidden;
   border: 1px solid oklch(1 0 0 / 0.09);
   border-radius: 14px;
-  background: oklch(0.15 0.022 235 / 0.72);
+  background: oklch(0.15 0.022 264 / 0.72);
   box-shadow: inset 0 1px 5px oklch(0 0 0 / 0.3);
   transition: border-color 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .data-factory-result.has-result {
-  border-color: oklch(0.6 0.15 235 / 0.5);
-  box-shadow: inset 0 1px 5px oklch(0 0 0 / 0.3), 0 0 28px -10px oklch(0.58 0.17 214 / 0.35);
+  border-color: oklch(0.6 0.15 264 / 0.5);
+  box-shadow: inset 0 1px 5px oklch(0 0 0 / 0.3), 0 0 28px -10px oklch(0.58 0.17 262 / 0.35);
 }
 
 .data-factory-result pre { width: 100%; height: 100%; min-height: 0; margin: 0; overflow: auto; overscroll-behavior: contain; padding: 18px; color: oklch(0.88 0.09 160); font-family: var(--df-mono); font-size: 12px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-color: oklch(1 0 0 / 0.22) transparent; scrollbar-width: thin; }
 .data-factory-result pre::-webkit-scrollbar-thumb { background: oklch(1 0 0 / 0.16); }
 .data-factory-result pre::-webkit-scrollbar-thumb:hover { background: oklch(1 0 0 / 0.3); }
-.data-factory-result pre span { display: flex; min-height: 100%; align-items: center; justify-content: center; padding: 24px; color: oklch(0.6 0.03 235); font-family: inherit; font-size: 11.5px; text-align: center; }
-.data-factory-loading { display: flex; height: 100%; min-height: 240px; align-items: center; justify-content: center; gap: 14px; color: oklch(0.78 0.1 235); }
+.data-factory-result pre span { display: flex; min-height: 100%; align-items: center; justify-content: center; padding: 24px; color: oklch(0.6 0.03 264); font-family: inherit; font-size: 11.5px; text-align: center; }
+.data-factory-loading { display: flex; height: 100%; min-height: 240px; align-items: center; justify-content: center; gap: 14px; color: oklch(0.78 0.1 264); }
 .data-factory-loading div { display: flex; flex-direction: column; gap: 4px; }
-.data-factory-loading strong { color: oklch(0.95 0.01 235); font-size: 12.5px; }
-.data-factory-loading span { color: oklch(0.64 0.03 235); font-size: 10.5px; }
+.data-factory-loading strong { color: oklch(0.95 0.01 264); font-size: 12.5px; }
+.data-factory-loading span { color: oklch(0.64 0.03 264); font-size: 10.5px; }
 
 .data-factory-page-loading {
   display: flex;
@@ -2993,7 +3018,7 @@ textarea.field-control {
   border: 1px solid var(--df-line);
   border-radius: var(--radius-xl);
   color: var(--df-accent);
-  background-image: linear-gradient(180deg, oklch(1 0 0 / 0.8), oklch(0.985 0.003 235 / 0.66));
+  background-image: linear-gradient(180deg, oklch(1 0 0 / 0.8), oklch(0.985 0.003 264 / 0.66));
   box-shadow: var(--shadow-elev-raised), inset 0 1px 0 oklch(1 0 0 / 0.8);
   backdrop-filter: blur(20px) saturate(1.1);
 }
@@ -3001,7 +3026,7 @@ textarea.field-control {
 .data-factory-page-loading div { display: flex; flex-direction: column; gap: 5px; }
 .data-factory-page-loading strong { font-size: 13.5px; }
 .data-factory-page-loading span { color: var(--df-muted); font-size: 11.5px; }
-.data-factory-page :is(button, a, select, input, textarea):focus-visible { outline: 3px solid oklch(0.58 0.17 214 / 0.2); outline-offset: 2px; }
+.data-factory-page :is(button, a, select, input, textarea):focus-visible { outline: 3px solid oklch(0.58 0.17 262 / 0.2); outline-offset: 2px; }
 
 @keyframes df-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes df-spin { to { transform: rotate(360deg); } }
@@ -3144,8 +3169,8 @@ textarea.field-control {
   gap: 8px;
   max-width: 320px;
   border-radius: 9999px;
-  border: 1px solid oklch(0.92 0.008 235 / 0.88);
-  background: oklch(0.97 0.004 235);
+  border: 1px solid oklch(0.92 0.008 264 / 0.88);
+  background: oklch(0.97 0.004 264);
   padding: 5px 10px;
   font-size: 12px;
   color: var(--color-fg-soft);
@@ -3207,7 +3232,7 @@ textarea.field-control {
   height: 8px;
   margin-inline: 4px;
   border-radius: 9999px;
-  background: oklch(0.85 0.01 235);
+  background: oklch(0.85 0.01 264);
 }
 
 .requirement-warning-list {
@@ -3234,6 +3259,103 @@ textarea.field-control {
   margin: 0;
 }
 
+.requirement-process-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.requirement-process-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--color-fg-soft);
+}
+
+.requirement-process-scroll {
+  height: 300px;
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid oklch(0.92 0.008 264 / 0.88);
+  background: oklch(0.98 0.003 264);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.requirement-process-reasoning {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--color-muted);
+}
+
+.requirement-process-content {
+  border-radius: 10px;
+  border: 1px solid oklch(0.92 0.008 264 / 0.7);
+  background: oklch(0.975 0.004 264);
+}
+
+.requirement-process-content summary {
+  cursor: pointer;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--color-fg-soft);
+  user-select: none;
+}
+
+.requirement-process-content summary:hover {
+  color: var(--color-accent);
+}
+
+.requirement-process-content pre {
+  margin: 0;
+  padding: 0 12px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
+  color: var(--color-fg-soft);
+}
+
+.requirement-process-attempt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: oklch(0.5 0.1 85);
+}
+
+.requirement-process-attempt::before,
+.requirement-process-attempt::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: oklch(0.9 0.02 90 / 0.8);
+}
+
+.requirement-process-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-fg-soft);
+}
+
+.requirement-process-notice svg {
+  margin-top: 2px;
+  color: var(--color-muted);
+}
+
 .requirement-result-layout {
   display: flex;
   flex-direction: column;
@@ -3253,8 +3375,8 @@ textarea.field-control {
   display: inline-flex;
   gap: 4px;
   border-radius: 12px;
-  border: 1px solid oklch(0.92 0.008 235 / 0.88);
-  background: oklch(0.97 0.004 235);
+  border: 1px solid oklch(0.92 0.008 264 / 0.88);
+  background: oklch(0.97 0.004 264);
   padding: 4px;
 }
 
@@ -3277,7 +3399,7 @@ textarea.field-control {
 .requirement-chart-tab.is-active {
   background: oklch(1 0 0);
   color: var(--color-accent);
-  box-shadow: 0 1px 3px oklch(0.2 0.03 235 / 0.12);
+  box-shadow: 0 1px 3px oklch(0.2 0.03 264 / 0.12);
 }
 
 .requirement-toolbar-actions {
@@ -3342,7 +3464,7 @@ textarea.field-control {
 
 .requirement-findings-total {
   border-radius: 9999px;
-  background: oklch(0.95 0.02 235);
+  background: oklch(0.95 0.02 264);
   color: var(--color-accent);
   font-size: 11px;
   font-weight: 700;
@@ -3371,7 +3493,7 @@ textarea.field-control {
 
 .requirement-finding-group-title.is-risk { color: oklch(0.5 0.14 25); }
 .requirement-finding-group-title.is-ambiguity { color: oklch(0.48 0.12 85); }
-.requirement-finding-group-title.is-clarification { color: oklch(0.5 0.12 220); }
+.requirement-finding-group-title.is-clarification { color: oklch(0.5 0.12 262); }
 
 .requirement-finding-list {
   display: flex;
@@ -3389,14 +3511,14 @@ textarea.field-control {
   width: 100%;
   text-align: left;
   border-radius: 12px;
-  border: 1px solid oklch(0.92 0.008 235 / 0.88);
+  border: 1px solid oklch(0.92 0.008 264 / 0.88);
   background: oklch(1 0 0 / 0.7);
   padding: 10px 12px;
   transition: border-color 160ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .requirement-finding-item:hover {
-  border-color: oklch(0.78 0.03 235);
+  border-color: oklch(0.78 0.03 264);
 }
 
 .requirement-finding-item.is-active {
@@ -3405,7 +3527,7 @@ textarea.field-control {
 }
 
 .requirement-finding-item.is-linked {
-  border-color: oklch(0.72 0.06 235 / 0.75);
+  border-color: oklch(0.72 0.06 264 / 0.75);
 }
 
 .requirement-finding-title {
@@ -3423,6 +3545,19 @@ textarea.field-control {
 .requirement-finding-node {
   font-size: 11px;
   color: var(--color-muted);
+}
+
+.requirement-bottom-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+.requirement-process-review-scroll {
+  height: auto;
+  max-height: 360px;
+  margin-top: 12px;
 }
 
 .requirement-source-panel {
@@ -3455,8 +3590,8 @@ textarea.field-control {
   white-space: pre-wrap;
   word-break: break-word;
   border-radius: 12px;
-  border: 1px solid oklch(0.92 0.008 235 / 0.88);
-  background: oklch(0.98 0.003 235);
+  border: 1px solid oklch(0.92 0.008 264 / 0.88);
+  background: oklch(0.98 0.003 264);
   padding: 12px 14px;
   font-size: 12px;
   line-height: 1.7;
@@ -3470,5 +3605,137 @@ textarea.field-control {
 
   .requirement-findings-panel {
     max-height: none;
+  }
+}
+
+/* ── 图表画布（全屏只读阅览） ─────────────────────────────── */
+
+.requirement-chart-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.requirement-chart-panel-head .requirement-panel-title {
+  margin-bottom: 0;
+}
+
+.requirement-canvas-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  animation: requirement-canvas-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes requirement-canvas-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.requirement-canvas-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.requirement-canvas-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.requirement-canvas-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.requirement-canvas-stage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.requirement-canvas-stage .requirement-chart-canvas {
+  height: 100%;
+}
+
+.requirement-canvas-panel {
+  width: 360px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.requirement-canvas-panel .requirement-findings-panel {
+  height: 100%;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: none;
+}
+
+.requirement-canvas-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-2);
+  padding: 2px;
+}
+
+.requirement-canvas-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  width: 28px;
+  border-radius: 9px;
+  color: var(--color-fg-soft);
+  cursor: pointer;
+  transition:
+    background 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.requirement-canvas-zoom-btn:hover {
+  background: oklch(1 0 0);
+  color: var(--color-accent);
+}
+
+.requirement-canvas-zoom-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.requirement-canvas-zoom-btn:disabled:hover {
+  background: transparent;
+  color: var(--color-fg-soft);
+}
+
+.requirement-canvas-zoom-value {
+  min-width: 52px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-fg-soft);
+}
+
+@media (max-width: 900px) {
+  .requirement-canvas-panel {
+    width: 300px;
   }
 }

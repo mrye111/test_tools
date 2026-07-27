@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { NavLink, Link, useLocation } from 'react-router-dom'
+import { motion, useMotionValue, useSpring, useTransform } from 'motion/react'
 import { Settings, Wrench, BookOpen } from 'lucide-react'
 import { Tooltip } from './ui/Tooltip'
 
@@ -7,16 +9,57 @@ const navItems = [
   { to: '#', label: '文档', icon: BookOpen, external: true },
 ]
 
+// 滚动收缩曲线：前 160px 滚动映射为 0→1 进度
+const SCRUB_RANGE = 160
+
 export function Navbar() {
   const location = useLocation()
 
+  // 滚动进度 0→1，spring 抹平滚轮/触控板的阶梯输入，宽度与玻璃质感随进度连续插值
+  const scrollProgress = useMotionValue(0)
+  const progress = useSpring(scrollProgress, { stiffness: 320, damping: 34, mass: 0.7 })
+
+  useEffect(() => {
+    const onScroll = () => {
+      scrollProgress.set(Math.min(1, Math.max(0, window.scrollY / SCRUB_RANGE)))
+    }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [scrollProgress])
+
+  // 宽度：1200px → 880px 连续收窄
+  const maxWidth = useTransform(progress, [0, 1], [1200, 880])
+  // 玻璃质感：透明度 0→1 淡入（背景 / 边框 / 投影同源驱动）
+  const barBg = useTransform(progress, (v) => `oklch(1 0 0 / ${(v * 0.72).toFixed(3)})`)
+  const barBorder = useTransform(progress, (v) => `oklch(1 0 0 / ${(v * 0.66).toFixed(3)})`)
+  const barShadow = useTransform(
+    progress,
+    (v) =>
+      `0 18px 44px -26px oklch(0.45 0.14 262 / ${(v * 0.35).toFixed(3)}), inset 0 1px 0 oklch(1 0 0 / ${(v * 0.85).toFixed(3)})`,
+  )
+  const barBlur = useTransform(progress, (v) => `blur(${(v * 16).toFixed(1)}px) saturate(${(1 + v * 0.5).toFixed(3)})`)
+  // 链接组胶囊：同步淡入
+  const groupBg = useTransform(progress, (v) => `oklch(1 0 0 / ${(v * 0.5).toFixed(3)})`)
+  const groupBorder = useTransform(progress, (v) => `oklch(1 0 0 / ${(v * 0.6).toFixed(3)})`)
+  const groupShadow = useTransform(progress, (v) => `0 16px 36px -30px oklch(0.18 0.02 264 / ${(v * 0.5).toFixed(3)})`)
+
   return (
     <nav className="sticky top-3 z-50 px-4 max-sm:top-2 max-sm:px-3">
-      {/* 悬浮玻璃胶囊：liquid-glass 质感 + 圆角胶囊 + 页面两侧留白 */}
-      <div className="liquid-glass mx-auto flex max-w-[1100px] items-center justify-between gap-3 rounded-full py-2 pl-4 pr-2 max-sm:pl-3 max-sm:pr-1.5">
+      <motion.div
+        className="mx-auto flex items-center justify-between gap-3 rounded-full border py-2 pl-4 pr-2 max-sm:pl-3 max-sm:pr-1.5"
+        style={{
+          maxWidth,
+          backgroundColor: barBg,
+          borderColor: barBorder,
+          boxShadow: barShadow,
+          backdropFilter: barBlur,
+          WebkitBackdropFilter: barBlur,
+        }}
+      >
         {/* Logo */}
         <Link to="/" className="group flex items-center gap-2.5 no-underline">
-          <div className="brand-mark flex h-9 w-9 items-center justify-center rounded-xl text-sm font-bold tracking-tight text-white">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-sm font-bold tracking-tight text-white shadow-[0_12px_28px_-14px_oklch(0.58_0.17_262/0.7),inset_0_1px_0_oklch(1_0_0/0.32)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:-translate-y-0.5 group-hover:-rotate-3">
             AI
           </div>
           <span className="font-display text-lg font-semibold tracking-[-0.035em] text-fg">
@@ -25,7 +68,14 @@ export function Navbar() {
         </Link>
 
         {/* Navigation */}
-        <ul className="flex list-none items-center gap-1 rounded-full border border-white/60 bg-white/50 p-1 shadow-[0_16px_36px_-30px_oklch(0.18_0.02_235/0.5)]">
+        <motion.ul
+          className="flex list-none items-center gap-1 rounded-full border p-1"
+          style={{
+            backgroundColor: groupBg,
+            borderColor: groupBorder,
+            boxShadow: groupShadow,
+          }}
+        >
           {navItems.map((item) => {
             const Icon = item.icon
             const isActive = !item.external && location.hash === '#tools' && item.label === '工具'
@@ -78,8 +128,8 @@ export function Navbar() {
               </Link>
             </Tooltip>
           </li>
-        </ul>
-      </div>
+        </motion.ul>
+      </motion.div>
     </nav>
   )
 }

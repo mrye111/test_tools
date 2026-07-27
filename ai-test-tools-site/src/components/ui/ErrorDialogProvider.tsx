@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import { AlertCircle, X } from 'lucide-react'
-import { ModalPortal } from './ModalPortal'
+import { ModalShell } from './ModalShell'
 import { normalizeErrorMessage } from '../../lib/app-error'
 
 type ShowErrorOptions = {
@@ -27,6 +27,7 @@ const ErrorDialogContext = createContext<ErrorDialogContextValue>(noopContextVal
 
 export function ErrorDialogProvider({ children }: { children: ReactNode }) {
   const [dialog, setDialog] = useState<ErrorDialogState | null>(null)
+  // 无需缓存最后一次展示的内容：ModalShell 会在退出动画期间渲染 open 时的 children 快照
 
   const hideError = useCallback(() => {
     setDialog(null)
@@ -48,8 +49,8 @@ export function ErrorDialogProvider({ children }: { children: ReactNode }) {
   return (
     <ErrorDialogContext.Provider value={value}>
       {children}
-      {dialog && (
-        <ModalPortal onClose={hideError}>
+      <ModalShell open={Boolean(dialog)} onClose={hideError}>
+        {dialog && (
           <div
             className="modal-panel w-full max-w-[520px] rounded-[28px] p-6 max-sm:p-4"
             onClick={(event) => event.stopPropagation()}
@@ -59,7 +60,7 @@ export function ErrorDialogProvider({ children }: { children: ReactNode }) {
           >
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[oklch(0.55_0.2_25/0.22)] bg-[linear-gradient(135deg,oklch(0.55_0.2_25/0.16),oklch(0.6_0.22_15/0.1))] text-danger shadow-[0_12px_26px_-16px_oklch(0.55_0.2_25/0.55),inset_0_1px_0_oklch(1_0_0/0.6)]">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[oklch(0.55_0.2_25/0.2)] bg-[oklch(0.55_0.2_25/0.1)] text-danger">
                   <AlertCircle className="h-5 w-5" />
                 </div>
                 <div>
@@ -91,8 +92,8 @@ export function ErrorDialogProvider({ children }: { children: ReactNode }) {
               </button>
             </div>
           </div>
-        </ModalPortal>
-      )}
+        )}
+      </ModalShell>
     </ErrorDialogContext.Provider>
   )
 }

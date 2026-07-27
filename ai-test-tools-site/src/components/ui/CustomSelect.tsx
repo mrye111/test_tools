@@ -173,7 +173,7 @@ export function CustomSelect({ value, onChange, options, placeholder, className 
                   className={`dropdown-item ${
                     isSelected ? 'dropdown-item-selected' : ''
                   } ${
-                    isHighlighted && !isSelected ? 'bg-[linear-gradient(120deg,oklch(0.56_0.24_208/0.1),oklch(0.7_0.14_218/0.07))]' : ''
+                    isHighlighted && !isSelected ? 'bg-accent/10' : ''
                   }`}
                 >
                   <span className="flex-1 text-left">{option.label}</span>

@@ -7,7 +7,7 @@ export function ToolsSection() {
       {/* 顶部青光：Hero 舞台光晕在浅色区的回声，衔接上下两个区域 */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -top-28 left-1/2 h-[340px] w-[760px] -translate-x-1/2 bg-[radial-gradient(ellipse,oklch(0.74_0.13_192/0.15),transparent_65%)]"
+        className="pointer-events-none absolute -top-28 left-1/2 h-[340px] w-[760px] -translate-x-1/2 bg-[radial-gradient(ellipse,oklch(0.74_0.13_262/0.15),transparent_65%)]"
       />
 
       {/* Section 头部 */}
@@ -17,7 +17,7 @@ export function ToolsSection() {
         </span>
         <h2 className="font-display text-[clamp(30px,4.5vw,44px)] font-bold leading-[1.15] tracking-[-0.04em] text-fg">
           测试全流程
-          <span className="text-gradient text-gradient-animated">一站搞定</span>
+          一站搞定
         </h2>
         <p className="mt-4 text-[15px] leading-[1.8] text-muted">
           从脚本生成到报告分析，每个环节都有 AI 搭把手，点开即用。

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
   ChevronDown,
@@ -15,7 +15,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { ModalPortal } from '../ui/ModalPortal'
+import { ModalShell } from '../ui/ModalShell'
 import { useErrorDialog } from '../ui/ErrorDialogProvider'
 import { MODEL_CONFIG_PRESETS, findModelConfigPreset } from '../../lib/model-config-presets'
 import { fetchModelsForConfig, type FetchedModel } from '../../lib/model-fetch-api'
@@ -33,6 +33,8 @@ import {
 } from '../../shared/api-types'
 
 interface Props {
+  /** 由父组件控制显隐；置 false 时播放退出动画后卸载（组件需保持挂载） */
+  open: boolean
   initialConfig?: UniversalProvider | null
   onClose: () => void
   onSave: (config: UniversalProvider) => void
@@ -75,10 +77,17 @@ function formatApiFormatLabel(apiFormat: AiApiFormat) {
   return 'OpenAI Responses'
 }
 
-export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
+export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props) {
   type DraftErrorField = 'name' | 'baseUrl' | 'apiKey' | 'model'
   const { showError } = useErrorDialog()
-  const isEditMode = Boolean(initialConfig)
+  // 关闭期间 initialConfig 可能被父组件清空，缓存编辑态以维持退出动画中的标题；
+  // 用 prev-state 模式在打开沿同步（不写 ref，保持 render 纯函数）
+  const [isEditMode, setIsEditMode] = useState(Boolean(initialConfig))
+  const [prevOpenForMode, setPrevOpenForMode] = useState(open)
+  if (open !== prevOpenForMode) {
+    setPrevOpenForMode(open)
+    if (open) setIsEditMode(Boolean(initialConfig))
+  }
   const [draft, setDraft] = useState<UniversalProvider>(() => createProviderDraft(initialConfig))
   const [selectedPresetType, setSelectedPresetType] = useState<string>(() => initialConfig?.providerType || MODEL_CONFIG_PRESETS[0].providerType)
   const [showApiKey, setShowApiKey] = useState(false)
@@ -87,6 +96,25 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
   const [fetchedModels, setFetchedModels] = useState<FetchedModel[]>([])
   const [showModelMenu, setShowModelMenu] = useState(false)
   const [pendingDeleteModelId, setPendingDeleteModelId] = useState<string | null>(null)
+
+  // 组件现在常驻挂载，每次从关闭到打开时重建草稿（等价于原先的条件挂载 + key 重挂载）；
+  // 同时递增会话号，使上一会话在途的 fetchModels 回调失效（旧请求结果不注入新表单）
+  const prevOpenRef = useRef(open)
+  const fetchSessionRef = useRef(0)
+  useEffect(() => {
+    if (open && !prevOpenRef.current) {
+      fetchSessionRef.current += 1
+      setDraft(createProviderDraft(initialConfig))
+      setSelectedPresetType(initialConfig?.providerType || MODEL_CONFIG_PRESETS[0].providerType)
+      setShowApiKey(false)
+      setFieldErrors({})
+      setLoadingModels(false)
+      setFetchedModels([])
+      setShowModelMenu(false)
+      setPendingDeleteModelId(null)
+    }
+    prevOpenRef.current = open
+  }, [open, initialConfig])
 
   const selectedPreset = useMemo(() => findModelConfigPreset(selectedPresetType), [selectedPresetType])
 
@@ -211,6 +239,9 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
 
     setPendingDeleteModelId(null)
     setLoadingModels(true)
+    // 会话防护：请求在途时弹窗被关闭重开（状态已重置），旧请求的回调不得落地到本次会话
+    const session = fetchSessionRef.current
+    const isCurrentSession = () => session === fetchSessionRef.current
     try {
       const models = await fetchModelsForConfig({
         baseUrl: draft.baseUrl,
@@ -218,18 +249,20 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
         apiFormat: draft.apiFormat,
         modelsUrl: draft.modelsUrl,
       })
+      if (!isCurrentSession()) return
       setFetchedModels(models)
       setShowModelMenu(models.length > 0)
       if (models.length === 0) {
         showError('当前供应商未返回任何可选模型', { title: '未获取到模型' })
       }
     } catch (fetchError) {
+      if (!isCurrentSession()) return
       showError(fetchError, {
         title: '获取模型失败',
         fallbackMessage: '获取模型列表失败，请检查配置后重试。',
       })
     } finally {
-      setLoadingModels(false)
+      if (isCurrentSession()) setLoadingModels(false)
     }
   }
 
@@ -239,16 +272,16 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
   }
 
   return (
-    <ModalPortal onClose={onClose}>
+    <ModalShell open={open} onClose={onClose}>
       <div
         className="modal-panel w-full max-w-[980px] rounded-[30px] p-0 max-sm:max-w-full"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex h-[88vh] max-h-[88vh] min-h-0 flex-col overflow-hidden">
-          <div className="border-b border-[oklch(0.92_0.008_235/0.88)] bg-[linear-gradient(180deg,oklch(0.995_0.002_235),oklch(1_0_0/0.88))] px-6 py-4 max-sm:px-4">
+          <div className="border-b border-[oklch(0.92_0.008_264/0.88)] bg-[linear-gradient(180deg,oklch(0.995_0.002_264),oklch(1_0_0/0.88))] px-6 py-4 max-sm:px-4">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <div className="inline-flex items-center gap-2 rounded-full border border-[oklch(0.56_0.24_208/0.22)] bg-[linear-gradient(120deg,oklch(0.56_0.24_208/0.12),oklch(0.7_0.14_218/0.09))] px-3 py-1 text-[11px] font-semibold tracking-[0.12em] text-accent">
+                <div className="inline-flex items-center gap-2 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-[11px] font-semibold tracking-[0.12em] text-accent">
                   <Sparkles className="h-3.5 w-3.5" />
                   统一供应商
                 </div>
@@ -274,7 +307,7 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 max-sm:px-4">
               <div className="space-y-6">
                 {!isEditMode && (
-                  <div className="rounded-lg border border-[oklch(0.92_0.008_235/0.88)] bg-white/78 p-4">
+                  <div className="rounded-lg border border-[oklch(0.92_0.008_264/0.88)] bg-white/78 p-4">
                     <h5 className="font-display text-base font-semibold text-fg">选择预设类型</h5>
                     <p className="mt-1 text-xs leading-5 text-muted">
                       点击下方预设按钮快速应用内置模板配置。
@@ -289,15 +322,15 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
                             onClick={() => handlePresetSelect(preset.providerType)}
                             className={`inline-flex min-w-0 max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm font-medium transition-all ${
                               active
-                                ? 'border-[oklch(0.56_0.24_208/0.34)] bg-[linear-gradient(120deg,oklch(0.56_0.24_208/0.12),oklch(0.7_0.14_218/0.08))] text-accent shadow-[0_10px_24px_-18px_oklch(0.56_0.24_208/0.5)]'
-                                : 'border-[oklch(0.92_0.008_235/0.88)] bg-white/72 text-fg hover:border-[oklch(0.56_0.24_208/0.24)] hover:bg-white'
+                                ? 'border-accent/35 bg-accent/10 text-accent shadow-[0_10px_24px_-18px_oklch(0.58_0.17_262/0.5)]'
+                                : 'border-[oklch(0.92_0.008_264/0.88)] bg-white/72 text-fg hover:border-accent/25 hover:bg-white'
                             }`}
                           >
                             <div
                               className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
                               style={{
-                                color: preset.iconColor || 'oklch(0.56 0.24 208)',
-                                background: `color-mix(in oklch, ${preset.iconColor || 'oklch(0.56 0.24 208)'} 10%, transparent)`,
+                                color: preset.iconColor || 'oklch(0.58 0.17 262)',
+                                background: `color-mix(in oklch, ${preset.iconColor || 'oklch(0.58 0.17 262)'} 10%, transparent)`,
                               }}
                             >
                               {preset.name.slice(0, 1)}
@@ -318,7 +351,7 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
                   </div>
                 )}
 
-                <div className="space-y-4 rounded-lg border border-[oklch(0.92_0.008_235/0.88)] bg-white/78 p-4">
+                <div className="space-y-4 rounded-lg border border-[oklch(0.92_0.008_264/0.88)] bg-white/78 p-4">
                   <div>
                     <h5 className="font-display text-base font-semibold text-fg">基础信息</h5>
                     <p className="mt-1 text-xs leading-5 text-muted">
@@ -379,7 +412,7 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
                         <button
                           type="button"
                           onClick={() => setShowApiKey((value) => !value)}
-                          className="absolute right-2 top-1/2 z-[1] flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-xl border border-[oklch(0.92_0.008_235/0.88)] bg-white/82 text-fg-soft shadow-[inset_0_1px_0_oklch(1_0_0/0.7)] transition-all duration-200 hover:border-[oklch(0.56_0.24_208/0.34)] hover:bg-white hover:text-accent hover:shadow-[0_4px_12px_-6px_oklch(0.18_0.02_235/0.06),inset_0_1px_0_oklch(1_0_0/0.7)]"
+                          className="absolute right-2 top-1/2 z-[1] flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-xl border border-[oklch(0.92_0.008_264/0.88)] bg-white/82 text-fg-soft shadow-[inset_0_1px_0_oklch(1_0_0/0.7)] transition-all duration-200 hover:border-accent/35 hover:bg-white hover:text-accent hover:shadow-[0_4px_12px_-6px_oklch(0.18_0.02_264/0.06),inset_0_1px_0_oklch(1_0_0/0.7)]"
                           aria-label={showApiKey ? '隐藏 API Key' : '显示 API Key'}
                         >
                           {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -390,7 +423,7 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
 
                     <div>
                       <label className="field-label">API 格式</label>
-                      <div className="field-control flex items-center justify-between bg-[oklch(0.985_0.003_235/0.92)] text-sm text-fg">
+                      <div className="field-control flex items-center justify-between bg-[oklch(0.985_0.003_264/0.92)] text-sm text-fg">
                         <span>{formatApiFormatLabel(draft.apiFormat)}</span>
                         <span className="text-[11px] text-muted">{draft.apiFormat}</span>
                       </div>
@@ -435,7 +468,7 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
                   </div>
                 </div>
 
-                <div className="space-y-4 rounded-lg border border-[oklch(0.92_0.008_235/0.88)] bg-white/78 p-4">
+                <div className="space-y-4 rounded-lg border border-[oklch(0.92_0.008_264/0.88)] bg-white/78 p-4">
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <h5 className="font-display text-base font-semibold text-fg">模型配置</h5>
@@ -496,7 +529,7 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
                         {showModelMenu && (
                           <div className="liquid-glass absolute left-0 right-0 top-[calc(100%+8px)] z-[30] max-h-[280px] overflow-y-auto rounded-2xl p-2">
                             {modelDropdownOptions.length === 0 ? (
-                              <div className="rounded-xl bg-[oklch(0.985_0.003_235/0.88)] px-4 py-6 text-center text-sm text-muted">
+                              <div className="rounded-xl bg-[oklch(0.985_0.003_264/0.88)] px-4 py-6 text-center text-sm text-muted">
                                 请先点击右上角“获取模型列表”，或手动添加候选模型
                               </div>
                             ) : (
@@ -516,8 +549,8 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
                                         }}
                                         className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors ${
                                           draft.model === model.id
-                                            ? 'bg-[linear-gradient(120deg,oklch(0.56_0.24_208/0.14),oklch(0.7_0.14_218/0.1))] text-accent'
-                                            : 'hover:bg-[oklch(0.56_0.24_208/0.07)]'
+                                            ? 'bg-accent/10 text-accent'
+                                            : 'hover:bg-accent/5'
                                         }`}
                                       >
                                         <span className="truncate">{model.id}</span>
@@ -551,7 +584,7 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
                       </span>
                     </div>
 
-                    <div className="rounded-[20px] border border-[oklch(0.92_0.008_235/0.88)] bg-[oklch(0.985_0.003_235/0.72)] p-3">
+                    <div className="rounded-[20px] border border-[oklch(0.92_0.008_264/0.88)] bg-[oklch(0.985_0.003_264/0.72)] p-3">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-sm font-semibold text-fg">候选模型</div>
                         <span className="text-[11px] font-medium text-muted">{candidateModels.length} 个</span>
@@ -572,8 +605,8 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
                                 key={modelId}
                                 className={`flex items-center justify-between gap-3 rounded-2xl border px-3 py-2.5 transition-colors ${
                                   current
-                                    ? 'border-[oklch(0.56_0.24_208/0.3)] bg-[linear-gradient(120deg,oklch(0.56_0.24_208/0.1),oklch(0.7_0.14_218/0.07))]'
-                                    : 'border-[oklch(0.92_0.008_235/0.88)] bg-white/72'
+                                    ? 'border-accent/30 bg-accent/10'
+                                    : 'border-[oklch(0.92_0.008_264/0.88)] bg-white/72'
                                 }`}
                               >
                                 <div className="min-w-0">
@@ -650,7 +683,7 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
                 </div>
 
                 {(draft.websiteUrl || draft.apiKeyUrl || draft.endpointCandidates?.length) && (
-                  <div className="rounded-lg border border-[oklch(0.92_0.008_235/0.88)] bg-white/78 p-4">
+                  <div className="rounded-lg border border-[oklch(0.92_0.008_264/0.88)] bg-white/78 p-4">
                     <h5 className="font-display text-base font-semibold text-fg">预设信息</h5>
                     <div className="mt-3 space-y-3 text-[12px] leading-5 text-muted">
                       {draft.websiteUrl && (
@@ -684,7 +717,7 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[oklch(0.92_0.008_235/0.88)] bg-white/86 px-6 py-4 max-sm:px-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[oklch(0.92_0.008_264/0.88)] bg-white/86 px-6 py-4 max-sm:px-4">
               <div className="text-[11px] leading-5 text-muted">
                 统一供应商仅保存在浏览器本地 `localStorage`，不会上传到服务器。
               </div>
@@ -709,6 +742,6 @@ export function ModelConfigModal({ initialConfig, onClose, onSave }: Props) {
           </section>
         </div>
       </div>
-    </ModalPortal>
+    </ModalShell>
   )
 }

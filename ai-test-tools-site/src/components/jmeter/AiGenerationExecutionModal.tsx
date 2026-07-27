@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { AlertCircle, Check, CheckCircle2, Clock3, FileCheck, FileText, Globe, Loader2, PieChart, Settings, Sparkles, Users, X } from 'lucide-react'
 import { Tooltip } from '../ui/Tooltip'
-import { ModalPortal } from '../ui/ModalPortal'
+import { ModalShell } from '../ui/ModalShell'
 import { GeneratedPlanResult as GeneratedPlanResultPanel } from './GeneratedPlanResult'
 import type { AiGenerationEvent, AiGenerationPlayback } from '../../hooks/useAiGenerationPlayback'
 
@@ -17,13 +17,13 @@ interface Props {
 function statusBadgeClass(status: 'running' | 'done' | 'error') {
   if (status === 'error') return 'border-[oklch(0.55_0.2_25/0.26)] bg-[oklch(0.97_0.01_25/0.9)] text-danger'
   if (status === 'done') return 'border-[oklch(0.55_0.15_160/0.26)] bg-[oklch(0.97_0.01_155/0.88)] text-success'
-  return 'border-[oklch(0.56_0.24_208/0.26)] bg-[linear-gradient(120deg,oklch(0.56_0.24_208/0.12),oklch(0.7_0.14_218/0.09))] text-accent'
+  return 'border-accent/25 bg-accent/10 text-accent'
 }
 
 function tabButtonClass(active: boolean) {
   return active
-    ? 'border-[oklch(0.56_0.24_208/0.3)] bg-[linear-gradient(120deg,oklch(0.56_0.24_208/0.12),oklch(0.7_0.14_218/0.09))] text-accent shadow-[0_10px_30px_-24px_oklch(0.56_0.24_208/0.7)]'
-    : 'border-white/70 bg-white/60 text-muted hover:border-[oklch(0.56_0.24_208/0.28)] hover:text-fg'
+    ? 'border-accent/30 bg-accent/10 text-accent shadow-[0_10px_30px_-24px_oklch(0.58_0.17_262/0.7)]'
+    : 'border-white/70 bg-white/60 text-muted hover:border-accent/30 hover:text-fg'
 }
 
 function normalizeStepLabel(event: AiGenerationEvent) {
@@ -78,8 +78,6 @@ export function AiGenerationExecutionModal({
     return () => window.cancelAnimationFrame(rafId)
   }, [activeTab, events, open, running])
 
-  if (!open) return null
-
   const hasResult = Boolean(result)
   const progressEvents = events
   const totalSteps = Math.max(progressEvents.length, running ? progressEvents.length + 1 : progressEvents.length || 1)
@@ -87,7 +85,8 @@ export function AiGenerationExecutionModal({
   const progressPercent = Math.max(8, Math.min(100, Math.round((completedSteps / totalSteps) * 100)))
 
   return (
-    <ModalPortal
+    <ModalShell
+      open={open}
       onClose={() => {
         if (!running) onClose()
       }}
@@ -155,9 +154,9 @@ export function AiGenerationExecutionModal({
                   {Math.min(completedSteps, totalSteps)}/{totalSteps}
                 </div>
               </div>
-              <div className="relative z-[1] h-2 overflow-hidden rounded-full bg-[oklch(0.56_0.24_208/0.1)]">
+              <div className="relative z-[1] h-2 overflow-hidden rounded-full bg-accent/10">
                 <div
-                  className="h-full rounded-full bg-[linear-gradient(90deg,oklch(0.56_0.24_208)_0%,oklch(0.62_0.176_168)_48%,oklch(0.7_0.14_218)_100%)] transition-all duration-500 shadow-[0_0_24px_oklch(0.56_0.24_208/0.45)]"
+                  className="progress-accent-fill h-full rounded-full transition-all duration-500"
                   style={{ width: `${progressPercent}%` }}
                 />
               </div>
@@ -168,9 +167,9 @@ export function AiGenerationExecutionModal({
             >
               <div className="relative z-[1] mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-muted">执行步骤</div>
               <div ref={scrollViewportRef} className="relative max-h-[58vh] overflow-y-auto pr-2">
-                <div className="absolute left-[23px] top-2 bottom-2 w-px rounded-full bg-[oklch(0.56_0.24_208/0.12)]" />
+                <div className="absolute left-[23px] top-2 bottom-2 w-px rounded-full bg-accent/10" />
                 <motion.div
-                  className="absolute left-[23px] top-2 w-px rounded-full bg-[linear-gradient(180deg,oklch(0.56_0.24_208/0.95),oklch(0.62_0.176_168/0.9),oklch(0.7_0.14_218/0.85))] transition-all duration-700"
+                  className="progress-accent-fill-y absolute left-[23px] top-2 w-px rounded-full transition-all duration-700"
                   initial={false}
                   animate={{
                     height: `${Math.max(0, Math.min(100, progressPercent))}%`,
@@ -180,7 +179,7 @@ export function AiGenerationExecutionModal({
                     ease: [0.16, 1, 0.3, 1],
                   }}
                   style={{
-                    boxShadow: '0 0 18px oklch(0.56 0.24 208 / 0.45)',
+                    boxShadow: '0 0 18px oklch(0.58 0.17 262 / 0.45)',
                   }}
                 />
                 <div className="space-y-7">
@@ -218,15 +217,15 @@ export function AiGenerationExecutionModal({
                                 ? 'linear-gradient(180deg, rgba(254,242,242,0.98), rgba(254,226,226,0.84))'
                                 : isDone
                                   ? 'linear-gradient(180deg, rgba(240,253,244,0.98), rgba(220,252,231,0.86))'
-                                  : 'linear-gradient(135deg, oklch(0.56 0.24 208 / 0.14), oklch(0.7 0.14 218 / 0.12))',
+                                  : 'oklch(0.58 0.17 262 / 0.1)',
                               borderColor: isError
                                 ? 'rgba(248,113,113,0.24)'
                                 : isDone
                                   ? 'rgba(74,222,128,0.22)'
-                                  : 'oklch(0.56 0.24 208 / 0.28)',
+                                  : 'oklch(0.58 0.17 262 / 0.28)',
                               boxShadow: isDone
                                 ? '0 14px 28px -22px rgba(34,197,94,0.32)'
-                                : '0 14px 28px -22px oklch(0.56 0.24 208 / 0.35)',
+                                : '0 14px 28px -22px oklch(0.58 0.17 262 / 0.35)',
                             }}
                           >
                             <motion.div
@@ -239,7 +238,7 @@ export function AiGenerationExecutionModal({
                             </motion.div>
                             {isRunning && (
                               <motion.div
-                                className="absolute inset-0 rounded-full border border-[oklch(0.56_0.24_208/0.35)]"
+                                className="absolute inset-0 rounded-full border border-accent/35"
                                 initial={{ opacity: 0.12, scale: 0.92 }}
                                 animate={{ opacity: [0.18, 0.36, 0.14], scale: [0.92, 1.08, 1.16] }}
                                 transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY, ease: 'easeOut' }}
@@ -266,7 +265,7 @@ export function AiGenerationExecutionModal({
 
                           <div className="relative w-[132px] shrink-0">
                             <motion.div
-                              className="absolute left-[-18px] top-1/2 h-px w-4 -translate-y-1/2 bg-[oklch(0.56_0.24_208/0.18)]"
+                              className="absolute left-[-18px] top-1/2 h-px w-4 -translate-y-1/2 bg-accent/20"
                               initial={{ scaleX: 0.1, opacity: 0 }}
                               animate={{ scaleX: 1, opacity: 1 }}
                               transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
@@ -316,19 +315,19 @@ export function AiGenerationExecutionModal({
                     transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
                     className="relative flex items-center gap-5"
                   >
-                    <div className="relative z-[1] flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[oklch(0.56_0.24_208/0.3)] bg-[linear-gradient(135deg,oklch(0.56_0.24_208/0.16),oklch(0.7_0.14_218/0.14))]">
+                    <div className="relative z-[1] flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10">
                       <Sparkles className="h-5 w-5 text-accent" />
                     </div>
                     <div
-                      className="min-w-0 flex-1 rounded-[24px] border border-dashed border-[oklch(0.56_0.24_208/0.3)] bg-white/55 px-4 py-3 backdrop-blur-md"
+                      className="min-w-0 flex-1 rounded-[24px] border border-dashed border-accent/30 bg-white/55 px-4 py-3 backdrop-blur-md"
                     >
                       <div className="text-sm font-semibold text-fg">
                         {progressEvents.length + 1}. 等待下一步
                       </div>
                     </div>
                     <div className="relative w-[132px] shrink-0">
-                      <div className="absolute left-[-18px] top-1/2 h-px w-4 -translate-y-1/2 bg-[oklch(0.56_0.24_208/0.18)]" />
-                      <div className="rounded-full border border-[oklch(0.56_0.24_208/0.26)] bg-[linear-gradient(120deg,oklch(0.56_0.24_208/0.12),oklch(0.7_0.14_218/0.09))] px-3 py-2 text-xs font-semibold text-accent">
+                      <div className="absolute left-[-18px] top-1/2 h-px w-4 -translate-y-1/2 bg-accent/20" />
+                      <div className="rounded-full border border-accent/25 bg-accent/10 px-3 py-2 text-xs font-semibold text-accent">
                         <div className="flex items-center justify-center gap-2">
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           <span>执行中</span>
@@ -373,6 +372,6 @@ export function AiGenerationExecutionModal({
           </div>
         )}
       </div>
-    </ModalPortal>
+    </ModalShell>
   )
 }
