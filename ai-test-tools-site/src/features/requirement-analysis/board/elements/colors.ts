@@ -5,6 +5,7 @@ export const BOARD_COLORS = {
   surface: '#ffffff',
   surfaceMuted: '#f1f5f9',
   surfaceMuted2: '#e2e8f0',
+  headerBg: '#f1f5f9',
   text: '#1e293b',
   textMuted: '#64748b',
   line: '#cbd5e1',
