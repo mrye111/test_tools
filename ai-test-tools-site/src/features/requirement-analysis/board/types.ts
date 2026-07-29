@@ -9,6 +9,10 @@ export const BOARD_LIMITS = {
   MAX_TEXT_LENGTH: 200,
 } as const
 
+/** 因果图节点在命中的默认绘制尺寸（供命中检测使用） */
+export const CE_NODE_W = 160
+export const CE_NODE_H = 40
+
 export type ElementKind = 'mindmap-ref' | 'cause-effect' | 'decision-table' | 'orthogonal'
 
 export interface ElementBase {
