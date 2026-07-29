@@ -143,10 +143,25 @@ export function sendToBack(ids: string[]): Command {
   }
 }
 
-/** 按原始 id 顺序重新排列当前 elements，未命中 id 保持当前相对位置 */
+/** 批量添加图元（用于复制粘贴） */
+export function copyElements(elements: BoardElement[]): Command {
+  return {
+    label: '粘贴图元',
+    do: (board) => ({
+      ...board,
+      elements: [...board.elements, ...elements],
+    }),
+    undo: (board) => {
+      const idSet = new Set(elements.map((el) => el.id))
+      return {
+        ...board,
+        elements: board.elements.filter((e) => !idSet.has(e.id)),
+      }
+    },
+  }
+}
 function restoreByOrder(elements: BoardElement[], order: string[]): BoardElement[] {
   const orderMap = new Map(order.map((id, index) => [id, index]))
-  const elementMap = new Map(elements.map((el) => [el.id, el]))
   const sorted = [...elements].sort((a, b) => {
     const ia = orderMap.get(a.id)
     const ib = orderMap.get(b.id)
