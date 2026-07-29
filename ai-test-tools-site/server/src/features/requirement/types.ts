@@ -32,6 +32,8 @@ export type AnalysisRecord = RequirementAnalysisResult & {
   id: string;
   name: string;
   chartType: RequirementChartType;
+  /** 白板图表数据；服务端透传存储，具体结构由前端校验（deserializeBoard）。 */
+  board?: unknown;
   /** ISO 时间 */
   createdAt: string;
   /** ISO 时间 */

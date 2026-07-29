@@ -5,6 +5,7 @@ import type { JsonObject } from "../testcase/types.js";
 import { boolValue, isObject, nowIso, safeDownloadName, text } from "../testcase/utils.js";
 import { sendSseEvent } from "../../ai-generator.js";
 import { analyzeRequirementText } from "./ai.js";
+import { generateBoardChartDraft } from "./board-ai.js";
 import { buildRequirementXmind } from "./exporters.js";
 import { DocumentParseError, parseRequirementDocument, truncateText } from "./parsers.js";
 import { RequirementAnalysisStore, toAnalysisRecordSummary } from "./store.js";
@@ -142,6 +143,27 @@ function normalizeFinding(value: unknown): Finding | null {
   const rawType = text(value.type).trim();
   const type = rawType === "risk" || rawType === "ambiguity" ? rawType : "clarification";
   return { id: text(value.id).trim() || `${type}_${nodeId}_${title.slice(0, 8)}`, type, title, detail, nodeId };
+}
+
+/** 按节点 id 在需求分解树中查找节点，并拼接该节点及其全部子树的标题文本。 */
+function findNodeSubtreeText(tree: RequirementNode, nodeId: string): { title: string; text: string } | null {
+  const visit = (node: RequirementNode, path: string[]): { title: string; text: string } | null => {
+    if (node.id !== nodeId) {
+      for (const child of node.children) {
+        const found = visit(child, [...path, node.title]);
+        if (found) return found;
+      }
+      return null;
+    }
+    const lines: string[] = [];
+    const collect = (n: RequirementNode, depth: number) => {
+      lines.push(`${"  ".repeat(depth)}- ${n.title}`);
+      for (const child of n.children) collect(child, depth + 1);
+    };
+    collect(node, 0);
+    return { title: node.title, text: lines.join("\n") };
+  };
+  return visit(tree, []);
 }
 
 /** 从请求中取出解析输入：JSON {text} 或 octet-stream 文件字节。 */
@@ -319,7 +341,7 @@ function registerAnalysisRecordRoutes(app: Express, store: RequirementAnalysisSt
   app.patch("/api/requirement-analysis/records/:id", (req, res) => {
     try {
       const data: JsonObject = isObject(req.body) ? req.body : {};
-      const patch: Partial<Pick<AnalysisRecord, "name" | "chartType">> = {};
+      const patch: Partial<Pick<AnalysisRecord, "name" | "chartType" | "board">> = {};
       const name = text(data.name).trim();
       // name 去空白后非空才更新（空串视为不改名）；chartType 未传则保持原值，避免 normalize 回退覆盖。
       if (name) patch.name = name;
@@ -332,6 +354,7 @@ function registerAnalysisRecordRoutes(app: Express, store: RequirementAnalysisSt
         }
         patch.chartType = chartType;
       }
+      if (data.board !== undefined) patch.board = data.board;
       const record = store.updateRecord(req.params.id, patch);
       if (!record) {
         res.status(404).json({ success: false, error: RECORD_NOT_FOUND_ERROR });
@@ -353,6 +376,34 @@ function registerAnalysisRecordRoutes(app: Express, store: RequirementAnalysisSt
     } catch (error) {
       res.status(500).json({ success: false, error: errorMessage(error) });
     }
+  });
+
+  app.post("/api/requirement-analysis/records/:id/board/generate", (req, res) => {
+    void (async () => {
+      try {
+        const record = store.getRecord(req.params.id);
+        if (!record) {
+          res.status(404).json({ success: false, error: RECORD_NOT_FOUND_ERROR });
+          return;
+        }
+        const data: JsonObject = isObject(req.body) ? req.body : {};
+        const chartKind = text(data.chartKind).trim();
+        if (chartKind !== "cause-effect" && chartKind !== "decision-table" && chartKind !== "orthogonal") {
+          res.status(400).json({ success: false, error: "无效的图表类型（chartKind）。" });
+          return;
+        }
+        const found = findNodeSubtreeText(record.tree, text(data.nodeId));
+        if (!found) {
+          res.status(400).json({ success: false, error: "需求分解树中不存在该节点（nodeId）。" });
+          return;
+        }
+        const config = parseAiRequestConfig(resolveAiConfigSource(req));
+        const draft = await generateBoardChartDraft(config, { nodeTitle: found.title, nodeSubtreeText: found.text, chartKind });
+        res.json({ success: true, draft });
+      } catch (error) {
+        res.status(500).json({ success: false, error: errorMessage(error) });
+      }
+    })();
   });
 }
 

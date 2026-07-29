@@ -144,7 +144,7 @@ export class RequirementAnalysisStore {
     return cloneEntity(record);
   }
 
-  updateRecord(id: string, patch: Partial<Pick<AnalysisRecord, "name" | "chartType">>): AnalysisRecord | undefined {
+  updateRecord(id: string, patch: Partial<Pick<AnalysisRecord, "name" | "chartType" | "board">>): AnalysisRecord | undefined {
     const existing = this.records.get(id);
     if (!existing) return undefined;
     const next: AnalysisRecord = { ...existing, ...patch, updatedAt: nowIso() };
