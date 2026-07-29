@@ -338,6 +338,7 @@ export interface CaseSkeleton {
 /**
  * 将判定表展开为多条用例骨架。
  * 前置条件：Y → "条件名成立"、N → "条件名不成立"、- 跳过；多条件以 "；" 连接。
+ * 步骤：基于前置条件生成触发描述，例如 "当{条件}时，触发对应业务操作"。
  * 预期结果：动作取值为 true 的项以 "、" 连接，全为 false 时输出 "无附加动作发生"。
  */
 export function decisionTableToSkeleton(table: DecisionTableElement): CaseSkeleton[] {
@@ -355,11 +356,12 @@ export function decisionTableToSkeleton(table: DecisionTableElement): CaseSkelet
       .map((value, index) => (value ? table.actions[index] : null))
       .filter((text): text is string => text !== null)
     const expected = trueActions.length > 0 ? trueActions.join('、') : '无附加动作发生'
+    const steps = preconditions ? `当${preconditions}时，触发对应业务操作` : '触发对应业务操作'
 
     return {
       source: 'decision-table',
       precondition: preconditions,
-      steps: '执行对应操作步骤，观察系统响应',
+      steps,
       expected,
     }
   })
@@ -368,6 +370,8 @@ export function decisionTableToSkeleton(table: DecisionTableElement): CaseSkelet
 /**
  * 将正交表展开为多条用例骨架。
  * 每行对应一条组合，前置条件为 "因子名=水平值" 键值对的 "；" 连接。
+ * 步骤：按该组合构造输入描述。
+ * 预期：引用该组合，说明行为符合对应规则。
  */
 export function orthogonalToSkeleton(el: OrthogonalElement): CaseSkeleton[] {
   return el.rows.map((row) => {
@@ -378,10 +382,15 @@ export function orthogonalToSkeleton(el: OrthogonalElement): CaseSkeleton[] {
     return {
       source: 'orthogonal',
       precondition: preconditions,
-      steps: '按该因子组合执行测试',
-      expected: '记录输出结果，验证符合预期',
+      steps: `按${preconditions}组合构造输入`,
+      expected: `${preconditions} 时行为符合对应规则`,
     }
   })
+}
+
+/** 转义 Markdown 表格单元格中的管道符，避免破坏表格结构。 */
+function escapeTableCell(text: string): string {
+  return text.replace(/\|/g, '\\|')
 }
 
 /**
@@ -403,13 +412,17 @@ export function serializeSkeletons(sourceTitle: string, skeletons: CaseSkeleton[
   ]
 
   decisionSkeletons.forEach((skeleton, index) => {
-    lines.push(`| ${index + 1} | ${skeleton.precondition} | ${skeleton.steps} | ${skeleton.expected} |`)
+    lines.push(
+      `| ${index + 1} | ${escapeTableCell(skeleton.precondition)} | ${escapeTableCell(skeleton.steps)} | ${escapeTableCell(skeleton.expected)} |`
+    )
   })
 
   lines.push('', `### 正交表组合（共 ${orthogonalSkeletons.length} 条）`, '| # | 前置条件 | 步骤 | 预期 |', '|---|---|---|---|')
 
   orthogonalSkeletons.forEach((skeleton, index) => {
-    lines.push(`| ${index + 1} | ${skeleton.precondition} | ${skeleton.steps} | ${skeleton.expected} |`)
+    lines.push(
+      `| ${index + 1} | ${escapeTableCell(skeleton.precondition)} | ${escapeTableCell(skeleton.steps)} | ${escapeTableCell(skeleton.expected)} |`
+    )
   })
 
   return lines.join('\n')
