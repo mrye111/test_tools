@@ -91,8 +91,10 @@ function parseElement(raw: unknown): BoardElement | null {
     }
     case 'decision-table': {
       if (!Array.isArray(raw.conditions) || !Array.isArray(raw.actions) || !Array.isArray(raw.rules)) return null
-      const conditions = raw.conditions.map(String)
-      const actions = raw.actions.map(String)
+      if (!raw.conditions.every((v: unknown): v is string => isString(v))) return null
+      if (!raw.actions.every((v: unknown): v is string => isString(v))) return null
+      const conditions = raw.conditions as string[]
+      const actions = raw.actions as string[]
       const rules = raw.rules.map(parseDecisionTableRule).filter((r): r is typeof r => r !== null)
       if (rules.length !== raw.rules.length) return null
       return { ...base, kind: 'decision-table', conditions, actions, rules } as DecisionTableElement

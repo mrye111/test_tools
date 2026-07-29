@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { deserializeBoard, emptyBoard, serializeBoard } from './persistence'
-import type { Board } from './types'
+import type { Board, MindmapRefElement } from './types'
 
 const board: Board = {
   version: 1,
@@ -59,5 +59,18 @@ describe('board persistence', () => {
   it('kind 未知返回 null（整个图元被过滤）', () => {
     const parsed = deserializeBoard({ version: 1, elements: [{ ...board.elements[0], kind: 'sticky' }] })
     expect(parsed?.elements).toHaveLength(0)
+  })
+
+  it('mindmap-ref 会话态 selectedNodeId 序列化后被清空', () => {
+    const liveBoard: Board = {
+      version: 1,
+      elements: [
+        { ...board.elements[0], selectedNodeId: 'n42' },
+      ],
+    }
+    const parsed = deserializeBoard(JSON.parse(serializeBoard(liveBoard)))
+    expect(parsed?.elements).toHaveLength(1)
+    expect(parsed?.elements[0].kind).toBe('mindmap-ref')
+    expect((parsed?.elements[0] as MindmapRefElement).selectedNodeId).toBeNull()
   })
 })
