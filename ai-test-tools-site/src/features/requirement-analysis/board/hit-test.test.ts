@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { distToSegment, hitTestBoard, hitTestElement } from './hit-test'
-import type { CauseEffectElement, DecisionTableElement } from './types'
+import type { CauseEffectElement, DecisionTableElement, MindmapRefElement } from './types'
+import type { RequirementNode } from '../../../../lib/requirement-analysis-api'
 
 const causeEffect: CauseEffectElement = {
   id: 'ce1', kind: 'cause-effect', x: 100, y: 100, w: 600, h: 400, sourceNodeId: null,
@@ -15,6 +16,16 @@ const table: DecisionTableElement = {
   id: 'dt1', kind: 'decision-table', x: 0, y: 0, w: 400, h: 200, sourceNodeId: null,
   conditions: ['c1'], actions: ['a1'],
   rules: [{ conditionValues: ['Y'], actionValues: [true] }],
+}
+
+const tree: RequirementNode = {
+  id: 'root',
+  title: '登录需求',
+  children: [{ id: 'n1', title: '账号密码登录', children: [] }],
+}
+
+function mindmapRefElement(x = 0, y = 0): MindmapRefElement {
+  return { id: 'mm1', kind: 'mindmap-ref', x, y, w: 400, h: 200, sourceNodeId: null, selectedNodeId: null }
 }
 
 describe('hit-test', () => {
@@ -40,6 +51,27 @@ describe('hit-test', () => {
     // 边从 n1(100,100) 到 n2(400,200)，中点 (250,150) 附近
     const hit = hitTestElement(causeEffect, 250, 152)
     expect(hit?.part === 'edge' || hit?.part === 'node').toBe(true)
+  })
+
+  it('需求树参考图元：命中节点返回 node 与 nodeId', () => {
+    const mm = mindmapRefElement(0, 0)
+    // layoutMindmap: 根在 (0,0)，子节点在 (200,0)；节点中心，120x32 包围盒
+    const hit = hitTestElement(mm, 200, 0, tree)
+    expect(hit).toEqual({ elementId: 'mm1', part: 'node', nodeId: 'n1' })
+  })
+
+  it('需求树参考图元：节点外、包围盒内命中 body', () => {
+    const mm = mindmapRefElement(0, 0)
+    // (100,100) 远离根节点 (0,0) 的 120x32 中心包围盒，但仍在图元包围盒中
+    const hit = hitTestElement(mm, 100, 100, tree)
+    expect(hit).toEqual({ elementId: 'mm1', part: 'body' })
+  })
+
+  it('需求树参考图元：未提供 tree 时使用退化占位树', () => {
+    const mm = mindmapRefElement(0, 0)
+    // 退化树只有根节点，(100,100) 不在根节点中心包围盒内，命中 body
+    const hit = hitTestElement(mm, 100, 100)
+    expect(hit?.part).toBe('body')
   })
 
   it('hitTestBoard 按 z 序返回最上层（数组倒序）', () => {

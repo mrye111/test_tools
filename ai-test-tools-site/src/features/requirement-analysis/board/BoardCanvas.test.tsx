@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Board, CauseEffectElement } from './types'
+import type { Board, CauseEffectElement, MindmapRefElement } from './types'
 import type { RequirementNode } from '../../lib/requirement-analysis-api'
 import { BoardStore } from './board-store'
 import { addElement } from './commands'
@@ -46,6 +46,19 @@ function mockRect(element: Element) {
     y: 0,
     toJSON: () => {},
   })
+}
+
+function mindmapRefElement(x = 0, y = 0, w = 400, h = 200): MindmapRefElement {
+  return {
+    id: 'mm1',
+    kind: 'mindmap-ref',
+    x,
+    y,
+    w,
+    h,
+    sourceNodeId: null,
+    selectedNodeId: null,
+  }
 }
 
 function renderCanvas(store: BoardStore) {
@@ -140,6 +153,44 @@ describe('BoardCanvas 交互', () => {
     expect(canvas).toHaveStyle({ cursor: 'default' })
   })
 
+  it('点击 mindmap-ref 节点时 store 写入 selectedNodeId，切换其他图元或空白时清空', async () => {
+    const treeWithChild: RequirementNode = {
+      id: 'root',
+      title: '需求',
+      children: [{ id: 'n1', title: '子需求', children: [] }],
+    }
+    const mm = mindmapRefElement(0, 0, 400, 200)
+    const ce = ceElement('ce1', 500, 0, '其他')
+    const store = makeStore({ version: 1, elements: [mm, ce] })
+    const { container } = render(
+      <BoardCanvas store={store} tree={treeWithChild} />,
+    )
+    await waitFor(() => expect(stub.renderBoard).toHaveBeenCalled())
+    const canvas = container.querySelector('canvas')!
+    mockRect(canvas)
+
+    // 命中子节点 -> 写入 selectedNodeId
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 0 })
+    await waitFor(() => {
+      expect((store.getBoard().elements[0] as MindmapRefElement).selectedNodeId).toBe('n1')
+    })
+
+    // 命中其他图元 -> 清空
+    fireEvent.pointerDown(canvas, { clientX: 550, clientY: 30 })
+    await waitFor(() => {
+      expect((store.getBoard().elements[0] as MindmapRefElement).selectedNodeId).toBeNull()
+    })
+
+    // 重新选中节点后点击空白 -> 清空
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 0 })
+    await waitFor(() => {
+      expect((store.getBoard().elements[0] as MindmapRefElement).selectedNodeId).toBe('n1')
+    })
+    fireEvent.pointerDown(canvas, { clientX: 50, clientY: 150 })
+    await waitFor(() => {
+      expect((store.getBoard().elements[0] as MindmapRefElement).selectedNodeId).toBeNull()
+    })
+  })
   it('空白处拖拽框选出现选框 DOM 并在 pointerup 后消失', async () => {
     const store = makeStore({ version: 1, elements: [ceElement('e1', 0, 0), ceElement('e2', 300, 0)] })
     const { container } = renderCanvas(store)

@@ -1,4 +1,9 @@
-import { CE_NODE_H, CE_NODE_W, type BoardElement, type CauseEffectElement } from './types'
+import { CE_NODE_H, CE_NODE_W, type BoardElement, type CauseEffectElement, type MindmapRefElement } from './types'
+import { layoutMindmap } from './elements/layout'
+import type { RequirementNode } from '../../../lib/requirement-analysis-api'
+
+const MINDMAP_NODE_W = 120
+const MINDMAP_NODE_H = 32
 
 /** 命中结果 */
 export type HitResult =
@@ -38,13 +43,37 @@ function inRect(wx: number, wy: number, x: number, y: number, w: number, h: numb
   return wx >= x && wx <= x + w && wy >= y && wy <= y + h
 }
 
-/** 单一图元的命中检测 */
-export function hitTestElement(el: BoardElement, wx: number, wy: number): HitResult | null {
+/** 单一图元的命中检测；需求树参考图元需传入 tree 以命中真实节点 */
+export function hitTestElement(el: BoardElement, wx: number, wy: number, tree?: RequirementNode): HitResult | null {
   if (el.kind === 'cause-effect') {
     return hitTestCauseEffect(el, wx, wy)
   }
 
+  if (el.kind === 'mindmap-ref') {
+    return hitTestMindmapRef(el, wx, wy, tree)
+  }
+
   // 其他图元仅测整体包围盒
+  if (inRect(wx, wy, el.x, el.y, el.w, el.h)) {
+    return { elementId: el.id, part: 'body' }
+  }
+
+  return null
+}
+
+/** 需求树参考图元命中：先按节点（z 序倒序取最上层），再整体包围盒 */
+function hitTestMindmapRef(el: MindmapRefElement, wx: number, wy: number, tree?: RequirementNode): HitResult | null {
+  const effectiveTree: RequirementNode = tree ?? { id: el.id, title: '需求树', children: [] }
+  const nodes = layoutMindmap(effectiveTree)
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const node = nodes[i]
+    const nx = el.x + node.x - MINDMAP_NODE_W / 2
+    const ny = el.y + node.y - MINDMAP_NODE_H / 2
+    if (inRect(wx, wy, nx, ny, MINDMAP_NODE_W, MINDMAP_NODE_H)) {
+      return { elementId: el.id, part: 'node', nodeId: node.id }
+    }
+  }
+
   if (inRect(wx, wy, el.x, el.y, el.w, el.h)) {
     return { elementId: el.id, part: 'body' }
   }
@@ -87,10 +116,10 @@ function hitTestCauseEffect(el: CauseEffectElement, wx: number, wy: number): Hit
   return null
 }
 
-/** 白板命中：按 z 序倒序遍历，返回首个命中 */
-export function hitTestBoard(elements: BoardElement[], wx: number, wy: number): HitResult | null {
+/** 白板命中：按 z 序倒序遍历，返回首个命中；需求树参考图元需传入 tree */
+export function hitTestBoard(elements: BoardElement[], wx: number, wy: number, tree?: RequirementNode): HitResult | null {
   for (let i = elements.length - 1; i >= 0; i--) {
-    const hit = hitTestElement(elements[i], wx, wy)
+    const hit = hitTestElement(elements[i], wx, wy, tree)
     if (hit) return hit
   }
   return null

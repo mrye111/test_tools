@@ -13,6 +13,7 @@ import type {
   OrthogonalElement,
 } from './types'
 import { BOARD_LIMITS, CE_NODE_H, CE_NODE_W } from './types'
+import { layoutMindmap } from './elements/layout'
 
 export interface DraftValidationError {
   field: string
@@ -300,15 +301,29 @@ export function draftToElement(
   return element
 }
 
-/** 构建需求树参考图元，用于空板自动占位 */
-export function buildMindmapRefElement(_tree: RequirementNode, x = 40, y = 40): BoardElement {
+/** 构建需求树参考图元，用于空板自动占位；尺寸按真实布局树自适应 */
+export function buildMindmapRefElement(tree: RequirementNode, x = 40, y = 40): BoardElement {
+  const nodes = layoutMindmap(tree)
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const node of nodes) {
+    minX = Math.min(minX, node.x - 60)
+    minY = Math.min(minY, node.y - 16)
+    maxX = Math.max(maxX, node.x + 60)
+    maxY = Math.max(maxY, node.y + 16)
+  }
+  const padding = 20
+  const w = Math.max(160, (Number.isFinite(minX) ? maxX - minX : 0) + padding * 2)
+  const h = Math.max(120, (Number.isFinite(minY) ? maxY - minY : 0) + padding * 2)
   return {
     id: generateId(),
     kind: 'mindmap-ref',
     x,
     y,
-    w: 320,
-    h: 200,
+    w,
+    h,
     sourceNodeId: null,
     selectedNodeId: null,
   }

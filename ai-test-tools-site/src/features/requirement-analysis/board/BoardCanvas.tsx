@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react'
-import type { BoardElement } from './types'
+import type { BoardElement, MindmapRefElement } from './types'
 import type { RequirementNode } from '../../../lib/requirement-analysis-api'
 import { BoardStore } from './board-store'
-import { copyElements, moveElements, removeElements } from './commands'
+import { copyElements, moveElements, removeElements, updateElement } from './commands'
 import type { Viewport } from './viewport'
 import { fitBounds, screenToWorld, worldToScreen, zoomAt } from './viewport'
 import { hitTestBoard } from './hit-test'
@@ -339,7 +339,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         // 非主要指针等场景下 capture 可能失败，忽略
       }
 
-      const hit = hitTestBoard(store.getBoard().elements, world.x, world.y)
+      const hit = hitTestBoard(store.getBoard().elements, world.x, world.y, tree)
 
       if (hit) {
         let nextSelection: Set<string>
@@ -351,10 +351,33 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           nextSelection = new Set([hit.elementId])
         }
         notifySelection(nextSelection)
+
+        // mindmap-ref 节点命中时写入 selectedNodeId；选中其他图元或空白时清空
+        const el = store.getBoard().elements.find((e) => e.id === hit.elementId)
+        if (hit.part === 'node' && el?.kind === 'mindmap-ref') {
+          store.execute(updateElement(el.id, (it) => ({ ...(it as MindmapRefElement), selectedNodeId: hit.nodeId })))
+        } else {
+          const prevMindmap = store.getBoard().elements.find(
+            (e) => e.kind === 'mindmap-ref' && e.selectedNodeId !== null
+          ) as MindmapRefElement | undefined
+          if (prevMindmap) {
+            store.execute(
+              updateElement(prevMindmap.id, (it) => ({ ...(it as MindmapRefElement), selectedNodeId: null }))
+            )
+          }
+        }
+
         startDrag(sx, sy, hit.elementId, world.x, world.y)
       } else {
         if (!event.shiftKey) {
           notifySelection(new Set())
+        }
+        // 点击空白：清空 mindmap-ref 的 selectedNodeId
+        const prevMindmap = store
+          .getBoard()
+          .elements.find((e) => e.kind === 'mindmap-ref' && e.selectedNodeId !== null) as MindmapRefElement | undefined
+        if (prevMindmap) {
+          store.execute(updateElement(prevMindmap.id, (it) => ({ ...(it as MindmapRefElement), selectedNodeId: null })))
         }
         startMarquee(sx, sy)
       }
