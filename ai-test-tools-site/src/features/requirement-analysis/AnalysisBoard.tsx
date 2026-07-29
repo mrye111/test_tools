@@ -26,7 +26,7 @@ import type { Board, BoardElement, MindmapRefElement } from './board/types'
 import { BOARD_LIMITS } from './board/types'
 import { removeElements, updateElement } from './board/commands'
 import { TemplateCenterModal } from './TemplateCenterModal'
-import { CANVAS_ZOOM_MAX, CANVAS_ZOOM_MIN, formatCanvasZoom, stepCanvasZoom } from './canvas-zoom'
+import { BOARD_ZOOM_MAX, BOARD_ZOOM_MIN, formatZoom, stepZoom } from './board/viewport'
 import { renderBoard } from './board/renderer'
 import { draftToElement } from './board/ai'
 
@@ -168,9 +168,9 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
   const handleStepZoom = (direction: 'in' | 'out') => {
     const handle = canvasRef.current
     if (!handle) return
-    if (direction === 'in' && zoomRatio >= CANVAS_ZOOM_MAX) return
-    if (direction === 'out' && zoomRatio <= CANVAS_ZOOM_MIN) return
-    const next = stepCanvasZoom(zoomRatio, direction)
+    if (direction === 'in' && zoomRatio >= BOARD_ZOOM_MAX) return
+    if (direction === 'out' && zoomRatio <= BOARD_ZOOM_MIN) return
+    const next = stepZoom(zoomRatio, direction)
     if (next === zoomRatio) return
     handle.zoomBy(next / zoomRatio)
   }
@@ -468,28 +468,28 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
           <div className="analysis-board-zoom" role="group" aria-label="缩放控制">
             <button
               type="button"
-              className="requirement-canvas-zoom-btn"
+              className="analysis-board-zoom-btn"
               aria-label="缩小"
-              disabled={zoomRatio <= CANVAS_ZOOM_MIN}
+              disabled={zoomRatio <= BOARD_ZOOM_MIN}
               onClick={() => handleStepZoom('out')}
             >
               <ZoomOut className="h-3.5 w-3.5" />
             </button>
-            <span className="requirement-canvas-zoom-value" aria-label="当前缩放比例">
-              {formatCanvasZoom(zoomRatio)}
+            <span className="analysis-board-zoom-value" aria-label="当前缩放比例">
+              {formatZoom(zoomRatio)}
             </span>
             <button
               type="button"
-              className="requirement-canvas-zoom-btn"
+              className="analysis-board-zoom-btn"
               aria-label="放大"
-              disabled={zoomRatio >= CANVAS_ZOOM_MAX}
+              disabled={zoomRatio >= BOARD_ZOOM_MAX}
               onClick={() => handleStepZoom('in')}
             >
               <ZoomIn className="h-3.5 w-3.5" />
             </button>
             <button
               type="button"
-              className="requirement-canvas-zoom-btn"
+              className="analysis-board-zoom-btn"
               aria-label="适应屏幕"
               onClick={() => void handleFit()}
             >

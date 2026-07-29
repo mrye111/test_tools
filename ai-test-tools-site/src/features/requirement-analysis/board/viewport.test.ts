@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampZoom, fitBounds, screenToWorld, worldToScreen, zoomAt, BOARD_ZOOM_MIN, BOARD_ZOOM_MAX } from './viewport'
+import { clampZoom, fitBounds, formatZoom, screenToWorld, stepZoom, worldToScreen, zoomAt, BOARD_ZOOM_MIN, BOARD_ZOOM_MAX, BOARD_ZOOM_STEP } from './viewport'
 
 describe('viewport', () => {
   it('世界↔屏幕坐标换算互逆', () => {
@@ -25,6 +25,24 @@ describe('viewport', () => {
     expect(clampZoom(Number.NaN)).toBe(1)
     expect(clampZoom(0.0001)).toBe(BOARD_ZOOM_MIN)
     expect(clampZoom(1000)).toBe(BOARD_ZOOM_MAX)
+  })
+
+  it('stepZoom 按 BOARD_ZOOM_STEP 步进，边界停留', () => {
+    expect(stepZoom(1, 'in')).toBeCloseTo(BOARD_ZOOM_STEP)
+    expect(stepZoom(BOARD_ZOOM_STEP, 'in')).toBeCloseTo(BOARD_ZOOM_STEP ** 2)
+    expect(stepZoom(1, 'out')).toBeCloseTo(1 / BOARD_ZOOM_STEP)
+    expect(stepZoom(stepZoom(1, 'in'), 'out')).toBeCloseTo(1)
+    expect(stepZoom(BOARD_ZOOM_MAX, 'in')).toBe(BOARD_ZOOM_MAX)
+    expect(stepZoom(BOARD_ZOOM_MIN, 'out')).toBe(BOARD_ZOOM_MIN)
+    expect(stepZoom(Number.NaN, 'in')).toBeCloseTo(BOARD_ZOOM_STEP)
+  })
+
+  it('formatZoom 显示百分比', () => {
+    expect(formatZoom(1)).toBe('100%')
+    expect(formatZoom(1.44)).toBe('144%')
+    expect(formatZoom(0.693)).toBe('69%')
+    expect(formatZoom(Number.NaN)).toBe('100%')
+    expect(formatZoom(-1)).toBe('100%')
   })
 
   it('fitBounds 让包围盒完整可见并居中（含 padding）', () => {
