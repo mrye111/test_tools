@@ -1,29 +1,92 @@
 import { describe, expect, it } from 'vitest'
 import { deriveDecisionTable, mergeEquivalentRules, selectOrthogonalArray } from './derive'
-import type { CauseEffectElement, DecisionTableElement } from './types'
+import type { CauseEffectElement, DecisionTableElement, OrthogonalFactor } from './types'
+
+function assertRows(result: ReturnType<typeof selectOrthogonalArray>): string[][] {
+  if (!('rows' in result)) throw new Error('应产出阵列')
+  return result.rows
+}
+
+function cartesianProduct<T>(sets: T[][]): T[][] {
+  return sets.reduce<T[][]>((acc, set) => acc.flatMap((item) => set.map((s) => [...item, s])), [[]])
+}
+
+function assertPairwiseCoverage(factors: OrthogonalFactor[], rows: string[][]) {
+  for (let i = 0; i < factors.length; i++) {
+    for (let j = i + 1; j < factors.length; j++) {
+      const expected = new Set(cartesianProduct([factors[i].levels, factors[j].levels]).map((p) => p.join('|')))
+      const actual = new Set(rows.map((row) => `${row[i]}|${row[j]}`))
+      expect(actual).toEqual(expected)
+    }
+  }
+}
 
 describe('selectOrthogonalArray', () => {
-  it('2 因子各 2 水平 → L4 全组合（4 行）', () => {
-    const result = selectOrthogonalArray([
-      { name: '渠道', levels: ['短信', '邮件'] },
-      { name: '定时', levels: ['是', '否'] },
-    ])
+  it('L4: 2 因子各 2 水平 → 4 行且两两覆盖完整', () => {
+    const factors: OrthogonalFactor[] = [
+      { name: 'A', levels: ['A0', 'A1'] },
+      { name: 'B', levels: ['B0', 'B1'] },
+    ]
+    const result = selectOrthogonalArray(factors)
     expect('name' in result && result.name).toContain('L4')
-    expect('rows' in result && result.rows).toHaveLength(4)
+    const rows = assertRows(result)
+    expect(rows).toHaveLength(4)
+    assertPairwiseCoverage(factors, rows)
   })
 
-  it('3 因子各 3 水平 → L9（9 行，每对因子水平组合至少出现一次）', () => {
-    const factors = [
+  it('L8: 4 个 2 水平因子 → 8 行且两两覆盖完整', () => {
+    const factors: OrthogonalFactor[] = [
+      { name: 'A', levels: ['A0', 'A1'] },
+      { name: 'B', levels: ['B0', 'B1'] },
+      { name: 'C', levels: ['C0', 'C1'] },
+      { name: 'D', levels: ['D0', 'D1'] },
+    ]
+    const result = selectOrthogonalArray(factors)
+    expect('name' in result && result.name).toContain('L8')
+    const rows = assertRows(result)
+    expect(rows).toHaveLength(8)
+    assertPairwiseCoverage(factors, rows)
+  })
+
+  it('L9: 3 因子各 3 水平 → 9 行且两两覆盖完整', () => {
+    const factors: OrthogonalFactor[] = [
       { name: 'A', levels: ['1', '2', '3'] },
       { name: 'B', levels: ['x', 'y', 'z'] },
       { name: 'C', levels: ['p', 'q', 'r'] },
     ]
     const result = selectOrthogonalArray(factors)
-    if (!('rows' in result)) throw new Error('应产出阵列')
-    expect(result.rows).toHaveLength(9)
-    // 两两覆盖校验：任意两列的 (水平, 水平) 组合全集 ⊆ 行集合
-    const pairs = new Set(result.rows.map((row) => `${row[0]}|${row[1]}`))
-    expect(pairs.size).toBe(9)
+    expect('name' in result && result.name).toContain('L9')
+    const rows = assertRows(result)
+    expect(rows).toHaveLength(9)
+    assertPairwiseCoverage(factors, rows)
+  })
+
+  it('L16: 4 因子各 4 水平 → 16 行且两两覆盖完整', () => {
+    const factors: OrthogonalFactor[] = [
+      { name: 'A', levels: ['A0', 'A1', 'A2', 'A3'] },
+      { name: 'B', levels: ['B0', 'B1', 'B2', 'B3'] },
+      { name: 'C', levels: ['C0', 'C1', 'C2', 'C3'] },
+      { name: 'D', levels: ['D0', 'D1', 'D2', 'D3'] },
+    ]
+    const result = selectOrthogonalArray(factors)
+    expect('name' in result && result.name).toContain('L16')
+    const rows = assertRows(result)
+    expect(rows).toHaveLength(16)
+    assertPairwiseCoverage(factors, rows)
+  })
+
+  it('L18: 1 个 2 水平 + 3 个 3 水平因子 → 18 行且两两覆盖完整', () => {
+    const factors: OrthogonalFactor[] = [
+      { name: 'Two', levels: ['T0', 'T1'] },
+      { name: 'X', levels: ['X0', 'X1', 'X2'] },
+      { name: 'Y', levels: ['Y0', 'Y1', 'Y2'] },
+      { name: 'Z', levels: ['Z0', 'Z1', 'Z2'] },
+    ]
+    const result = selectOrthogonalArray(factors)
+    expect('name' in result && result.name).toContain('L18')
+    const rows = assertRows(result)
+    expect(rows).toHaveLength(18)
+    assertPairwiseCoverage(factors, rows)
   })
 
   it('超出支持范围返回错误', () => {

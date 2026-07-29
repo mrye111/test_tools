@@ -154,12 +154,14 @@ export function selectOrthogonalArray(
     return { error: '因子/水平超出支持范围（≤4 因子、总水平 ≤ 18）' }
   }
 
+  let best: { name: string; rows: string[][]; score: number } | null = null
   for (const template of ORTHOGONAL_ARRAY_TEMPLATES) {
     const columnMaxLevels = getColumnMaxLevels(template.rows)
     const factorLevels = factors.map((f) => f.levels.length)
     const assignment = assignColumns(factorLevels, columnMaxLevels)
     if (!assignment) continue
 
+    const score = assignment.reduce((sum, col, i) => sum + (columnMaxLevels[col] - factorLevels[i]), 0)
     const rows = template.rows.map((row) =>
       factors.map((factor, index) => {
         const col = assignment[index]
@@ -167,11 +169,19 @@ export function selectOrthogonalArray(
         return factor.levels[levelIndex]
       })
     )
-
-    return { name: template.name, rows }
+    if (
+      best === null ||
+      score < best.score ||
+      (score === best.score && rows.length < best.rows.length)
+    ) {
+      best = { name: template.name, rows, score }
+    }
   }
 
-  return { error: '因子/水平超出支持范围（≤4 因子、总水平 ≤ 18）' }
+  if (!best) {
+    return { error: '因子/水平超出支持范围（≤4 因子、总水平 ≤ 18）' }
+  }
+  return { name: best.name, rows: best.rows }
 }
 
 /** 获取节点的所有入边 */

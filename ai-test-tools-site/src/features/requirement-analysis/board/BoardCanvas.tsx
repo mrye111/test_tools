@@ -491,17 +491,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       if (!hit) return
 
       if (hit.part === 'node') {
-        setEditing({ elementId: hit.elementId, field: 'node-text', path: [hit.nodeId] })
-      } else if (hit.part === 'body') {
-        // 其他图元按 kind 选择可编辑字段
         const el = store.getBoard().elements.find((e) => e.id === hit.elementId)
-        if (el?.kind === 'decision-table') {
-          setEditing({ elementId: hit.elementId, field: 'cell', path: [] })
-        } else if (el?.kind === 'orthogonal') {
-          setEditing({ elementId: hit.elementId, field: 'factor', path: [] })
-        } else {
-          setEditing({ elementId: hit.elementId, field: 'node-text', path: [] })
+        if (el?.kind === 'cause-effect') {
+          setEditing({ elementId: hit.elementId, field: 'node-text', path: [hit.nodeId] })
         }
+        return
       }
     },
     [editing, store, viewport],

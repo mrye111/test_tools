@@ -22,6 +22,7 @@ import { deserializeBoard, emptyBoard } from '../features/requirement-analysis/b
 import { buildMindmapRefElement } from '../features/requirement-analysis/board/ai'
 import { deriveDecisionTable, decisionTableToSkeleton, orthogonalToSkeleton, serializeSkeletons } from '../features/requirement-analysis/board/derive'
 import type { Board, BoardElement } from '../features/requirement-analysis/board/types'
+import { BOARD_LIMITS } from '../features/requirement-analysis/board/types'
 
 /**
  * 分析画板页（ADR 0006）：/requirement-analysis/board/:id 独立路由，
@@ -129,55 +130,77 @@ export function AnalysisBoardPage() {
 
   /** 画板内 toolbar 动作：推导判定表、重新生成正交表。 */
   const handleDerive = useCallback(async (action: 'derive-decision-table' | 'regenerate-array' | 'edit-factor', elementId: string) => {
-    if (!board || !id || !result) return
-    const element = board.elements.find((e) => e.id === elementId)
-    if (!element) return
+    if (!id || !result) return
     setBoardError(null)
     try {
-      if (action === 'derive-decision-table' && element.kind === 'cause-effect') {
-        const derived = deriveDecisionTable(element)
-        if ('error' in derived) {
-          setBoardError(derived.error ?? '推导判定表失败')
-          return
-        }
-        // 创建新图元，置于因果图右侧；持久化由 useBoardPersistence 统一处理
-        const placed = { ...derived, id: crypto.randomUUID(), x: element.x + element.w + 40, y: element.y }
-        const next = { ...board, elements: [...board.elements, placed] }
-        setBoard(next)
-      } else if (action === 'regenerate-array' && element.kind === 'decision-table') {
-        // 从判定表条件生成正交因子：每个条件作为布尔因子，动作为水平因子。
-        const factors = element.conditions.map((name) => ({ name, levels: ['是', '否'] }))
-        if (factors.length === 0) {
-          setBoardError('判定表没有条件，无法生成正交表')
-          return
-        }
-        // 正交表生成不依赖 AI，由 derive 直接生成
+      if (action === 'regenerate-array') {
         const { selectOrthogonalArray } = await import('../features/requirement-analysis/board/derive')
-        const selected = selectOrthogonalArray(factors)
-        if ('error' in selected) {
-          setBoardError(selected.error)
-          return
-        }
-        const placed: BoardElement = {
-          id: crypto.randomUUID(),
-          kind: 'orthogonal',
-          x: element.x + element.w + 40,
-          y: element.y,
-          w: 400,
-          h: 240,
-          sourceNodeId: element.sourceNodeId,
-          factors,
-          arrayName: selected.name,
-          rows: selected.rows,
-        }
-        const next = { ...board, elements: [...board.elements, placed] }
-        setBoard(next)
+        setBoard((prev) => {
+          if (!prev) return prev
+          const element = prev.elements.find((e) => e.id === elementId)
+          if (!element || element.kind !== 'decision-table') return prev
+          if (prev.elements.length >= BOARD_LIMITS.MAX_ELEMENTS) {
+            setBoardError('白板图元数量已达上限（50）')
+            return prev
+          }
+          const factors = element.conditions.map((name) => ({ name, levels: ['是', '否'] }))
+          if (factors.length === 0) {
+            setBoardError('判定表没有条件，无法生成正交表')
+            return prev
+          }
+          const selected = selectOrthogonalArray(factors)
+          if ('error' in selected) {
+            setBoardError(selected.error)
+            return prev
+          }
+          const placed: BoardElement = {
+            id: crypto.randomUUID(),
+            kind: 'orthogonal',
+            x: element.x + element.w + 40,
+            y: element.y,
+            w: 400,
+            h: 240,
+            sourceNodeId: element.sourceNodeId,
+            factors,
+            arrayName: selected.name,
+            rows: selected.rows,
+          }
+          return { ...prev, elements: [...prev.elements, placed] }
+        })
+      } else {
+        setBoard((prev) => {
+          if (!prev) return prev
+          const element = prev.elements.find((e) => e.id === elementId)
+          if (!element) return prev
+
+          if (prev.elements.length >= BOARD_LIMITS.MAX_ELEMENTS) {
+            setBoardError('白板图元数量已达上限（50）')
+            return prev
+          }
+
+          if (action === 'derive-decision-table' && element.kind === 'cause-effect') {
+            const derived = deriveDecisionTable(element)
+            if ('error' in derived) {
+              setBoardError(derived.error ?? '推导判定表失败')
+              return prev
+            }
+            if (derived.rules.length === 0 || (derived.conditions.length === 0 && derived.actions.length === 0)) {
+              setBoardError('因果图没有可推导的内容')
+              return prev
+            }
+            // 创建新图元，置于因果图右侧；持久化由 useBoardPersistence 统一处理
+            const placed: BoardElement = { ...derived, id: crypto.randomUUID(), x: element.x + element.w + 40, y: element.y }
+            return { ...prev, elements: [...prev.elements, placed] }
+          }
+
+          return prev
+        })
       }
       // edit-factor 本期暂不处理
     } catch (err) {
       setBoardError(err instanceof Error ? err.message : '推导失败，请稍后重试。')
     }
-  }, [board, id, result])
+  }, [id, result])
 
   /** 用例接力：收集判定表/正交表骨架，拼接 sourceText 后写入 localStorage。 */
   const handleHandoff = useCallback(() => {

@@ -147,10 +147,10 @@ function normalizeFinding(value: unknown): Finding | null {
 
 /** 按节点 id 在需求分解树中查找节点，并拼接该节点及其全部子树的标题文本。 */
 function findNodeSubtreeText(tree: RequirementNode, nodeId: string): { title: string; text: string } | null {
-  const visit = (node: RequirementNode, path: string[]): { title: string; text: string } | null => {
+  const visit = (node: RequirementNode): { title: string; text: string } | null => {
     if (node.id !== nodeId) {
       for (const child of node.children) {
-        const found = visit(child, [...path, node.title]);
+        const found = visit(child);
         if (found) return found;
       }
       return null;
@@ -163,7 +163,7 @@ function findNodeSubtreeText(tree: RequirementNode, nodeId: string): { title: st
     collect(node, 0);
     return { title: node.title, text: lines.join("\n") };
   };
-  return visit(tree, []);
+  return visit(tree);
 }
 
 /** 从请求中取出解析输入：JSON {text} 或 octet-stream 文件字节。 */
