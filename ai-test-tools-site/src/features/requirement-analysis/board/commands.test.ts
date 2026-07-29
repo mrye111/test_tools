@@ -42,10 +42,42 @@ describe('commands', () => {
 
   it('bringToFront / sendToBack 调整 z 序且可撤销', () => {
     const board: Board = { version: 1, elements: [dt, dt2] }
-    const front = bringToFront(['dt1']).do(board)
+    const cmd = bringToFront(['dt1'])
+    const front = cmd.do(board)
     expect(front.elements.map((e) => e.id)).toEqual(['dt2', 'dt1'])
-    expect(bringToFront(['dt1']).undo(front).elements.map((e) => e.id)).toEqual(['dt1', 'dt2'])
-    const back = sendToBack(['dt2']).do(board)
+    expect(cmd.undo(front).elements.map((e) => e.id)).toEqual(['dt1', 'dt2'])
+    const backCmd = sendToBack(['dt2'])
+    const back = backCmd.do(board)
     expect(back.elements.map((e) => e.id)).toEqual(['dt2', 'dt1'])
+    expect(backCmd.undo(back).elements.map((e) => e.id)).toEqual(['dt1', 'dt2'])
+  })
+
+  it('多选 bringToFront 的 undo 恢复原始 z 序', () => {
+    const a = { ...dt, id: 'a' }
+    const b = { ...dt, id: 'b' }
+    const c = { ...dt, id: 'c' }
+    const d = { ...dt, id: 'd' }
+    const board: Board = { version: 1, elements: [a, b, c, d] }
+    const cmd = bringToFront(['b', 'd'])
+    const after = cmd.do(board)
+    expect(after.elements.map((e) => e.id)).toEqual(['a', 'c', 'b', 'd'])
+    expect(cmd.undo(after).elements.map((e) => e.id)).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  it('连续 bringToFront 后 undo 能回到初始顺序', () => {
+    const a = { ...dt, id: 'a' }
+    const b = { ...dt, id: 'b' }
+    const c = { ...dt, id: 'c' }
+    const board: Board = { version: 1, elements: [a, b, c] }
+    const cmd1 = bringToFront(['a'])
+    const step1 = cmd1.do(board)
+    expect(step1.elements.map((e) => e.id)).toEqual(['b', 'c', 'a'])
+    const cmd2 = bringToFront(['a'])
+    const step2 = cmd2.do(step1)
+    expect(step2.elements.map((e) => e.id)).toEqual(['b', 'c', 'a'])
+    const undo2 = cmd2.undo(step2)
+    expect(undo2.elements.map((e) => e.id)).toEqual(['b', 'c', 'a'])
+    const undo1 = cmd1.undo(undo2)
+    expect(undo1.elements.map((e) => e.id)).toEqual(['a', 'b', 'c'])
   })
 })

@@ -97,12 +97,14 @@ export function updateElement(
   }
 }
 
-/** 将指定图元提到最前，undo 恢复原有 z 序 */
+/** 将指定图元提到最前，undo 恢复 do 前完整 z 序 */
 export function bringToFront(ids: string[]): Command {
   const idSet = new Set(ids)
+  let originalOrder: string[] = []
   return {
     label: '置于顶层',
     do: (board) => {
+      originalOrder = board.elements.map((el) => el.id)
       const selected: BoardElement[] = []
       const rest: BoardElement[] = []
       board.elements.forEach((el) => {
@@ -111,25 +113,21 @@ export function bringToFront(ids: string[]): Command {
       })
       return { ...board, elements: [...rest, ...selected] }
     },
-    undo: (board) => {
-      // undo 等价于将选中图元移到最底层，以恢复在简单场景下的原始顺序
-      const selected: BoardElement[] = []
-      const rest: BoardElement[] = []
-      board.elements.forEach((el) => {
-        if (idSet.has(el.id)) selected.push(el)
-        else rest.push(el)
-      })
-      return { ...board, elements: [...selected, ...rest] }
-    },
+    undo: (board) => ({
+      ...board,
+      elements: restoreByOrder(board.elements, originalOrder),
+    }),
   }
 }
 
-/** 将指定图元置于底层，undo 恢复原有 z 序 */
+/** 将指定图元置于底层，undo 恢复 do 前完整 z 序 */
 export function sendToBack(ids: string[]): Command {
   const idSet = new Set(ids)
+  let originalOrder: string[] = []
   return {
     label: '置于底层',
     do: (board) => {
+      originalOrder = board.elements.map((el) => el.id)
       const selected: BoardElement[] = []
       const rest: BoardElement[] = []
       board.elements.forEach((el) => {
@@ -138,15 +136,22 @@ export function sendToBack(ids: string[]): Command {
       })
       return { ...board, elements: [...selected, ...rest] }
     },
-    undo: (board) => {
-      // undo 等价于将选中图元提到最顶层，以恢复在简单场景下的原始顺序
-      const selected: BoardElement[] = []
-      const rest: BoardElement[] = []
-      board.elements.forEach((el) => {
-        if (idSet.has(el.id)) selected.push(el)
-        else rest.push(el)
-      })
-      return { ...board, elements: [...rest, ...selected] }
-    },
+    undo: (board) => ({
+      ...board,
+      elements: restoreByOrder(board.elements, originalOrder),
+    }),
   }
+}
+
+/** 按原始 id 顺序重新排列当前 elements，未命中 id 保持当前相对位置 */
+function restoreByOrder(elements: BoardElement[], order: string[]): BoardElement[] {
+  const orderMap = new Map(order.map((id, index) => [id, index]))
+  const elementMap = new Map(elements.map((el) => [el.id, el]))
+  const sorted = [...elements].sort((a, b) => {
+    const ia = orderMap.get(a.id)
+    const ib = orderMap.get(b.id)
+    if (ia === undefined || ib === undefined) return 0
+    return ia - ib
+  })
+  return sorted
 }
