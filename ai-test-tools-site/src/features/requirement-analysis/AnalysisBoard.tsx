@@ -22,7 +22,7 @@ import { MenuButton } from '../../components/ui/MenuButton'
 import { Tooltip } from '../../components/ui/Tooltip'
 import { BoardCanvas, type BoardCanvasHandle } from './board/BoardCanvas'
 import { BoardStore } from './board/board-store'
-import type { Board, BoardElement } from './board/types'
+import type { Board, BoardElement, MindmapRefElement } from './board/types'
 import { BOARD_LIMITS } from './board/types'
 import { removeElements, updateElement } from './board/commands'
 import { TemplateCenterModal } from './TemplateCenterModal'
@@ -79,27 +79,27 @@ function generateId(): string {
 function createPendingElement(kind: BoardChartKind, sourceNodeId: string): BoardElement {
   const base = { id: generateId(), x: 40, y: 40, w: 320, h: 200, sourceNodeId, pending: true }
   if (kind === 'cause-effect') {
-    return { ...base, kind: 'cause-effect', nodes: [], edges: [] } as BoardElement
+    return { ...base, kind: 'cause-effect', nodes: [], edges: [] }
   }
   if (kind === 'decision-table') {
-    return { ...base, kind: 'decision-table', conditions: [], actions: [], rules: [] } as BoardElement
+    return { ...base, kind: 'decision-table', conditions: [], actions: [], rules: [] }
   }
-  return { ...base, kind: 'orthogonal', factors: [], arrayName: '', rows: [] } as BoardElement
+  return { ...base, kind: 'orthogonal', factors: [], arrayName: '', rows: [] }
 }
 
 /** 将图元标记为错误态。 */
 function markAsError(element: BoardElement, message: string): BoardElement {
-  return { ...element, pending: undefined, error: message } as BoardElement
+  return { ...element, pending: undefined, error: message }
 }
 
 /** 判断图元是否为占位图元。 */
 function isPendingElement(element: BoardElement): boolean {
-  return (element as unknown as { pending?: boolean }).pending === true
+  return element.pending === true
 }
 
 /** 判断图元是否为错误图元。 */
 function isErrorElement(element: BoardElement): boolean {
-  return (element as unknown as { error?: string }).error !== undefined
+  return element.error !== undefined
 }
 
 /** 查找需求节点。 */
@@ -125,7 +125,7 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
   const [exporting, setExporting] = useState<ExportKind | null>(null)
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() => {
-    const mindmapRef = board.elements.find((el) => el.kind === 'mindmap-ref') as unknown as { selectedNodeId?: string | null } | undefined
+    const mindmapRef = board.elements.find((el) => el.kind === 'mindmap-ref') as MindmapRefElement | undefined
     return mindmapRef?.selectedNodeId ?? null
   })
   const [activeTool, setActiveTool] = useState<ToolKey>('select')
@@ -457,7 +457,7 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
               }
               const el = renderedBoard.elements.find((e) => e.id === first)
               if (el?.kind === 'mindmap-ref') {
-                setSelectedNodeId((el as unknown as { selectedNodeId?: string | null }).selectedNodeId ?? null)
+                setSelectedNodeId((el as MindmapRefElement).selectedNodeId ?? null)
               } else {
                 setSelectedNodeId(null)
               }
@@ -499,7 +499,7 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
 
           {/* 占位/错误卡片浮动提示 */}
           {renderedBoard.elements.filter((el) => isPendingElement(el) || isErrorElement(el)).map((el) => {
-            const errorMessage = (el as unknown as { error?: string }).error
+            const errorMessage = el.error
             return (
               <div
                 key={el.id}

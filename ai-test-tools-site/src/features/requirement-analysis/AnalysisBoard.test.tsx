@@ -108,6 +108,28 @@ describe('AnalysisBoard 分析画板', () => {
     expect(screen.getByRole('button', { name: '正交表' })).toBeDisabled()
   })
 
+  it('选中需求节点后点击因果图插入，生成成功时占位被真实图元替换', async () => {
+    const onBoardChange = vi.fn()
+    const onGenerateChart = vi.fn().mockResolvedValue({
+      nodes: [
+        { id: 'c1', role: 'cause', text: '短信≤210字', x: 0, y: 0 },
+        { id: 'e1', role: 'effect', text: '按单条计费', x: 100, y: 0 },
+      ],
+      edges: [{ id: 'edge1', from: 'c1', to: 'e1', constraint: 'identity' }],
+    })
+    renderBoard({ onBoardChange, onGenerateChart })
+
+    fireEvent.click(screen.getByRole('button', { name: '因果图' }))
+    await waitFor(() => {
+      const lastCall = onBoardChange.mock.calls[onBoardChange.mock.calls.length - 1][0] as { elements: Array<{ kind: string; pending?: boolean; error?: string; nodes?: unknown[] }> }
+      const ce = lastCall.elements.find((e) => e.kind === 'cause-effect')
+      expect(ce).toBeDefined()
+      expect(ce?.pending).toBeUndefined()
+      expect(ce?.error).toBeUndefined()
+      expect(ce?.nodes).toHaveLength(2)
+    })
+  })
+
   it('选中需求节点后点击因果图插入，生成失败时显示错误卡片并可删除', async () => {
     const onBoardChange = vi.fn()
     const onExportError = vi.fn()

@@ -1,7 +1,17 @@
 /** 白板 AI 生成草稿与图元转换：校验、id 分配、坐标落位 */
 
-import type { BoardChartKind, RequirementNode } from '../../../lib/requirement-analysis-api'
-import type { Board, BoardElement, CauseEffectElement, DecisionTableElement, OrthogonalElement } from './types'
+import type {
+  BoardChartKind,
+  RequirementNode,
+} from '../../../lib/requirement-analysis-api'
+import type {
+  Board,
+  BoardElement,
+  CauseEffectElement,
+  DecisionTableConditionValue,
+  DecisionTableElement,
+  OrthogonalElement,
+} from './types'
 import { BOARD_LIMITS, CE_NODE_H, CE_NODE_W } from './types'
 
 export interface DraftValidationError {
@@ -267,7 +277,7 @@ export function draftToElement(
       conditions: (d.conditions as string[]).map((text) => text.slice(0, BOARD_LIMITS.MAX_TEXT_LENGTH)),
       actions: (d.actions as string[]).map((text) => text.slice(0, BOARD_LIMITS.MAX_TEXT_LENGTH)),
       rules: (d.rules as Array<Record<string, unknown>>).map((rule) => ({
-        conditionValues: (rule.conditionValues as DecisionTableElement['rules'][number]['conditionValues'][]).slice(
+        conditionValues: (rule.conditionValues as DecisionTableConditionValue[]).slice(
           0,
           BOARD_LIMITS.MAX_TEXT_LENGTH,
         ),
@@ -291,7 +301,7 @@ export function draftToElement(
 }
 
 /** 构建需求树参考图元，用于空板自动占位 */
-export function buildMindmapRefElement(tree: RequirementNode, x = 40, y = 40): BoardElement {
+export function buildMindmapRefElement(_tree: RequirementNode, x = 40, y = 40): BoardElement {
   return {
     id: generateId(),
     kind: 'mindmap-ref',

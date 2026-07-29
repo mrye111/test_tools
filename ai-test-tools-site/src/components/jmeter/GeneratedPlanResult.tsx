@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { AlertCircle, ChevronDown, ChevronRight, Download, FileText, Loader2 } from 'lucide-react'
 import type { GeneratedPlanResult } from '../../lib/jmeter-builders'
 import { parseJmeterTree, type JmeterTreeNode } from '../../lib/jmeter-api'

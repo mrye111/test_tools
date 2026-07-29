@@ -4,7 +4,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   generateBoardChart,
   getAnalysisRecord,
-  updateAnalysisRecord,
   exportRequirementXmind,
   REQUIREMENT_HANDOFF_KEY,
   type AnalysisRecord,
@@ -22,7 +21,7 @@ import { useBoardPersistence } from '../features/requirement-analysis/board/useB
 import { deserializeBoard, emptyBoard } from '../features/requirement-analysis/board/persistence'
 import { buildMindmapRefElement } from '../features/requirement-analysis/board/ai'
 import { deriveDecisionTable, decisionTableToSkeleton, orthogonalToSkeleton, serializeSkeletons } from '../features/requirement-analysis/board/derive'
-import type { Board } from '../features/requirement-analysis/board/types'
+import type { Board, BoardElement } from '../features/requirement-analysis/board/types'
 
 /**
  * 分析画板页（ADR 0006）：/requirement-analysis/board/:id 独立路由，
@@ -91,6 +90,7 @@ export function AnalysisBoardPage() {
     setBoard(next)
   }, [])
 
+  // hook 内部已拦截空 recordId，id 缺失时直接短路不触发保存。
   const { saveError } = useBoardPersistence(id ?? '', board ?? emptyBoard())
 
   // 持久化失败时作为普通画板错误提示用户，但不再通过额外 effect 设置，避免同步 setState 告警。
@@ -137,14 +137,13 @@ export function AnalysisBoardPage() {
       if (action === 'derive-decision-table' && element.kind === 'cause-effect') {
         const derived = deriveDecisionTable(element)
         if ('error' in derived) {
-          setBoardError(derived.error)
+          setBoardError(derived.error ?? '推导判定表失败')
           return
         }
-        // 创建新图元，置于因果图右侧
+        // 创建新图元，置于因果图右侧；持久化由 useBoardPersistence 统一处理
         const placed = { ...derived, id: crypto.randomUUID(), x: element.x + element.w + 40, y: element.y }
         const next = { ...board, elements: [...board.elements, placed] }
         setBoard(next)
-        await updateAnalysisRecord(id, { board: next })
       } else if (action === 'regenerate-array' && element.kind === 'decision-table') {
         // 从判定表条件生成正交因子：每个条件作为布尔因子，动作为水平因子。
         const factors = element.conditions.map((name) => ({ name, levels: ['是', '否'] }))
@@ -173,7 +172,6 @@ export function AnalysisBoardPage() {
         }
         const next = { ...board, elements: [...board.elements, placed] }
         setBoard(next)
-        await updateAnalysisRecord(id, { board: next })
       }
       // edit-factor 本期暂不处理
     } catch (err) {

@@ -16,15 +16,16 @@ export function emptyBoard(): Board {
   return { version: 1, elements: [] }
 }
 
-/** 序列化白板；mindmap-ref 的 selectedNodeId 为会话态，不持久化 */
+/** 序列化白板；selectedNodeId/pending/error 为会话态，不持久化 */
 export function serializeBoard(board: Board): string {
   const toPersist: Board = {
     ...board,
     elements: board.elements.map((el) => {
-      if (el.kind === 'mindmap-ref') {
-        return { ...el, selectedNodeId: null }
+      const cleaned = { ...el, pending: undefined, error: undefined }
+      if (cleaned.kind === 'mindmap-ref') {
+        cleaned.selectedNodeId = null
       }
-      return el
+      return cleaned
     }),
   }
   return JSON.stringify(toPersist)
@@ -74,6 +75,7 @@ function parseElement(raw: unknown): BoardElement | null {
   if (!isFiniteNumber(x) || !isFiniteNumber(y) || !isFiniteNumber(w) || !isFiniteNumber(h)) return null
   if (!isStringOrNull(sourceNodeId)) return null
 
+  // pending/error 为会话态，反序列化时剥离
   const base = { id, kind, x, y, w, h, sourceNodeId }
 
   switch (kind) {

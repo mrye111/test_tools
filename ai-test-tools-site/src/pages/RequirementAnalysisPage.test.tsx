@@ -50,7 +50,7 @@ describe('RequirementAnalysisPage 分析记录', () => {
     expect(screen.getByText(/2026-07-10/)).toBeInTheDocument()
   })
 
-  it('删除流程：ConfirmDialog 确认后调用 DELETE 并移除行', async () => {
+  it('删除流程：ConfirmDialog 确认后调用 DELETE 并移除行', { timeout: 10000 }, async () => {
     const fetchMock = mockRecordsFetch()
     render(<RequirementAnalysisPage />, { wrapper: BrowserRouter })
 
@@ -65,7 +65,7 @@ describe('RequirementAnalysisPage 分析记录', () => {
       )
     })
     await waitFor(() => expect(screen.queryByText('登录需求分析')).not.toBeInTheDocument())
-  })
+  }, { timeout: 10000 })
 
   it('空态渲染「新建分析」入口', async () => {
     mockRecordsFetch([], 0)

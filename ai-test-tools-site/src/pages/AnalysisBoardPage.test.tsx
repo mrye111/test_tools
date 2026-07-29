@@ -89,6 +89,23 @@ describe('AnalysisBoardPage 分析画板页', () => {
     expect(screen.getByRole('button', { name: '返回分析记录列表' })).toBeInTheDocument()
   })
 
+  it('board 保存失败时通过 error 属性回传 saveError', async () => {
+    stub.updateAnalysisRecord.mockRejectedValue(new Error('白板保存失败'))
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getByTestId('analysis-board-stub')).toBeInTheDocument()
+    })
+
+    const onBoardChange = stub.boardProps.current?.onBoardChange as (board: unknown) => void
+    await act(async () => {
+      onBoardChange({ version: 1, elements: [] })
+    })
+
+    await waitFor(() => {
+      expect(stub.boardProps.current?.error).toBe('白板保存失败')
+    }, { timeout: 3000 })
+  })
+
   it('board 变化时通过 onBoardChange 回传', async () => {
     renderPage()
     await waitFor(() => {

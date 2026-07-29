@@ -56,12 +56,40 @@ describe('board persistence', () => {
     expect(parsed?.elements[0].id).toBe('el-1')
   })
 
+  it('pending/error 会话态序列化后被剥离', () => {
+    const liveBoard: Board = {
+      version: 1,
+      elements: [
+        { ...board.elements[2], pending: true },
+        { ...board.elements[3], error: '生成失败' },
+      ],
+    }
+    const parsed = deserializeBoard(JSON.parse(serializeBoard(liveBoard)))
+    expect(parsed?.elements).toHaveLength(2)
+    expect(parsed?.elements[0].pending).toBeUndefined()
+    expect(parsed?.elements[0].error).toBeUndefined()
+    expect(parsed?.elements[1].pending).toBeUndefined()
+    expect(parsed?.elements[1].error).toBeUndefined()
+  })
+
+  it('反序列化时含 pending/error 的脏图元被清洗为合法图元', () => {
+    const parsed = deserializeBoard({
+      version: 1,
+      elements: [
+        { ...board.elements[2], pending: true, error: 'x' },
+      ],
+    })
+    expect(parsed?.elements).toHaveLength(1)
+    expect(parsed?.elements[0].pending).toBeUndefined()
+    expect(parsed?.elements[0].error).toBeUndefined()
+  })
+
   it('kind 未知返回 null（整个图元被过滤）', () => {
     const parsed = deserializeBoard({ version: 1, elements: [{ ...board.elements[0], kind: 'sticky' }] })
     expect(parsed?.elements).toHaveLength(0)
   })
 
-  it('mindmap-ref 会话态 selectedNodeId 序列化后被清空', () => {
+  it('mindmap-ref 会话态 selectedNodeId 序列化后被清空', async () => {
     const liveBoard: Board = {
       version: 1,
       elements: [

@@ -24,6 +24,10 @@ export interface ElementBase {
   h: number
   /** 溯源：从哪个需求节点生成；null = 用户白手建 */
   sourceNodeId: string | null
+  /** 占位图元标记：AI 生成中；会话态/临时态，不持久化 */
+  pending?: boolean
+  /** 图元生成/推导错误信息；会话态/临时态，不持久化 */
+  error?: string
 }
 
 export interface MindmapRefElement extends ElementBase {
