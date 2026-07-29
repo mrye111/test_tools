@@ -4,7 +4,7 @@ import type { RequirementNode } from '../../../lib/requirement-analysis-api'
 import { BoardStore } from './board-store'
 import { copyElements, moveElements, removeElements } from './commands'
 import type { Viewport } from './viewport'
-import { fitBounds, screenToWorld, zoomAt } from './viewport'
+import { fitBounds, screenToWorld, worldToScreen, zoomAt } from './viewport'
 import { hitTestBoard } from './hit-test'
 import { renderBoard } from './renderer'
 import { TextEditOverlay } from './TextEditOverlay'
@@ -39,6 +39,7 @@ interface PointerState {
   mode: 'idle' | 'pan' | 'drag' | 'marquee'
   startSelection: Set<string>
   dragIds: string[]
+  dragOffset: { x: number; y: number }
   marqueeStartWorld: { x: number; y: number }
 }
 
@@ -74,6 +75,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const pointerRef = useRef<PointerState | null>(null)
   const rafRef = useRef<number | null>(null)
+  const pasteCountRef = useRef(0)
 
   const board = store.getBoard()
 
@@ -116,6 +118,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   useEffect(() => {
     onZoomChange?.(viewport.zoom)
   }, [onZoomChange, viewport.zoom])
+
+  // 框选状态变化时触发重绘，以渲染选框 overlay
+  useEffect(() => {
+    scheduleRender()
+  }, [marquee, scheduleRender])
 
   // 暴露缩放控制句柄
   useImperativeHandle(
@@ -182,6 +189,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           .getBoard()
           .elements.filter((el) => selection.has(el.id))
         ;(window as unknown as Record<string, unknown>).__boardClipboard = clipboard
+        pasteCountRef.current = 0
         return
       }
 
@@ -190,7 +198,9 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         const clipboard = (window as unknown as Record<string, unknown>)
           .__boardClipboard as BoardElement[] | undefined
         if (clipboard?.length) {
-          const copies = clipboard.map((el) => copyElement(el, generateId))
+          pasteCountRef.current += 1
+          const offset = pasteCountRef.current * 24
+          const copies = clipboard.map((el) => copyElement(el, generateId, offset))
           store.execute(copyElements(copies))
         }
         return
@@ -220,12 +230,15 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
     }
   }, [editing, notifySelection, selection, spacePressed, store])
 
-  // 滚轮缩放
+  // 滚轮缩放：先换算为 canvas 相对坐标再传给 zoomAt
   const handleWheel = useCallback(
     (event: React.WheelEvent<HTMLCanvasElement>) => {
       event.preventDefault()
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
       const factor = Math.exp(-event.deltaY * 0.001)
-      setViewport((vp) => zoomAt(vp, event.clientX, event.clientY, factor))
+      setViewport((vp) => zoomAt(vp, event.clientX - rect.left, event.clientY - rect.top, factor))
     },
     [],
   )
@@ -241,6 +254,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         mode: 'pan',
         startSelection: new Set(selection),
         dragIds: [],
+        dragOffset: { x: 0, y: 0 },
         marqueeStartWorld: { x: 0, y: 0 },
       }
     },
@@ -248,11 +262,12 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   )
 
   const startDrag = useCallback(
-    (screenX: number, screenY: number, hitId: string) => {
+    (screenX: number, screenY: number, hitId: string, hitWorldX: number, hitWorldY: number) => {
       const ids = selection.has(hitId) ? [...selection] : [hitId]
       if (!selection.has(hitId)) {
         notifySelection(new Set(ids))
       }
+      const el = store.getBoard().elements.find((e) => e.id === hitId)
       pointerRef.current = {
         id: -1,
         startScreenX: screenX,
@@ -262,10 +277,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         mode: 'drag',
         startSelection: new Set(selection),
         dragIds: ids,
+        dragOffset: el ? { x: hitWorldX - el.x, y: hitWorldY - el.y } : { x: 0, y: 0 },
         marqueeStartWorld: { x: 0, y: 0 },
       }
     },
-    [notifySelection, selection],
+    [notifySelection, selection, store],
   )
 
   const startMarquee = useCallback(
@@ -280,6 +296,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         mode: 'marquee',
         startSelection: new Set(selection),
         dragIds: [],
+        dragOffset: { x: 0, y: 0 },
         marqueeStartWorld: world,
       }
       setMarquee({ x: world.x, y: world.y, w: 0, h: 0 })
@@ -295,13 +312,18 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
       canvas.focus()
 
+      const rect = canvas.getBoundingClientRect()
+      const sx = event.clientX - rect.left
+      const sy = event.clientY - rect.top
+      const world = screenToWorld(viewport, sx, sy)
+
       const isMiddle = event.button === 1
       const isPanTool = tool === 'pan' || spacePressed
       if (isMiddle || isPanTool) {
         try {
           canvas.setPointerCapture(event.pointerId)
         } catch {}
-        startPan(event.clientX, event.clientY)
+        startPan(sx, sy)
         return
       }
 
@@ -309,10 +331,6 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         canvas.setPointerCapture(event.pointerId)
       } catch {}
 
-      const rect = canvas.getBoundingClientRect()
-      const sx = event.clientX - rect.left
-      const sy = event.clientY - rect.top
-      const world = screenToWorld(viewport, sx, sy)
       const hit = hitTestBoard(store.getBoard().elements, world.x, world.y)
 
       if (hit) {
@@ -325,12 +343,12 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           nextSelection = new Set([hit.elementId])
         }
         notifySelection(nextSelection)
-        startDrag(event.clientX, event.clientY, hit.elementId)
+        startDrag(sx, sy, hit.elementId, world.x, world.y)
       } else {
         if (!event.shiftKey) {
           notifySelection(new Set())
         }
-        startMarquee(event.clientX, event.clientY)
+        startMarquee(sx, sy)
       }
     },
     [editing, notifySelection, selection, spacePressed, startDrag, startMarquee, startPan, store, tool, viewport],
@@ -460,6 +478,22 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         onPointerCancel={handlePointerUp}
         onDoubleClick={handleDoubleClick}
       />
+      {marquee && (
+        <div
+          data-testid="board-marquee"
+          style={{
+            position: 'absolute',
+            left: worldToScreen(viewport, marquee.x, marquee.y).x,
+            top: worldToScreen(viewport, marquee.x, marquee.y).y,
+            width: Math.max(1, marquee.w * viewport.zoom),
+            height: Math.max(1, marquee.h * viewport.zoom),
+            border: '1px dashed rgba(59, 130, 246, 0.8)',
+            background: 'rgba(59, 130, 246, 0.12)',
+            pointerEvents: 'none',
+            zIndex: 5,
+          }}
+        />
+      )}
       {selection.size > 0 && (
         <BoardToolbar
           store={store}
@@ -470,7 +504,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           onCopy={() => {
             const clipboard = board.elements.filter((el) => selection.has(el.id))
             ;(window as unknown as Record<string, unknown>).__boardClipboard = clipboard
-            store.execute(copyElements(clipboard.map((el) => copyElement(el, generateId))))
+            pasteCountRef.current = 0
+            store.execute(copyElements(clipboard.map((el) => copyElement(el, generateId, 24))))
           }}
         />
       )}
@@ -502,9 +537,9 @@ function computeBoardBounds(elements: BoardElement[]): { x: number; y: number; w
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
 }
 
-function copyElement(el: BoardElement, generateId: () => string): BoardElement {
+function copyElement(el: BoardElement, generateId: () => string, offset: number): BoardElement {
   const newId = generateId()
-  const copy: BoardElement = { ...el, id: newId, x: el.x + 24, y: el.y + 24 }
+  const copy: BoardElement = { ...el, id: newId, x: el.x + offset, y: el.y + offset }
   if (copy.kind === 'cause-effect') {
     const idMap = new Map<string, string>()
     const nodes = copy.nodes.map((n) => {

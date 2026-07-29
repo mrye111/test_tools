@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { Board, BoardElement } from './types'
 import { BoardStore } from './board-store'
 import { bringToFront, removeElements, sendToBack } from './commands'
@@ -34,13 +35,23 @@ function selectionBounds(
 }
 
 export function BoardToolbar({ store, board, viewport, selection, onAction, onCopy }: BoardToolbarProps) {
+  const toolbarRef = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ width: 0, height: 0 })
   const bounds = selectionBounds(board.elements, selection)
   if (!bounds) return null
 
+  useLayoutEffect(() => {
+    const el = toolbarRef.current
+    if (!el) return
+    setSize({ width: el.offsetWidth, height: el.offsetHeight })
+  }, [selection])
+
   const topCenter = worldToScreen(viewport, bounds.x + bounds.w / 2, bounds.y)
-  // 工具条上沿位于选中集包围盒上方，留 8px 间隙
-  const top = topCenter.y - 40
-  const left = topCenter.x
+  // 工具条上沿位于选中集包围盒上方，留 8px 间隙； clamp 到容器可视区域
+  const rawTop = topCenter.y - 40
+  const containerWidth = 800 // 容器宽度在测量前保守取值，measure 后更新
+  const clampedTop = Math.max(8, rawTop)
+  const clampedLeft = Math.max(8, Math.min(topCenter.x, containerWidth - size.width - 8))
 
   const handleBringToFront = () => {
     if (selection.size === 0) return
@@ -59,11 +70,12 @@ export function BoardToolbar({ store, board, viewport, selection, onAction, onCo
 
   return (
     <div
+      ref={toolbarRef}
       className="board-toolbar"
       style={{
         position: 'absolute',
-        top,
-        left,
+        top: clampedTop,
+        left: clampedLeft,
         transform: 'translate(-50%, 0)',
         zIndex: 20,
         display: 'flex',

@@ -139,4 +139,23 @@ describe('BoardCanvas 交互', () => {
     fireEvent.keyDown(window, { key: 'v' })
     expect(canvas).toHaveStyle({ cursor: 'default' })
   })
+
+  it('空白处拖拽框选出现选框 DOM 并在 pointerup 后消失', async () => {
+    const store = makeStore({ version: 1, elements: [ceElement('e1', 0, 0), ceElement('e2', 300, 0)] })
+    const { container } = renderCanvas(store)
+    await waitFor(() => expect(stub.renderBoard).toHaveBeenCalled())
+    const canvas = container.querySelector('canvas')!
+    mockRect(canvas)
+
+    expect(screen.queryByTestId('board-marquee')).not.toBeInTheDocument()
+    fireEvent.pointerDown(canvas, { clientX: 600, clientY: 300 })
+    fireEvent.pointerMove(canvas, { clientX: 700, clientY: 400 })
+    await waitFor(() => {
+      expect(screen.getByTestId('board-marquee')).toBeInTheDocument()
+    })
+    fireEvent.pointerUp(canvas)
+    await waitFor(() => {
+      expect(screen.queryByTestId('board-marquee')).not.toBeInTheDocument()
+    })
+  })
 })

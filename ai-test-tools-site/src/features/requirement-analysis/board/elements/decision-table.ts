@@ -4,13 +4,12 @@ import { measureDecisionTable } from './measure'
 import { BOARD_COLORS } from './colors'
 import { drawSelectionOutline, roundRect, truncate } from './canvas-utils'
 
-const { accent, border, surface, headerBg, text, textMuted } = BOARD_COLORS
+const { accent, border, surface, headerBg, text: _text, textMuted } = BOARD_COLORS
 
 const ROW_HEIGHT = 28
 const CHAR_WIDTH = 8
 const MAX_COL_WIDTH = 240
 const STUB_MIN_WIDTH = 140
-const PADDING = 20
 
 export function drawDecisionTable(
   ctx: CanvasRenderingContext2D,

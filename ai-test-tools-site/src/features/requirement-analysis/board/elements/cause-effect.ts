@@ -1,5 +1,5 @@
 import type { Viewport } from '../viewport'
-import type { CauseEffectElement, CauseEffectNode, CauseEffectEdge, CauseEffectConstraint } from '../types'
+import type { CauseEffectElement, CauseEffectNode, CauseEffectConstraint } from '../types'
 import { CE_NODE_H, CE_NODE_W } from '../types'
 import { BOARD_COLORS } from './colors'
 import { drawSelectionOutline, roundRect, truncate } from './canvas-utils'
