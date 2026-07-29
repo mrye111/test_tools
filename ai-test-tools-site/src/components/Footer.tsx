@@ -1,11 +1,18 @@
+import { motion } from 'motion/react'
 import { ExternalLink, Mail, Heart } from 'lucide-react'
 
 export function Footer() {
   return (
     // 深色收边带：与 Hero 深色舞台同族（oklch 214-218），让深色在页面首尾呼应，
     // 浅色内容区成为被"括号"包住的主体，而非与深色 Hero 割裂的另一个世界
-    <footer className="footer-dark relative z-10 mt-2 text-sm">
-      <div className="mx-auto flex max-w-[1200px] items-center justify-between gap-6 px-6 py-10 max-sm:flex-col max-sm:gap-4 max-sm:text-center">
+    <motion.footer
+      initial={{ opacity: 0, y: 18 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '0px 0px -6% 0px' }}
+      transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+      className="footer-dark relative z-10 mt-2 text-sm"
+    >
+      <div className="mx-auto flex max-w-shell items-center justify-between gap-6 px-6 py-10 max-sm:flex-col max-sm:gap-4 max-sm:text-center">
         <div className="flex items-center gap-3">
           <div className="brand-mark flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-bold tracking-tight text-white">
             AI
@@ -38,6 +45,6 @@ export function Footer() {
           </a>
         </div>
       </div>
-    </footer>
+    </motion.footer>
   )
 }

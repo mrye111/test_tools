@@ -23,7 +23,7 @@ interface BoardCanvasProps {
   tree: RequirementNode
   onZoomChange?: (ratio: number) => void
   onSelectionChange?: (ids: ReadonlySet<string>) => void
-  onAction?: (action: 'derive-decision-table' | 'regenerate-array' | 'edit-factor') => void
+  onAction?: (action: 'derive-decision-table' | 'regenerate-array' | 'edit-factor', selection: ReadonlySet<string>) => void
 }
 
 /** 工具类型：选择/手型 */
@@ -232,7 +232,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [editing, notifySelection, selection, spacePressed, store])
+  }, [doPaste, editing, notifySelection, selection, spacePressed, store])
 
   // 滚轮缩放：先换算为 canvas 相对坐标再传给 zoomAt
   const handleWheel = useCallback(
@@ -326,14 +326,18 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       if (isMiddle || isPanTool) {
         try {
           canvas.setPointerCapture(event.pointerId)
-        } catch {}
+        } catch {
+          // 非主要指针等场景下 capture 可能失败，忽略
+        }
         startPan(sx, sy)
         return
       }
 
       try {
         canvas.setPointerCapture(event.pointerId)
-      } catch {}
+      } catch {
+        // 非主要指针等场景下 capture 可能失败，忽略
+      }
 
       const hit = hitTestBoard(store.getBoard().elements, world.x, world.y)
 
@@ -411,7 +415,9 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
       if (canvas) {
         try {
           canvas.releasePointerCapture(event.pointerId)
-        } catch {}
+        } catch {
+          // 非主要指针等场景下 release capture 可能失败，忽略
+        }
       }
 
       if (state.mode === 'marquee' && marquee) {
@@ -504,7 +510,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
           board={board}
           viewport={viewport}
           selection={selection}
-          onAction={onAction}
+          onAction={(action) => onAction?.(action, selection)}
           onCopy={() => {
             const clipboard = board.elements.filter((el) => selection.has(el.id))
             ;(window as unknown as Record<string, unknown>).__boardClipboard = clipboard

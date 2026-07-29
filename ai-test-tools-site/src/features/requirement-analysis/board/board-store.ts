@@ -16,13 +16,35 @@ export class BoardStore {
 
   private listeners: Set<() => void> = new Set()
 
-  constructor(initialBoard: Board) {
+  private onChange?: (board: Board) => void
+
+  constructor(initialBoard: Board, onChange?: (board: Board) => void) {
     this.board = initialBoard
+    this.onChange = onChange
   }
 
   /** 获取当前 board 快照 */
   getBoard(): Board {
     return this.board
+  }
+
+  /** 设置变更回调（用于画板壳将内部命令同步给父级持久化） */
+  setOnChange(onChange: (board: Board) => void): void {
+    this.onChange = onChange
+  }
+
+  /** 外部加载新 board（如父级从服务端反序列化后传入），清空命令栈 */
+  loadBoard(board: Board): void {
+    this.board = board
+    this.undoStack = []
+    this.redoStack = []
+    this.notify()
+  }
+
+  /** 直接替换 board（用于占位图元等不进入命令栈的临时状态） */
+  replaceBoard(board: Board): void {
+    this.board = board
+    this.notify()
   }
 
   /** 执行命令：应用 do、入 undo 栈、清空 redo 栈并通知 */
@@ -34,6 +56,7 @@ export class BoardStore {
     }
     this.redoStack = []
     this.notify()
+    this.onChange?.(this.board)
   }
 
   /** 撤销：undo 栈顶命令回退并移入 redo 栈 */
@@ -43,6 +66,7 @@ export class BoardStore {
     this.board = cmd.undo(this.board)
     this.redoStack.push(cmd)
     this.notify()
+    this.onChange?.(this.board)
     return true
   }
 
@@ -53,6 +77,7 @@ export class BoardStore {
     this.board = cmd.do(this.board)
     this.undoStack.push(cmd)
     this.notify()
+    this.onChange?.(this.board)
     return true
   }
 

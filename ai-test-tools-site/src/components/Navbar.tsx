@@ -15,6 +15,9 @@ const SCRUB_RANGE = 160
 export function Navbar() {
   const location = useLocation()
 
+  // 分析画板是纯净画布形态（ADR 0006）：隐藏全局导航，避免与画布悬浮控件叠加
+  const isBoardRoute = location.pathname.startsWith('/requirement-analysis/board/')
+
   // 滚动进度 0→1，spring 抹平滚轮/触控板的阶梯输入，宽度与玻璃质感随进度连续插值
   const scrollProgress = useMotionValue(0)
   const progress = useSpring(scrollProgress, { stiffness: 320, damping: 34, mass: 0.7 })
@@ -43,6 +46,8 @@ export function Navbar() {
   const groupBg = useTransform(progress, (v) => `oklch(1 0 0 / ${(v * 0.5).toFixed(3)})`)
   const groupBorder = useTransform(progress, (v) => `oklch(1 0 0 / ${(v * 0.6).toFixed(3)})`)
   const groupShadow = useTransform(progress, (v) => `0 16px 36px -30px oklch(0.18 0.02 264 / ${(v * 0.5).toFixed(3)})`)
+
+  if (isBoardRoute) return null
 
   return (
     <nav className="sticky top-3 z-50 px-4 max-sm:top-2 max-sm:px-3">

@@ -6,6 +6,7 @@ import { AIGenerateTab } from '../components/jmeter/AIGenerateTab'
 import { useErrorDialog } from '../components/ui/ErrorDialogProvider'
 import { getJmeterHealth, getJmeterTools, type JmeterHealth, type JmeterTool } from '../lib/jmeter-api'
 import { Tooltip } from '../components/ui/Tooltip'
+import { useGoBack } from '../hooks/useGoBack'
 
 type TabKey = 'template' | 'ai'
 
@@ -16,6 +17,7 @@ const tabs = [
 
 export function JmeterPage() {
   const { showError } = useErrorDialog()
+  const goBack = useGoBack()
   const [activeTab, setActiveTab] = useState<TabKey>('template')
   const [loading, setLoading] = useState(true)
   const [backendError, setBackendError] = useState<string | null>(null)
@@ -58,10 +60,10 @@ export function JmeterPage() {
       {/* Header */}
       <div className="page-header">
         <div className="flex items-center gap-3">
-          <Tooltip content="返回首页">
-            <Link to="/" className="icon-action h-10 w-10 rounded-xl">
+          <Tooltip content="返回">
+            <button type="button" onClick={goBack} className="icon-action h-10 w-10 rounded-xl" aria-label="返回">
               <ArrowLeft className="h-4 w-4" />
-            </Link>
+            </button>
           </Tooltip>
           <div>
             <h1 className="page-title">Jmeter 脚本生成器</h1>

@@ -5,7 +5,7 @@ import { layoutMindmap } from './layout'
 import { BOARD_COLORS } from './colors'
 import { drawSelectionOutline, roundRect, truncate } from './canvas-utils'
 
-const { accent, border, surface, surfaceMuted, text, textMuted: _textMuted, line } = BOARD_COLORS
+const { accent, border, surface, surfaceMuted, text, line } = BOARD_COLORS
 
 export function drawMindmapRef(
   ctx: CanvasRenderingContext2D,

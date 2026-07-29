@@ -103,21 +103,18 @@ function collectExpandedPaths(nodes: JmeterTreeNode[], bucket = new Set<string>(
 }
 
 export function GeneratedPlanResult({ result, error, downloading = false, onDownload }: Props) {
-  const [treeText, setTreeText] = useState(result?.tree ?? '')
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
-  const [localError, setLocalError] = useState<string | null>(null)
-
-  useEffect(() => {
-    setTreeText(result?.tree ?? '')
-    setLocalError(null)
-  }, [result?.tree])
+  const treeText = useMemo(() => result?.tree ?? '', [result?.tree])
+  const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set())
 
   const treeNodes = useMemo(() => parseJmeterTree(treeText), [treeText])
 
-  useEffect(() => {
-    const nextExpanded = collectExpandedPaths(treeNodes)
-    setExpandedPaths(nextExpanded)
-  }, [treeText])
+  const expandedPaths = useMemo(() => {
+    const expanded = collectExpandedPaths(treeNodes)
+    for (const path of collapsedPaths) {
+      expanded.delete(path)
+    }
+    return expanded
+  }, [treeNodes, collapsedPaths])
 
   const renderTreeNode = (node: JmeterTreeNode) => {
     const hasChildren = node.children.length > 0
@@ -132,7 +129,7 @@ export function GeneratedPlanResult({ result, error, downloading = false, onDown
           <span
             onClick={() => {
               if (!hasChildren) return
-              setExpandedPaths((prev) => {
+              setCollapsedPaths((prev) => {
                 const next = new Set(prev)
                 if (next.has(node.path)) next.delete(node.path)
                 else next.add(node.path)
@@ -165,11 +162,11 @@ export function GeneratedPlanResult({ result, error, downloading = false, onDown
 
   return (
     <div className="space-y-4">
-      {(error || localError) && (
+      {error && (
         <div className="status-panel danger-panel px-4 py-3 text-sm text-danger">
           <div className="relative z-[1] flex items-start gap-2">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{localError ?? error}</span>
+            <span>{error}</span>
           </div>
         </div>
       )}

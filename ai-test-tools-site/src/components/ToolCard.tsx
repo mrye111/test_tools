@@ -1,96 +1,101 @@
-import { useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { motion, useMotionValue, useSpring } from 'motion/react'
-import type { SpringOptions } from 'motion/react'
+import { cubicBezier, motion } from 'motion/react'
+import type { Variants } from 'motion/react'
 import { ArrowUpRight } from 'lucide-react'
 import type { Tool } from '../data/tools'
+import { ToolStage } from './tool-stages'
 
-// 更 Q 弹的回弹手感：低阻尼 + 适中刚度
-const springValues: SpringOptions = { damping: 16, stiffness: 140, mass: 1 }
+const EASE_OUT_EXPO = cubicBezier(0.16, 1, 0.3, 1)
+
+// 卡片内部编排：外层卡片先落定，随后序号行 → 分割线 → 标题揭示 → 描述 → 舞台入坞
+const cardChoreo: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.08, delayChildren: 0.18 } },
+}
+
+const rise: Variants = {
+  hidden: { opacity: 0, y: 16 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: EASE_OUT_EXPO } },
+}
+
+const titleReveal: Variants = {
+  hidden: { y: '110%' },
+  show: { y: '0%', transition: { duration: 0.7, ease: EASE_OUT_EXPO } },
+}
+
+// 舞台从卡片底边「入坞」：比文字晚半拍，像迷你应用被插进卡槽
+const stageDock: Variants = {
+  hidden: { opacity: 0, y: 30 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.75, ease: EASE_OUT_EXPO } },
+}
 
 interface ToolCardProps {
   tool: Tool
   index?: number
 }
 
+// 扁平大卡片（千问办公式）：序号+标签+分割线、大标题、描述、底部探出实时动画舞台
 export function ToolCard({ tool, index = 0 }: ToolCardProps) {
   const Icon = tool.icon
   const isInternal = tool.href.startsWith('/')
-  const ref = useRef<HTMLDivElement>(null)
 
-  const rotateX = useSpring(useMotionValue(0), springValues)
-  const rotateY = useSpring(useMotionValue(0), springValues)
-  const scale = useSpring(1, springValues)
-
-  function handleMouseMove(e: React.MouseEvent<HTMLElement>) {
-    if (!ref.current) return
-    const rect = ref.current.getBoundingClientRect()
-    const offsetX = e.clientX - rect.left - rect.width / 2
-    const offsetY = e.clientY - rect.top - rect.height / 2
-
-    rotateX.set((offsetY / (rect.height / 2)) * -3)
-    rotateY.set((offsetX / (rect.width / 2)) * 3)
-  }
-
-  function handleMouseEnter() {
-    scale.set(1.012)
-  }
-
-  function handleMouseLeave() {
-    scale.set(1)
-    rotateX.set(0)
-    rotateY.set(0)
-  }
-
-  const delayClass = `stagger-${Math.min(index + 1, 8)}`
-
-  const inner = (
+  const card = (
     <motion.div
-      ref={ref}
-      className={`motion-card motion-card-hover-glow group flex min-h-[140px] flex-col justify-between rounded-[24px] px-5 py-4.5 text-left no-underline outline-none focus-visible:shadow-[var(--shadow-focus-ring)] max-sm:min-h-0 max-sm:gap-3 max-sm:rounded-[22px] ${delayClass}`}
-      style={{
-        perspective: 1000,
-        transformStyle: 'preserve-3d',
-        rotateX,
-        rotateY,
-        scale,
-      }}
-      onMouseMove={handleMouseMove}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      initial={{ opacity: 0, y: 42, scale: 0.965 }}
+      whileInView={{ opacity: 1, y: 0, scale: 1 }}
+      viewport={{ once: true, margin: '0px 0px -10% 0px' }}
+      transition={{ duration: 0.85, delay: Math.min(index * 0.1, 0.5), ease: EASE_OUT_EXPO }}
+      className="h-full will-change-transform"
     >
-      {/* Top row: icon + index */}
-      <div className="relative z-[1] flex items-start justify-between gap-4">
-        {/* 图标瓷砖：默认 accent 浅底，hover 填充纯色 accent + 白图标 + 放大 */}
-        <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-accent-muted text-accent shadow-[inset_0_1px_0_oklch(1_0_0/0.6)] transition-all duration-500 ease-[cubic-bezier(0.22,1.15,0.36,1)] group-hover:scale-110 group-hover:text-white group-hover:shadow-[0_14px_30px_-12px_oklch(0.58_0.17_262/0.55)]">
-          <span
-            className="absolute inset-0 bg-accent opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-          />
-          <Icon className="relative h-[22px] w-[22px] stroke-[1.8] transition-transform duration-500 ease-[cubic-bezier(0.22,1.15,0.36,1)] group-hover:-rotate-6" />
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-[11px] font-semibold tabular-nums text-[oklch(0.78_0.02_264)] transition-colors duration-300 group-hover:text-accent-soft">
+      <motion.div
+        variants={cardChoreo}
+        initial="hidden"
+        whileInView="show"
+        viewport={{ once: true, margin: '0px 0px -10% 0px' }}
+        className="flat-tool-card group p-6 pb-0"
+      >
+        {/* 序号 + 标签 */}
+        <motion.div variants={rise} className="flex items-baseline justify-between">
+          <span className="font-mono text-xs font-semibold tabular-nums text-muted">
             {String(index + 1).padStart(2, '0')}
           </span>
-          <ArrowUpRight className="h-4 w-4 text-[oklch(0.78_0.02_264)] transition-all duration-500 ease-[cubic-bezier(0.22,1.15,0.36,1)] group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-accent" />
-        </div>
-      </div>
+          <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-[0.08em] text-muted">
+            <Icon className="h-3.5 w-3.5" />
+            {tool.tag}
+          </span>
+        </motion.div>
+        <motion.span variants={rise} className="mt-3 block border-t border-border" />
 
-      {/* Bottom row: title + description */}
-      <div className="relative z-[1] mt-5 max-sm:mt-2">
-        <div className="font-display text-[17px] font-semibold tracking-[-0.035em] text-fg transition-colors duration-300 group-hover:text-accent">
-          {tool.title}
-        </div>
-        <div className="mt-1.5 line-clamp-2 min-h-[3.1em] text-[12.5px] leading-[1.55] text-muted">
+        {/* 标题：整行掩码揭示 */}
+        <span className="mt-5 block overflow-hidden">
+          <motion.span variants={titleReveal} className="flex items-center justify-between gap-3 will-change-transform">
+            <span className="font-display text-[22px] font-bold tracking-[-0.03em] text-fg transition-colors duration-300 group-hover:text-accent">
+              {tool.title}
+            </span>
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-muted transition-all duration-300 group-hover:border-accent group-hover:bg-accent group-hover:text-white">
+              <ArrowUpRight className="h-4 w-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            </span>
+          </motion.span>
+        </span>
+
+        {/* 描述 */}
+        <motion.p variants={rise} className="mt-2.5 text-[13px] leading-[1.7] text-muted">
           {tool.description}
-        </div>
-      </div>
+        </motion.p>
+
+        {/* 实时动画舞台：贴底探出 */}
+        <motion.div variants={stageDock} className="mt-auto pt-6">
+          <div className="flat-tool-stage" aria-hidden="true">
+            <ToolStage id={tool.id} />
+          </div>
+        </motion.div>
+      </motion.div>
     </motion.div>
   )
 
   if (isInternal) {
-    return <Link to={tool.href} tabIndex={0} className="block">{inner}</Link>
+    return <Link to={tool.href} tabIndex={0} className="block h-full">{card}</Link>
   }
 
-  return <a href={tool.href} tabIndex={0} className="block">{inner}</a>
+  return <a href={tool.href} tabIndex={0} className="block h-full">{card}</a>
 }

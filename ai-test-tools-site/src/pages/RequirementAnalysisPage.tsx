@@ -1,23 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   FileDown,
-  FileText,
   FolderOpen,
-  ImageDown,
   ListTree,
   Loader2,
-  Maximize2,
   Pencil,
   Plus,
   RotateCcw,
   Settings,
-  Share2,
   Trash2,
+  X,
 } from 'lucide-react'
 import { loadStoredModelConfig } from '../lib/model-config-store'
 import { getPreferredAiConfig } from '../shared/api-types'
@@ -30,36 +26,19 @@ import {
   listAnalysisRecords,
   updateAnalysisRecord,
   FINDING_TYPE_META,
-  REQUIREMENT_HANDOFF_KEY,
   type AnalysisRecordSummary,
   type AnalysisStage,
   type AnalyzeRequirementInput,
-  type Finding,
   type FindingType,
-  type RequirementAnalysisResult,
-  type RequirementChartType,
-  type RequirementNode,
 } from '../lib/requirement-analysis-api'
-import {
-  buildFreeMindXml,
-  buildMarkdownOutline,
-  downloadDataUrl,
-  downloadTextFile,
-  findingCountByNode,
-} from '../lib/requirement-export'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { useErrorDialog } from '../components/ui/ErrorDialogProvider'
 import { ModalShell } from '../components/ui/ModalShell'
 import { Tooltip } from '../components/ui/Tooltip'
+import { useGoBack } from '../hooks/useGoBack'
 import { RequirementInput } from '../features/requirement-analysis/RequirementInput'
 import { AnalysisProgress } from '../features/requirement-analysis/AnalysisProgress'
-import { AnalysisProcessBlocks } from '../features/requirement-analysis/AnalysisProcessBlocks'
 import { useAnalysisProcessStream } from '../features/requirement-analysis/useAnalysisProcessStream'
-import { MindMapView, type ChartCanvasHandle } from '../features/requirement-analysis/MindMapView'
-import { TreeChartView } from '../features/requirement-analysis/TreeChartView'
-import { FindingsPanel } from '../features/requirement-analysis/FindingsPanel'
-import { ChartCanvasModal } from '../features/requirement-analysis/ChartCanvasModal'
-import { REQUIREMENT_CHART_TABS } from '../features/requirement-analysis/chart-tabs'
 
 const RECORDS_PAGE_SIZE = 10
 
@@ -68,16 +47,6 @@ const FINDING_BADGE_CLASS: Record<FindingType, string> = {
   risk: 'badge badge-danger',
   ambiguity: 'badge border-[oklch(0.48_0.12_85/0.2)] bg-[oklch(0.48_0.12_85/0.1)] text-[oklch(0.48_0.12_85)]',
   clarification: 'badge badge-accent',
-}
-
-function indexNodeTitles(tree: RequirementNode): Map<string, string> {
-  const index = new Map<string, string>()
-  const walk = (node: RequirementNode) => {
-    index.set(node.id, node.title)
-    node.children.forEach(walk)
-  }
-  walk(tree)
-  return index
 }
 
 function buildPageItems(current: number, total: number): Array<number | 'ellipsis'> {
@@ -112,51 +81,34 @@ function recordNameFromInput(input: AnalyzeRequirementInput): string {
   return firstLine.slice(0, 20) || '需求分析'
 }
 
-type Phase = 'list' | 'input' | 'analyzing' | 'result'
+type Phase = 'list' | 'input' | 'analyzing'
 
 export function RequirementAnalysisPage() {
   const navigate = useNavigate()
+  const goBack = useGoBack()
   const { showError } = useErrorDialog()
-  // 两层结构：默认 'list'（分析记录列表），'input' 为新建分析视图（ADR 0004）
+  // 两层结构：默认 'list'（分析记录列表），'input'/'analyzing' 以弹窗承载（ADR 0004）；
+  // 分析完成或打开记录后跳转独立画板路由 /requirement-analysis/board/:id（ADR 0006）
   const [phase, setPhase] = useState<Phase>('list')
   const [stage, setStage] = useState<AnalysisStage>('parsing')
   const [warnings, setWarnings] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<RequirementAnalysisResult | null>(null)
-  const [chartType, setChartType] = useState<RequirementChartType>('mindmap')
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [activeFindingId, setActiveFindingId] = useState<string | null>(null)
-  const [showSourceText, setShowSourceText] = useState(false)
-  const [showProcess, setShowProcess] = useState(false)
-  const [exporting, setExporting] = useState<string | null>(null)
-  // 当前结果视图对应的分析记录 id（新建保存成功 / 打开记录后持有）
-  const [recordId, setRecordId] = useState<string | null>(null)
   // ── 记录列表 ──
   const [records, setRecords] = useState<AnalysisRecordSummary[]>([])
   const [recordsTotal, setRecordsTotal] = useState(0)
   const [recordsPage, setRecordsPage] = useState(1)
   const [recordsLoading, setRecordsLoading] = useState(false)
-  const [openingRecordId, setOpeningRecordId] = useState<string | null>(null)
   const [exportingRecordId, setExportingRecordId] = useState<string | null>(null)
   const [renamingRecord, setRenamingRecord] = useState<AnalysisRecordSummary | null>(null)
   const [renameName, setRenameName] = useState('')
   const [renaming, setRenaming] = useState(false)
   const [deletingRecord, setDeletingRecord] = useState<AnalysisRecordSummary | null>(null)
-  const chartRef = useRef<ChartCanvasHandle | null>(null)
-  // 图表画布（全屏只读阅览）开关
-  const [canvasOpen, setCanvasOpen] = useState(false)
   const {
     blocks: processBlocks,
     handleEvent: handleProcessEvent,
     finish: finishProcess,
     reset: resetProcess,
   } = useAnalysisProcessStream()
-
-  const findingCounts = useMemo(
-    () => (result ? findingCountByNode(result.findings) : new Map<string, number>()),
-    [result],
-  )
-  const nodeTitles = useMemo(() => (result ? indexNodeTitles(result.tree) : new Map<string, string>()), [result])
 
   const recordsPageCount = Math.max(1, Math.ceil(recordsTotal / RECORDS_PAGE_SIZE))
   const safeRecordsPage = Math.min(recordsPage, recordsPageCount)
@@ -195,13 +147,6 @@ export function RequirementAnalysisPage() {
     setStage('parsing')
     setWarnings([])
     setError(null)
-    setResult(null)
-    setRecordId(null)
-    setSelectedNodeId(null)
-    setActiveFindingId(null)
-    // 新分析回到默认图表类型：chartType 可能被上一次打开的记录改过（handleOpenRecord），
-    // 不重置会随 createAnalysisRecord 一起错误入库
-    setChartType('mindmap')
     resetProcess()
 
     try {
@@ -211,14 +156,12 @@ export function RequirementAnalysisPage() {
         if (event.type === 'error') setError(event.message)
         handleProcessEvent(event)
       })
-      finishProcess()
-      setResult(analysis)
-      setPhase('result')
-      // 分析完成自动入库（ADR 0004）：保存失败不阻断进入结果页
+      // 先存后跳（ADR 0006）：拿到记录 id 再导航到独立画板路由，
+      // 画板页按 id 自行拉取数据，刷新/直达均有效
       try {
         const record = await createAnalysisRecord({
           name: recordName,
-          // 新记录固定以默认图表类型入库（chartType 状态在本闭包内仍是旧值，且可能被打开过的记录污染）
+          // 新记录固定以默认图表类型入库；图表类型切换是画板内行为，由画板页回写
           chartType: 'mindmap',
           title: analysis.title,
           tree: analysis.tree,
@@ -227,71 +170,25 @@ export function RequirementAnalysisPage() {
           truncated: analysis.truncated,
           warnings: analysis.warnings,
         })
-        setRecordId(record.id)
+        finishProcess()
+        navigate(`/requirement-analysis/board/${record.id}`)
       } catch (saveError) {
+        // 保存失败不跳转：留在分析进度页并提示，避免直达路由拿不到数据
+        finishProcess()
         console.warn('分析记录保存失败', saveError)
+        setError('分析已完成，但保存分析记录失败，请稍后重试。')
       }
     } catch (err) {
       finishProcess()
       setError(err instanceof Error ? err.message : '需求分析失败，请稍后重试。')
     }
-  }, [finishProcess, handleProcessEvent, resetProcess])
-
-  const handleSelectNode = useCallback((nodeId: string | null) => {
-    setSelectedNodeId(nodeId)
-    setActiveFindingId(null)
-  }, [])
-
-  const handleSelectFinding = useCallback((finding: Finding) => {
-    setActiveFindingId(finding.id)
-    setSelectedNodeId(finding.nodeId)
-  }, [])
-
-  useEffect(() => {
-    if (!selectedNodeId || activeFindingId || !result) return
-    const firstLinked = result.findings.find((finding) => finding.nodeId === selectedNodeId)
-    if (firstLinked) {
-      document.getElementById(`finding-${firstLinked.id}`)?.scrollIntoView({ block: 'nearest' })
-    }
-  }, [selectedNodeId, activeFindingId, result])
-
-  // 图表类型切换：已关联记录时回写 chartType（失败静默，本地视图已切换）
-  const handleChartTypeChange = useCallback((type: RequirementChartType) => {
-    setChartType(type)
-    if (recordId) {
-      void updateAnalysisRecord(recordId, { chartType: type }).catch(() => {})
-    }
-  }, [recordId])
+  }, [finishProcess, handleProcessEvent, navigate, resetProcess])
 
   // ── 记录列表操作 ──
 
-  const handleOpenRecord = async (summary: AnalysisRecordSummary) => {
-    setOpeningRecordId(summary.id)
-    try {
-      const record = await getAnalysisRecord(summary.id)
-      setResult({
-        title: record.title,
-        tree: record.tree,
-        findings: record.findings,
-        sourceText: record.sourceText,
-        truncated: record.truncated,
-        warnings: record.warnings,
-      })
-      setChartType(record.chartType)
-      setRecordId(record.id)
-      setSelectedNodeId(null)
-      setActiveFindingId(null)
-      setShowSourceText(false)
-      setShowProcess(false)
-      setError(null)
-      setWarnings([])
-      resetProcess()
-      setPhase('result')
-    } catch (err) {
-      showError(err, { title: '打开分析记录失败' })
-    } finally {
-      setOpeningRecordId(null)
-    }
+  // 打开记录 = 跳转画板路由，数据由画板页按 id 拉取（ADR 0006）
+  const handleOpenRecord = (summary: AnalysisRecordSummary) => {
+    navigate(`/requirement-analysis/board/${summary.id}`)
   }
 
   const handleExportRecord = async (summary: AnalysisRecordSummary) => {
@@ -351,63 +248,35 @@ export function RequirementAnalysisPage() {
     }
   }
 
-  const handleExport = async (kind: 'xmind' | 'freemind' | 'markdown' | 'png') => {
-    if (!result) return
-    setExporting(kind)
+  // 画板文件导出逻辑已迁至画板页（ADR 0006）；接力生成用例入口也在画板内
+
+  // 分析运行中禁止关闭弹窗；待输入或已出错时关闭即回列表
+  const inputModalRunning = phase === 'analyzing' && !error
+  const closeInputModal = () => {
+    if (inputModalRunning) return
     setError(null)
-    try {
-      const title = result.title || '需求分析'
-      if (kind === 'xmind') {
-        await exportRequirementXmind({ title, tree: result.tree, findings: result.findings, chartType })
-      } else if (kind === 'freemind') {
-        downloadTextFile(buildFreeMindXml(result), `${title}.mm`, 'text/xml')
-      } else if (kind === 'markdown') {
-        downloadTextFile(buildMarkdownOutline(result), `${title}.md`, 'text/markdown')
-      } else {
-        const dataUrl = await chartRef.current?.getPngDataUrl()
-        if (!dataUrl) throw new Error('当前图表暂不支持导出 PNG，请切换图表后重试。')
-        downloadDataUrl(dataUrl, `${title}.png`)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '导出失败，请稍后重试。')
-    } finally {
-      setExporting(null)
-    }
+    setWarnings([])
+    resetProcess()
+    setPhase('list')
   }
 
-  const handleHandoff = () => {
-    if (!result) return
-    localStorage.setItem(REQUIREMENT_HANDOFF_KEY, JSON.stringify({
-      requirement: result.sourceText,
-      name: result.title,
-    }))
-    navigate('/testcase')
-  }
-
-  const resetToInput = () => {
+  // 分析出错后的"返回重新输入"：回到输入态，清空错误与过程块
+  const backToInput = () => {
     setPhase('input')
     setError(null)
     setWarnings([])
-    setResult(null)
-    setRecordId(null)
-    setSelectedNodeId(null)
-    setActiveFindingId(null)
     resetProcess()
-  }
-
-  const backToList = () => {
-    // 新记录按 updatedAt 倒序在第 1 页；停留在更靠后的页码会看不到刚创建的记录
-    setRecordsPage(1)
-    setPhase('list')
   }
 
   return (
     <div className="page-shell requirement-page">
       <header className="testcase-workspace-header">
         <div className="flex min-w-0 items-center gap-3">
-          <Link to="/" className="icon-action h-10 w-10 shrink-0 rounded-xl" aria-label="返回首页">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+          <Tooltip content="返回">
+            <button type="button" onClick={goBack} className="icon-action h-10 w-10 shrink-0 rounded-xl" aria-label="返回">
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          </Tooltip>
           <div className="min-w-0">
             <h1 className="page-title">需求分析</h1>
             <p className="page-subtitle">上传需求文档或粘贴文本，AI 以测试视角产出需求分解树与分析结论</p>
@@ -433,9 +302,6 @@ export function RequirementAnalysisPage() {
             <section className="testcase-set-panel">
               <div className="testcase-set-toolbar">
                 <div className="testcase-set-toolbar-main">
-                  <button type="button" onClick={() => setPhase('input')} className="primary-action px-4 py-2.5 text-sm">
-                    <Plus className="h-4 w-4" />新建分析
-                  </button>
                   <div className="testcase-set-heading">
                     <div className="flex items-center gap-2">
                       <h2>分析记录</h2>
@@ -443,6 +309,9 @@ export function RequirementAnalysisPage() {
                     </div>
                     <p>每次分析完成自动保存，可随时回看、再次导出或删除</p>
                   </div>
+                  <button type="button" onClick={() => setPhase('input')} className="primary-action shrink-0 px-4 py-2.5 text-sm">
+                    <Plus className="h-4 w-4" />新建分析
+                  </button>
                 </div>
               </div>
 
@@ -471,8 +340,7 @@ export function RequirementAnalysisPage() {
                             <td>
                               <button
                                 type="button"
-                                onClick={() => void handleOpenRecord(record)}
-                                disabled={openingRecordId !== null}
+                                onClick={() => handleOpenRecord(record)}
                                 className="group flex max-w-full items-center gap-2.5 text-left"
                                 aria-label={`打开记录 ${record.name}`}
                               >
@@ -483,7 +351,6 @@ export function RequirementAnalysisPage() {
                                   {record.name}
                                 </span>
                                 {record.truncated && <span className="badge badge-muted shrink-0">已截断</span>}
-                                {openingRecordId === record.id && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />}
                               </button>
                             </td>
                             <td>
@@ -505,8 +372,7 @@ export function RequirementAnalysisPage() {
                                     type="button"
                                     className="icon-action h-8 w-8"
                                     aria-label={`打开记录 ${record.name}`}
-                                    disabled={openingRecordId !== null}
-                                    onClick={() => void handleOpenRecord(record)}
+                                    onClick={() => handleOpenRecord(record)}
                                   >
                                     <FolderOpen className="h-3.5 w-3.5" />
                                   </button>
@@ -577,181 +443,50 @@ export function RequirementAnalysisPage() {
         </main>
       )}
 
-      {(phase === 'input' || phase === 'analyzing') && (
-        <main className="requirement-input-layout">
-          <RequirementInput running={phase === 'analyzing' && !error} onSubmit={(input) => void handleAnalyze(input)} />
-          {phase === 'analyzing' && (
-            <>
-              <AnalysisProgress stage={stage} warnings={warnings} error={error} processBlocks={processBlocks} />
-              {error && (
-                <button type="button" className="secondary-action px-4 py-2.5 text-sm" onClick={resetToInput}>
-                  <RotateCcw className="h-4 w-4" />返回重新输入
-                </button>
-              )}
-            </>
-          )}
-        </main>
-      )}
-
-      {phase === 'result' && result && (
-        <main className="requirement-result-layout">
-          <div className="surface-panel requirement-result-toolbar">
-            <div className="flex items-center gap-3">
-              <button type="button" className="secondary-action px-3 py-2 text-xs" onClick={backToList}>
-                <ArrowLeft className="h-3.5 w-3.5" />返回列表
-              </button>
-              <div className="requirement-chart-tabs" role="tablist" aria-label="分析结果图表类型">
-                {REQUIREMENT_CHART_TABS.map((tab) => {
-                  const Icon = tab.icon
-                  return (
-                    <button
-                      key={tab.type}
-                      type="button"
-                      role="tab"
-                      aria-selected={chartType === tab.type}
-                      className={`requirement-chart-tab${chartType === tab.type ? ' is-active' : ''}`}
-                      onClick={() => handleChartTypeChange(tab.type)}
-                    >
-                      <Icon className="h-3.5 w-3.5" />{tab.label}
-                    </button>
-                  )
-                })}
+      {/* 新建分析：输入与进度以弹窗承载，不离开记录列表（ADR 0004） */}
+      <ModalShell
+        open={phase === 'input' || phase === 'analyzing'}
+        onClose={closeInputModal}
+        closeOnBackdrop={!inputModalRunning}
+        closeOnEscape={!inputModalRunning}
+      >
+        {(phase === 'input' || phase === 'analyzing') && (
+          <div
+            className="modal-panel requirement-input-modal max-h-[90vh] w-full max-w-[760px] overflow-auto rounded-[28px] p-6 max-sm:p-4"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="requirement-input-modal-title"
+          >
+            <div className="modal-heading-row">
+              <div>
+                <p className="modal-kicker">需求分析</p>
+                <h2 id="requirement-input-modal-title">新建分析</h2>
+                <span>{phase === 'analyzing' ? 'AI 正在分析，完成后自动打开结果视图。' : '上传需求文档或粘贴文本，提交后立即开始分析。'}</span>
               </div>
+              <button type="button" onClick={closeInputModal} disabled={inputModalRunning} className="icon-action h-9 w-9" aria-label="关闭新建分析窗口"><X className="h-4 w-4" /></button>
             </div>
-
-            <div className="requirement-toolbar-actions">
-              <button type="button" className="secondary-action px-3 py-2 text-xs" disabled={exporting !== null} onClick={() => void handleExport('xmind')}>
-                <FileDown className="h-3.5 w-3.5" />XMind
-              </button>
-              <button type="button" className="secondary-action px-3 py-2 text-xs" disabled={exporting !== null} onClick={() => void handleExport('freemind')}>
-                <FileDown className="h-3.5 w-3.5" />FreeMind
-              </button>
-              <button type="button" className="secondary-action px-3 py-2 text-xs" disabled={exporting !== null} onClick={() => void handleExport('markdown')}>
-                <FileText className="h-3.5 w-3.5" />Markdown
-              </button>
-              <button type="button" className="secondary-action px-3 py-2 text-xs" disabled={exporting !== null} onClick={() => void handleExport('png')}>
-                <ImageDown className="h-3.5 w-3.5" />PNG
-              </button>
-              <button type="button" className="primary-action px-4 py-2 text-xs" onClick={handleHandoff}>
-                <Share2 className="h-3.5 w-3.5" />基于此需求生成测试用例
-              </button>
-              <button type="button" className="secondary-action px-3 py-2 text-xs" onClick={resetToInput}>
-                <RotateCcw className="h-3.5 w-3.5" />重新分析
-              </button>
+            <div className="mt-5 flex flex-col gap-4">
+              <RequirementInput running={inputModalRunning} onSubmit={(input) => void handleAnalyze(input)} />
+              {phase === 'analyzing' && (
+                <>
+                  <AnalysisProgress stage={stage} warnings={warnings} error={error} processBlocks={processBlocks} />
+                  {error && (
+                    <div className="flex justify-end">
+                      <button type="button" className="secondary-action px-4 py-2.5 text-sm" onClick={backToInput}>
+                        <RotateCcw className="h-4 w-4" />返回重新输入
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
+        )}
+      </ModalShell>
 
-          {error && <p className="field-error">{error}</p>}
-          {result.warnings.length > 0 && (
-            <ul className="requirement-warning-list surface-panel">
-              {result.warnings.map((warning, index) => (
-                <li key={index}>{warning}</li>
-              ))}
-            </ul>
-          )}
-
-          <div className="requirement-result-grid">
-            <section className="surface-panel requirement-chart-panel">
-              <div className="requirement-chart-panel-head">
-                <h2 className="requirement-panel-title">需求分解树<span className="requirement-title-suffix">{result.title}</span></h2>
-                <button type="button" className="secondary-action px-3 py-1.5 text-xs" onClick={() => setCanvasOpen(true)}>
-                  <Maximize2 className="h-3.5 w-3.5" />放大阅览
-                </button>
-              </div>
-              {chartType === 'mindmap' && (
-                <MindMapView
-                  ref={chartRef}
-                  tree={result.tree}
-                  findingCounts={findingCounts}
-                  selectedNodeId={selectedNodeId}
-                  onSelectNode={handleSelectNode}
-                />
-              )}
-              {chartType === 'tree' && (
-                <TreeChartView
-                  ref={chartRef}
-                  tree={result.tree}
-                  findingCounts={findingCounts}
-                  selectedNodeId={selectedNodeId}
-                  onSelectNode={handleSelectNode}
-                  orientation="TB"
-                />
-              )}
-              {chartType === 'logic' && (
-                <TreeChartView
-                  ref={chartRef}
-                  tree={result.tree}
-                  findingCounts={findingCounts}
-                  selectedNodeId={selectedNodeId}
-                  onSelectNode={handleSelectNode}
-                  orientation="LR"
-                />
-              )}
-            </section>
-
-            <FindingsPanel
-              findings={result.findings}
-              nodeTitles={nodeTitles}
-              activeFindingId={activeFindingId}
-              selectedNodeId={selectedNodeId}
-              onSelectFinding={handleSelectFinding}
-            />
-          </div>
-
-          {/* 图表画布：全屏只读阅览，共享图表类型/选中节点状态，退出后原样保留 */}
-          <ChartCanvasModal
-            open={canvasOpen}
-            onClose={() => setCanvasOpen(false)}
-            title={result.title}
-            tree={result.tree}
-            findings={result.findings}
-            findingCounts={findingCounts}
-            nodeTitles={nodeTitles}
-            chartType={chartType}
-            onChartTypeChange={handleChartTypeChange}
-            selectedNodeId={selectedNodeId}
-            onSelectNode={handleSelectNode}
-            activeFindingId={activeFindingId}
-            onSelectFinding={handleSelectFinding}
-            onExportError={setError}
-          />
-
-          <div className="requirement-bottom-panels">
-            {processBlocks.length > 0 && (
-              <section className="surface-panel requirement-source-panel">
-                <button
-                  type="button"
-                  className="requirement-source-toggle"
-                  aria-expanded={showProcess}
-                  onClick={() => setShowProcess((current) => !current)}
-                >
-                  {showProcess ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  分析过程
-                </button>
-                {showProcess && (
-                  <div className="requirement-process-scroll requirement-process-review-scroll">
-                    <AnalysisProcessBlocks blocks={processBlocks} />
-                  </div>
-                )}
-              </section>
-            )}
-
-            <section className="surface-panel requirement-source-panel">
-              <button
-                type="button"
-                className="requirement-source-toggle"
-                aria-expanded={showSourceText}
-                onClick={() => setShowSourceText((current) => !current)}
-              >
-                {showSourceText ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                解析原文
-                {result.truncated && <span className="requirement-source-note">（已截断）</span>}
-              </button>
-              {showSourceText && <pre className="requirement-source-text">{result.sourceText}</pre>}
-            </section>
-          </div>
-        </main>
-      )}
+      {/* 分析画板已独立为 /requirement-analysis/board/:id 路由（ADR 0006），
+          打开记录 / 分析完成即导航离开本页 */}
 
       {/* 重命名记录 */}
       <ModalShell

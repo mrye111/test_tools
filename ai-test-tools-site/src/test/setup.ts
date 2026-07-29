@@ -30,3 +30,22 @@ if (typeof globalThis.IntersectionObserver === 'undefined') {
     value: IntersectionObserverStub,
   })
 }
+
+// jsdom 未实现 ResizeObserver，为走马灯等需要测量容器宽度的组件提供空实现
+class ResizeObserverStub implements ResizeObserver {
+  constructor(_callback: ResizeObserverCallback) {
+    void _callback
+  }
+
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  Object.defineProperty(globalThis, 'ResizeObserver', {
+    writable: true,
+    configurable: true,
+    value: ResizeObserverStub,
+  })
+}

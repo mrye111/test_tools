@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { ArrowLeft, Check, Database, Edit3, Plus, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
+import { useGoBack } from '../hooks/useGoBack'
 import { ModelConfigModal } from '../components/jmeter/ModelConfigModal'
 import { CustomSelect } from '../components/ui/CustomSelect'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
@@ -10,6 +10,7 @@ import { findModelConfigPreset } from '../lib/model-config-presets'
 import { getProviderModelOptions, type StoredModelConfig, type StoredModelConfigState } from '../shared/api-types'
 
 export function SettingsPage() {
+  const goBack = useGoBack()
   const [state, setState] = useState<StoredModelConfigState>(() => loadStoredModelConfigState())
   const [showModal, setShowModal] = useState(false)
   const [editingModel, setEditingModel] = useState<StoredModelConfig | null>(null)
@@ -62,13 +63,13 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="page-shell max-w-[1080px]">
+    <div className="page-shell">
       <div className="page-header">
         <div className="flex items-center gap-4">
-          <Tooltip content="返回首页">
-            <Link to="/" className="icon-action h-10 w-10 rounded-xl">
+          <Tooltip content="返回">
+            <button type="button" onClick={goBack} className="icon-action h-10 w-10 rounded-xl" aria-label="返回">
               <ArrowLeft className="h-4 w-4" />
-            </Link>
+            </button>
           </Tooltip>
           <div>
             <h1 className="page-title">设置</h1>

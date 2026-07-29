@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import {
   Activity,
@@ -7,6 +6,7 @@ import {
   ArrowUpRight,
   Braces,
   Check,
+  ChevronDown,
   ChevronRight,
   Clock,
   Code2,
@@ -16,7 +16,6 @@ import {
   Lock,
   Play,
   RefreshCw,
-  Search,
   Shuffle,
   Sparkles,
   Type,
@@ -25,6 +24,7 @@ import {
 } from 'lucide-react'
 import { Tooltip } from '../components/ui/Tooltip'
 import { useErrorDialog } from '../components/ui/ErrorDialogProvider'
+import { useGoBack } from '../hooks/useGoBack'
 import {
   batchExecuteTool,
   executeTool,
@@ -285,7 +285,7 @@ function ToolWorkspace({ tool, onClose }: ToolWorkspaceProps) {
                 <h4 id="data-factory-result-title">处理结果</h4>
                 <p>结果会在运行完成后即时更新。</p>
               </div>
-              <button type="button" onClick={handleCopy} disabled={!result} className="data-factory-copy">
+              <button type="button" onClick={handleCopy} disabled={!result} className={`data-factory-copy${copied ? ' is-copied' : ''}`}>
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 {copied ? '已复制' : '复制结果'}
               </button>
@@ -307,45 +307,15 @@ function ToolWorkspace({ tool, onClose }: ToolWorkspaceProps) {
   )
 }
 
-interface ToolMiniCardProps {
-  tool: ToolResponse
-  onClick: () => void
-  index: number
-  selected: boolean
-}
-
-function ToolMiniCard({ tool, onClick, index, selected }: ToolMiniCardProps) {
-  return (
-    <motion.button
-      onClick={onClick}
-      className={`data-factory-tool-card ${selected ? 'is-selected' : ''}`}
-      aria-pressed={selected}
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: Math.min(index, 7) * 0.035, ease: [0.16, 1, 0.3, 1] }}
-      whileTap={{ scale: 0.99 }}
-    >
-      <span className="data-factory-tool-number">{String(index + 1).padStart(2, '0')}</span>
-      <div className="data-factory-tool-icon">
-        <ToolIcon name={tool.icon} className="h-[17px] w-[17px] stroke-[1.8]" />
-      </div>
-      <div className="data-factory-tool-copy">
-        <div className="data-factory-tool-name">{tool.name}</div>
-        <div className="data-factory-tool-description">{tool.description}</div>
-      </div>
-      <span className="data-factory-tool-meta">{tool.params.length === 0 ? '无需参数' : `${tool.params.length} 个参数`}</span>
-      <ChevronRight className="data-factory-tool-arrow" />
-    </motion.button>
-  )
-}
-
 export function DataFactoryPage() {
   const { showError } = useErrorDialog()
+  const goBack = useGoBack()
   const [categories, setCategories] = useState<ToolCategory[]>([])
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null)
   const [selectedToolId, setSelectedToolId] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const menuRef = useRef<HTMLElement | null>(null)
 
   const activeCategory = useMemo(
     () => categories.find((c) => c.id === activeCategoryId) ?? categories[0],
@@ -358,15 +328,6 @@ export function DataFactoryPage() {
   )
 
   const totalTools = useMemo(() => categories.reduce((sum, category) => sum + category.tools.length, 0), [categories])
-
-  const filteredTools = useMemo(() => {
-    if (!activeCategory) return []
-    const keyword = searchQuery.trim().toLocaleLowerCase('zh-CN')
-    if (!keyword) return activeCategory.tools
-    return activeCategory.tools.filter((tool) =>
-      `${tool.name} ${tool.description}`.toLocaleLowerCase('zh-CN').includes(keyword),
-    )
-  }, [activeCategory, searchQuery])
 
   useEffect(() => {
     async function load() {
@@ -383,22 +344,36 @@ export function DataFactoryPage() {
     void load()
   }, [showError])
 
+  // 点击菜单外或按 Escape 时收起悬浮下拉
+  useEffect(() => {
+    if (!openMenuId) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setOpenMenuId(null)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenMenuId(null)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [openMenuId])
+
   return (
     <div className="data-factory-page">
-      <div className="data-factory-ambient" aria-hidden="true" />
 
       <header className="data-factory-topbar">
         <div className="data-factory-brand">
-          <Tooltip content="返回首页">
-            <Link to="/" className="data-factory-back" aria-label="返回首页">
+          <Tooltip content="返回">
+            <button type="button" onClick={goBack} className="data-factory-back" aria-label="返回">
               <ArrowLeft className="h-4 w-4" />
-            </Link>
+            </button>
           </Tooltip>
           <div>
-            <span className="data-factory-eyebrow">DATA LAB · 数据处理空间</span>
             <div className="data-factory-title-line">
               <h1>数据工厂</h1>
-              <span className="data-factory-status"><i />服务就绪</span>
             </div>
             <p>把测试数据生成、格式转换与开发计算集中在一个高效工作台中。</p>
           </div>
@@ -416,34 +391,69 @@ export function DataFactoryPage() {
           <div><strong>正在准备工具集</strong><span>加载数据生成与转换能力…</span></div>
         </div>
       ) : (
-        <div className={`data-factory-shell ${selectedTool ? 'has-selection' : ''}`}>
-          <nav className="data-factory-category-rail" aria-label="工具分类">
-            <div className="data-factory-rail-label">分类</div>
-            <div className="data-factory-category-list">
-              {categories.map((category) => {
-                const isActive = activeCategory?.id === category.id
-                return (
-                  <Tooltip key={category.id} content={`${category.name} · ${category.tools.length} 个工具`} placement="right">
-                    <button
-                      type="button"
-                      aria-current={isActive ? 'page' : undefined}
-                      onClick={() => {
-                        setActiveCategoryId(category.id)
-                        setSelectedToolId(null)
-                        setSearchQuery('')
-                      }}
-                      className={`data-factory-category ${isActive ? 'is-active' : ''}`}
-                    >
-                      <span className="data-factory-category-icon">
-                        <ToolIcon name={category.icon} className="h-[18px] w-[18px] stroke-[1.8]" />
-                      </span>
-                      <span>{category.name}</span>
-                      <small>{category.tools.length}</small>
-                    </button>
-                  </Tooltip>
-                )
-              })}
-            </div>
+        <>
+          {/* 顶部菜单栏：分类悬浮下拉，替代原左侧分类轨道与工具浏览器 */}
+          <nav className="df-menu" aria-label="工具分类" ref={menuRef}>
+            {categories.map((category) => {
+              const isOpen = openMenuId === category.id
+              return (
+                <div
+                  key={category.id}
+                  className={`df-menu-item${isOpen ? ' is-open' : ''}${activeCategory?.id === category.id ? ' is-active' : ''}`}
+                  onMouseEnter={() => setOpenMenuId(category.id)}
+                  onMouseLeave={() => setOpenMenuId(null)}
+                >
+                  <button
+                    type="button"
+                    className="df-menu-trigger"
+                    aria-expanded={isOpen}
+                    aria-haspopup="true"
+                    onClick={() => setOpenMenuId(isOpen ? null : category.id)}
+                  >
+                    <ToolIcon name={category.icon} className="h-4 w-4 stroke-[1.8]" />
+                    <span>{category.name}</span>
+                    <small>{category.tools.length}</small>
+                    <ChevronDown className="df-menu-caret h-3.5 w-3.5" />
+                  </button>
+                  <AnimatePresence initial={false}>
+                    {isOpen && (
+                      <motion.div
+                        className="df-menu-panel"
+                        role="menu"
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                      >
+                        <p className="df-menu-panel-desc">{category.description}</p>
+                        {category.tools.map((tool) => (
+                          <button
+                            key={tool.id}
+                            type="button"
+                            role="menuitem"
+                            className="df-menu-tool"
+                            onClick={() => {
+                              setActiveCategoryId(category.id)
+                              setSelectedToolId(tool.id)
+                              setOpenMenuId(null)
+                            }}
+                          >
+                            <span className="df-menu-tool-icon">
+                              <ToolIcon name={tool.icon} className="h-4 w-4 stroke-[1.8]" />
+                            </span>
+                            <span className="df-menu-tool-copy">
+                              <strong>{tool.name}</strong>
+                              <small>{tool.description}</small>
+                            </span>
+                            <span className="df-menu-tool-meta">{tool.params.length === 0 ? '无需参数' : `${tool.params.length} 个参数`}</span>
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )
+            })}
           </nav>
 
           <div className="data-factory-mobile-category">
@@ -454,7 +464,6 @@ export function DataFactoryPage() {
               onChange={(event) => {
                 setActiveCategoryId(event.target.value)
                 setSelectedToolId(null)
-                setSearchQuery('')
               }}
             >
               {categories.map((category) => (
@@ -464,68 +473,6 @@ export function DataFactoryPage() {
               ))}
             </select>
           </div>
-
-          <aside className="data-factory-tool-browser" aria-label="工具库">
-            {activeCategory && (
-              <div className="data-factory-browser-heading">
-                <div className="data-factory-browser-title">
-                  <span><ToolIcon name={activeCategory.icon} className="h-[18px] w-[18px] stroke-[1.8]" /></span>
-                  <div>
-                    <small>当前分类</small>
-                    <h2>{activeCategory.name}</h2>
-                  </div>
-                </div>
-                <p>{activeCategory.description}</p>
-              </div>
-            )}
-
-            <label className="data-factory-search" htmlFor="data-factory-search-input">
-              <Search className="h-4 w-4" />
-              <input
-                id="data-factory-search-input"
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="搜索当前分类工具"
-              />
-              {searchQuery && (
-                <button type="button" onClick={() => setSearchQuery('')} aria-label="清空搜索">
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </label>
-
-            <div className="data-factory-browser-meta">
-              <span>工具列表</span>
-              <small>{filteredTools.length} / {activeCategory?.tools.length ?? 0}</small>
-            </div>
-
-            <motion.section
-              key={`${activeCategory?.id ?? 'tools'}-${searchQuery}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.18 }}
-              className="data-factory-tool-list"
-              aria-label={activeCategory ? `${activeCategory.name}工具列表` : '工具列表'}
-            >
-              {filteredTools.map((tool, index) => (
-                <ToolMiniCard
-                  key={tool.id}
-                  tool={tool}
-                  onClick={() => setSelectedToolId(tool.id)}
-                  index={index}
-                  selected={selectedToolId === tool.id}
-                />
-              ))}
-              {filteredTools.length === 0 && (
-                <div className="data-factory-search-empty">
-                  <Search className="h-5 w-5" />
-                  <strong>没有找到匹配工具</strong>
-                  <span>尝试缩短关键词或清空搜索条件。</span>
-                </div>
-              )}
-            </motion.section>
-          </aside>
 
           <main className="data-factory-workbench">
             <AnimatePresence mode="wait">
@@ -547,9 +494,9 @@ export function DataFactoryPage() {
                   </div>
                   <span className="data-factory-welcome-kicker">WORKSPACE READY</span>
                   <h2>选择工具，开始构造数据</h2>
-                  <p>{activeCategory?.description ?? '从左侧工具库选择一项能力，配置参数后即可获得结果。'}</p>
+                  <p>{activeCategory?.description ?? '从顶部菜单选择一项能力，配置参数后即可获得结果。'}</p>
                   <div className="data-factory-flow" aria-label="使用流程">
-                    <div><span>01</span><strong>选择工具</strong><small>浏览或搜索工具库</small></div>
+                    <div><span>01</span><strong>选择工具</strong><small>展开顶部分类菜单</small></div>
                     <ChevronRight className="h-4 w-4" />
                     <div><span>02</span><strong>配置参数</strong><small>填写生成与转换条件</small></div>
                     <ChevronRight className="h-4 w-4" />
@@ -569,7 +516,7 @@ export function DataFactoryPage() {
               )}
             </AnimatePresence>
           </main>
-        </div>
+        </>
       )}
     </div>
   )

@@ -27,7 +27,7 @@ export function ReportViewPage() {
   if (!data || !viewModel) return null
 
   return (
-    <div className="page-shell" style={{ width: 'calc(100% - 32px)', maxWidth: 'none' }}>
+    <div className="page-shell">
       <div
         className="relative overflow-hidden rounded-[36px] px-4 py-4 sm:px-5 sm:py-5"
         style={{

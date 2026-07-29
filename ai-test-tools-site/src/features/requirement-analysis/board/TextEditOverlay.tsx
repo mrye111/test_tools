@@ -30,9 +30,9 @@ export function TextEditOverlay({ target, board, viewport, store, onClose }: Tex
   const [value, setValue] = useState(() => getTextFromTarget(board, target))
   const submittingRef = useRef(false)
   const element = board.elements.find((e) => e.id === target.elementId)
-  if (!element) return null
 
   const { left, top, width, height } = useMemo(() => {
+    if (!element) return { left: 0, top: 0, width: 0, height: 0 }
     if (target.field === 'node-text' && element.kind === 'cause-effect') {
       const nodeId = target.path[0]
       const node = element.nodes.find((n) => n.id === nodeId)
@@ -47,6 +47,8 @@ export function TextEditOverlay({ target, board, viewport, store, onClose }: Tex
     const pos = worldToScreen(viewport, element.x, element.y)
     return { left: pos.x, top: pos.y, width: element.w, height: element.h }
   }, [element, target, viewport])
+
+  if (!element) return null
 
   const submit = () => {
     if (submittingRef.current) return

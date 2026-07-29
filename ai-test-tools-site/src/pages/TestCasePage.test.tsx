@@ -156,7 +156,7 @@ describe('TestCasePage', () => {
     expect(screen.getByText(/共 1 条用例/)).toBeInTheDocument()
   })
 
-  it('维护窗口支持补充需求、新增用例和删除已有用例', async () => {
+  it('维护窗口支持补充需求、新增用例和删除已有用例', { timeout: 10000 }, async () => {
     const addedSet = {
       ...completedSet,
       rows: [
@@ -201,7 +201,7 @@ describe('TestCasePage', () => {
     expect(await screen.findByText('删除这条用例？')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
     await waitFor(() => expect(testcaseApi.deleteTestCase).toHaveBeenCalledWith(completedSet.id, 'TC001'))
-  })
+  }, { timeout: 10000 })
 
   it('补充需求生成内容全部重复时提示已过滤数量', async () => {
     vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([project])

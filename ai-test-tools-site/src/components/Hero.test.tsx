@@ -17,8 +17,9 @@ describe('Hero', () => {
 
   it('renders the subtitle description', () => {
     render(<Hero />)
+    // Hero 只保留一句描述，数据与卖点由 PlatformOverview 区块承接
     expect(
-      screen.getByText(/面向测试团队的专业 AI 工具集合/)
+      screen.getByText(/让 AI 帮你写脚本、设计用例、分析数据/)
     ).toBeInTheDocument()
   })
 })

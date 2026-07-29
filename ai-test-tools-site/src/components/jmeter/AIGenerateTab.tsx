@@ -24,14 +24,13 @@ export function AIGenerateTab({ tools, loading, backendError }: Props) {
   const [description, setDescription] = useState('')
   const [descriptionError, setDescriptionError] = useState<string | null>(null)
   const [showConfig, setShowConfig] = useState(false)
-  const [modelConfig, setModelConfig] = useState<StoredModelConfig | null>(null)
+  const [modelConfig, setModelConfig] = useState<StoredModelConfig | null>(() => loadStoredModelConfig())
   const [aiConfigStatus, setAiConfigStatus] = useState<AiConfigStatus | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [showExecutionModal, setShowExecutionModal] = useState(false)
   const playback = useAiGenerationPlayback()
 
   useEffect(() => {
-    setModelConfig(loadStoredModelConfig())
     void getJmeterAiConfig()
       .then(setAiConfigStatus)
       .catch(() => setAiConfigStatus(null))

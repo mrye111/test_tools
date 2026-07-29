@@ -4,7 +4,7 @@ import { measureOrthogonal } from './measure'
 import { BOARD_COLORS } from './colors'
 import { drawSelectionOutline, roundRect, truncate } from './canvas-utils'
 
-const { accent, border, surface, headerBg, text: _text, textMuted } = BOARD_COLORS
+const { accent, border, surface, headerBg, textMuted } = BOARD_COLORS
 
 const ROW_HEIGHT = 28
 const CHAR_WIDTH = 8

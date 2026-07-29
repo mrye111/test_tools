@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   AlertCircle,
   ArrowLeft,
@@ -15,7 +14,6 @@ import {
   Loader2,
   Pencil,
   Plus,
-  Settings,
   Sparkles,
   Trash2,
   X,
@@ -32,6 +30,7 @@ import {
   type TestType,
 } from '../hooks/testcase-constants'
 import { displayCellText, normalizeDisplayHeader } from '../hooks/testcase-helpers'
+import { useGoBack } from '../hooks/useGoBack'
 import { useTestCaseWorkspace } from '../hooks/useTestCaseWorkspace'
 import { normalizeErrorMessage } from '../lib/app-error'
 import { REQUIREMENT_HANDOFF_KEY } from '../lib/requirement-analysis-api'
@@ -40,6 +39,7 @@ import type { TestCaseProject, TestCaseSet } from '../lib/testcase-api'
 const inputCls = 'field-control'
 const labelCls = 'field-label'
 const PAGE_SIZE_OPTIONS = [
+  { value: '5', label: '5 条/页' },
   { value: '10', label: '10 条/页' },
   { value: '20', label: '20 条/页' },
   { value: '50', label: '50 条/页' },
@@ -156,6 +156,7 @@ function ExportButtons({
 
 export function TestCasePage() {
   const { showError } = useErrorDialog()
+  const goBack = useGoBack()
   const workspace = useTestCaseWorkspace()
   const [showProjectModal, setShowProjectModal] = useState(false)
   const [editingProject, setEditingProject] = useState<TestCaseProject | null>(null)
@@ -177,6 +178,8 @@ export function TestCasePage() {
   const [caseErrors, setCaseErrors] = useState<Partial<Record<keyof typeof emptyCaseForm, string>>>({})
   const [deletingCase, setDeletingCase] = useState<{ testSet: TestCaseSet; row: string[] } | null>(null)
   const [deletingTestSet, setDeletingTestSet] = useState<TestCaseSet | null>(null)
+  // 删除行先向左淡出（280ms）再移除数据
+  const [leavingSetId, setLeavingSetId] = useState<string | null>(null)
   const [previewPage, setPreviewPage] = useState(1)
   const [previewPageSize, setPreviewPageSize] = useState(10)
   const [setListPage, setSetListPage] = useState(1)
@@ -382,8 +385,15 @@ export function TestCasePage() {
 
   async function confirmDeleteTestSet() {
     if (!deletingTestSet) return
-    await workspace.removeTestSet(deletingTestSet)
+    const target = deletingTestSet
     setDeletingTestSet(null)
+    setLeavingSetId(target.id)
+    await new Promise((resolve) => window.setTimeout(resolve, 280))
+    try {
+      await workspace.removeTestSet(target)
+    } finally {
+      setLeavingSetId(null)
+    }
   }
 
   const previewHeader = normalizeDisplayHeader(workspace.previewSet?.header ?? [])
@@ -397,7 +407,7 @@ export function TestCasePage() {
   const pagedTestSets = workspace.testSets.slice((safeSetListPage - 1) * setListPageSize, safeSetListPage * setListPageSize)
 
   return (
-    <div className="page-shell testcase-page-shell testcase-workspace">
+    <div className={`page-shell testcase-page-shell testcase-workspace${workspace.selectedProject ? ' testcase-shell-fill' : ''}`}>
       <header className="testcase-workspace-header">
         <div className="flex min-w-0 items-center gap-3">
           {workspace.selectedProject ? (
@@ -412,16 +422,16 @@ export function TestCasePage() {
               </button>
             </Tooltip>
           ) : (
-            <Tooltip content="返回首页">
-              <Link to="/" className="icon-action h-10 w-10 shrink-0 rounded-xl" aria-label="返回首页">
+            <Tooltip content="返回">
+              <button type="button" onClick={goBack} className="icon-action h-10 w-10 shrink-0 rounded-xl" aria-label="返回">
                 <ArrowLeft className="h-4 w-4" />
-              </Link>
+              </button>
             </Tooltip>
           )}
           <div className="min-w-0">
             {workspace.selectedProject && (
               <div className="mb-1 flex items-center gap-1 text-[11px] font-medium text-muted">
-                <span>项目管理</span><ChevronRight className="h-3 w-3" /><span className="truncate">{workspace.selectedProject.name}</span>
+                <span>项目管理</span><ChevronRight className="h-3 w-3" /><span className="truncate">{workspace.selectedProject.name}</span><ChevronRight className="h-3 w-3" /><span>测试用例集（{workspace.testSets.length}）</span>
               </div>
             )}
             <h1 className="page-title">{workspace.selectedProject ? workspace.selectedProject.name : '测试用例项目'}</h1>
@@ -432,9 +442,20 @@ export function TestCasePage() {
             </p>
           </div>
         </div>
-        <Link to="/settings" className="secondary-action shrink-0 px-3 py-2 text-xs no-underline">
-          <Settings className="h-3.5 w-3.5" />模型设置
-        </Link>
+        {workspace.selectedProject && (
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <button type="button" onClick={() => setShowTestSetModal(true)} className="primary-action px-3.5 py-2 text-xs">
+              <Plus className="h-3.5 w-3.5" />添加用例集
+            </button>
+            <ExportButtons
+              onExcel={() => void workspace.exportMerged('excel')}
+              onXmind={() => void workspace.exportMerged('xmind')}
+              excelBusy={workspace.exporting === 'excel:merged'}
+              xmindBusy={workspace.exporting === 'xmind:merged'}
+              disabled={completedSets.length === 0}
+            />
+          </div>
+        )}
       </header>
 
       {!workspace.selectedProject ? (
@@ -523,33 +544,6 @@ export function TestCasePage() {
         </main>
       ) : (
         <main className="testcase-set-panel stagger-1">
-          <div className="testcase-set-toolbar">
-            <div className="testcase-set-toolbar-main">
-              <button type="button" onClick={() => setShowTestSetModal(true)} className="primary-action px-4 py-2.5 text-sm">
-                <Plus className="h-4 w-4" />添加用例集
-              </button>
-              <div className="testcase-set-heading">
-                <div className="flex items-center gap-2">
-                  <h2>测试用例集</h2>
-                  <span className="testcase-set-total">{workspace.testSets.length}</span>
-                </div>
-                <p>管理 AI 生成任务与测试资产，累计 {workspace.testSets.reduce((total, item) => total + item.rows.length, 0)} 条测试用例</p>
-              </div>
-            </div>
-            <div className="testcase-export-zone">
-              <ExportButtons
-                onExcel={() => void workspace.exportMerged('excel')}
-                onXmind={() => void workspace.exportMerged('xmind')}
-                excelBusy={workspace.exporting === 'excel:merged'}
-                xmindBusy={workspace.exporting === 'xmind:merged'}
-                disabled={completedSets.length === 0}
-              />
-              <span className="testcase-export-note">
-                {workspace.selectedSetIds.size ? `已选择 ${workspace.selectedSetIds.size} 个，将合并导出` : '未选择时导出全部已完成用例集'}
-              </span>
-            </div>
-          </div>
-
           <div className="testcase-set-table-wrap">
             <table className="testcase-set-table">
               <thead>
@@ -605,7 +599,7 @@ export function TestCasePage() {
                     return (
                       <tr
                         key={testSet.id}
-                        className={[canOpen ? 'is-clickable' : '', workspace.selectedSetIds.has(testSet.id) ? 'is-selected' : ''].filter(Boolean).join(' ')}
+                        className={[canOpen ? 'is-clickable' : '', workspace.selectedSetIds.has(testSet.id) ? 'is-selected' : '', leavingSetId === testSet.id ? 'is-leaving' : ''].filter(Boolean).join(' ')}
                         style={{ '--row-index': rowIndex } as React.CSSProperties}
                       >
                         <td className="text-center">
@@ -651,14 +645,6 @@ export function TestCasePage() {
                         <td><span className="testset-date">{formatDate(testSet.createdAt)}</span></td>
                         <td className="testset-actions-cell">
                           <div className="testset-row-actions">
-                            <ExportButtons
-                              onExcel={() => void workspace.exportSingle(testSet, 'excel')}
-                              onXmind={() => void workspace.exportSingle(testSet, 'xmind')}
-                              excelBusy={workspace.exporting === `excel:${testSet.id}`}
-                              xmindBusy={workspace.exporting === `xmind:${testSet.id}`}
-                              disabled={!canOpen || testSet.rows.length === 0}
-                              compact
-                            />
                             <Tooltip content="删除用例集">
                               <button
                                 type="button"
@@ -684,7 +670,7 @@ export function TestCasePage() {
               <span className="testcase-page-info">第 {(safeSetListPage - 1) * setListPageSize + 1}-{Math.min(safeSetListPage * setListPageSize, workspace.testSets.length)} 条 · 共 {workspace.testSets.length} 条</span>
               <div className="testcase-page-controls">
                 <CustomSelect value={String(setListPageSize)} onChange={(value) => { setSetListPageSize(Number(value)); setSetListPage(1) }} options={PAGE_SIZE_OPTIONS} className="testcase-page-size" />
-                {setListPageCount > 1 && (
+                {(
                   <>
                     <button type="button" onClick={() => setSetListPage((page) => Math.max(1, page - 1))} disabled={safeSetListPage === 1} className="icon-action h-8 w-8" aria-label="上一页"><ChevronLeft className="h-3.5 w-3.5" /></button>
                     {buildPageItems(safeSetListPage, setListPageCount).map((item, index) => (

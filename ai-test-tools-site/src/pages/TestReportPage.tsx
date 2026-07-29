@@ -1,7 +1,8 @@
 import { useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Upload, FileSpreadsheet, Bug, Sparkles, Eye } from 'lucide-react'
 import { Tooltip } from '../components/ui/Tooltip'
+import { useGoBack } from '../hooks/useGoBack'
 import { CustomSelect } from '../components/ui/CustomSelect'
 import { useErrorDialog } from '../components/ui/ErrorDialogProvider'
 import { generateDemoReportData } from '../lib/test-report-demo'
@@ -13,6 +14,7 @@ const PLATFORM_OPTIONS = [
 
 export function TestReportPage() {
   const navigate = useNavigate()
+  const goBack = useGoBack()
   const { showError } = useErrorDialog()
   const [platform, setPlatform] = useState('zentao')
   const [caseFile, setCaseFile] = useState<File | null>(null)
@@ -59,10 +61,10 @@ export function TestReportPage() {
     <div className="page-shell">
       <div className="page-header">
         <div className="flex items-center gap-3">
-          <Tooltip content="返回首页">
-            <Link to="/" className="icon-action h-10 w-10 rounded-xl">
+          <Tooltip content="返回">
+            <button type="button" onClick={goBack} className="icon-action h-10 w-10 rounded-xl" aria-label="返回">
               <ArrowLeft className="h-4 w-4" />
-            </Link>
+            </button>
           </Tooltip>
           <div>
             <h1 className="page-title">测试报告</h1>
