@@ -38,13 +38,16 @@ export function BoardToolbar({ store, board, viewport, selection, onAction, onCo
   const toolbarRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const bounds = selectionBounds(board.elements, selection)
-  if (!bounds) return null
 
   useLayoutEffect(() => {
     const el = toolbarRef.current
-    if (!el) return
-    setSize({ width: el.offsetWidth, height: el.offsetHeight })
-  }, [selection])
+    if (!el || !bounds) return
+    const width = el.offsetWidth
+    const height = el.offsetHeight
+    setSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }))
+  }, [selection, bounds])
+
+  if (!bounds) return null
 
   const topCenter = worldToScreen(viewport, bounds.x + bounds.w / 2, bounds.y)
   // 工具条上沿位于选中集包围盒上方，留 8px 间隙； clamp 到容器可视区域

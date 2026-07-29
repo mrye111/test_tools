@@ -77,6 +77,17 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const rafRef = useRef<number | null>(null)
   const pasteCountRef = useRef(0)
 
+  const doPaste = useCallback(() => {
+    const clipboard = (window as unknown as Record<string, unknown>)
+      .__boardClipboard as BoardElement[] | undefined
+    if (clipboard?.length) {
+      pasteCountRef.current += 1
+      const offset = pasteCountRef.current * 24
+      const copies = clipboard.map((el) => copyElement(el, generateId, offset))
+      store.execute(copyElements(copies))
+    }
+  }, [store])
+
   const board = store.getBoard()
 
   const notifySelection = useCallback(
@@ -195,14 +206,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
 
       if (isMod && event.key.toLowerCase() === 'v') {
         event.preventDefault()
-        const clipboard = (window as unknown as Record<string, unknown>)
-          .__boardClipboard as BoardElement[] | undefined
-        if (clipboard?.length) {
-          pasteCountRef.current += 1
-          const offset = pasteCountRef.current * 24
-          const copies = clipboard.map((el) => copyElement(el, generateId, offset))
-          store.execute(copyElements(copies))
-        }
+        doPaste()
         return
       }
 
@@ -505,7 +509,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
             const clipboard = board.elements.filter((el) => selection.has(el.id))
             ;(window as unknown as Record<string, unknown>).__boardClipboard = clipboard
             pasteCountRef.current = 0
-            store.execute(copyElements(clipboard.map((el) => copyElement(el, generateId, 24))))
+            doPaste()
           }}
         />
       )}
