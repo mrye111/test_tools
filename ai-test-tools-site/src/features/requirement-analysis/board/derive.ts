@@ -4,6 +4,7 @@ import {
   type DecisionTableConditionValue,
   type DecisionTableElement,
   type DecisionTableRule,
+  type OrthogonalElement,
   type OrthogonalFactor,
 } from './types'
 
@@ -322,4 +323,94 @@ export function mergeEquivalentRules(table: DecisionTableElement): DecisionTable
   })
 
   return { ...table, rules }
+}
+
+/**
+ * 用例骨架：测试设计画布向标准测试用例过渡的中间结构。
+ */
+export interface CaseSkeleton {
+  source: 'decision-table' | 'orthogonal'
+  precondition: string
+  steps: string
+  expected: string
+}
+
+/**
+ * 将判定表展开为多条用例骨架。
+ * 前置条件：Y → "条件名成立"、N → "条件名不成立"、- 跳过；多条件以 "；" 连接。
+ * 预期结果：动作取值为 true 的项以 "、" 连接，全为 false 时输出 "无附加动作发生"。
+ */
+export function decisionTableToSkeleton(table: DecisionTableElement): CaseSkeleton[] {
+  return table.rules.map((rule) => {
+    const preconditions = rule.conditionValues
+      .map((value, index) => {
+        if (value === 'Y') return `${table.conditions[index]}成立`
+        if (value === 'N') return `${table.conditions[index]}不成立`
+        return null
+      })
+      .filter((text): text is string => text !== null)
+      .join('；')
+
+    const trueActions = rule.actionValues
+      .map((value, index) => (value ? table.actions[index] : null))
+      .filter((text): text is string => text !== null)
+    const expected = trueActions.length > 0 ? trueActions.join('、') : '无附加动作发生'
+
+    return {
+      source: 'decision-table',
+      precondition: preconditions,
+      steps: '执行对应操作步骤，观察系统响应',
+      expected,
+    }
+  })
+}
+
+/**
+ * 将正交表展开为多条用例骨架。
+ * 每行对应一条组合，前置条件为 "因子名=水平值" 键值对的 "；" 连接。
+ */
+export function orthogonalToSkeleton(el: OrthogonalElement): CaseSkeleton[] {
+  return el.rows.map((row) => {
+    const preconditions = row
+      .map((level, index) => `${el.factors[index].name}=${level}`)
+      .join('；')
+
+    return {
+      source: 'orthogonal',
+      precondition: preconditions,
+      steps: '按该因子组合执行测试',
+      expected: '记录输出结果，验证符合预期',
+    }
+  })
+}
+
+/**
+ * 将一组用例骨架序列化为 Markdown 文本，供后续接力补全为完整用例。
+ * 按来源拆分为判定表规则与正交表组合两个表格输出。
+ */
+export function serializeSkeletons(sourceTitle: string, skeletons: CaseSkeleton[]): string {
+  const decisionSkeletons = skeletons.filter((s) => s.source === 'decision-table')
+  const orthogonalSkeletons = skeletons.filter((s) => s.source === 'orthogonal')
+
+  const lines = [
+    `## 需求：${sourceTitle}`,
+    '',
+    '以下用例骨架由测试设计画布产出，请据此补全为标准用例。',
+    '',
+    `### 判定表规则（共 ${decisionSkeletons.length} 条）`,
+    '| # | 前置条件 | 步骤 | 预期 |',
+    '|---|---|---|---|',
+  ]
+
+  decisionSkeletons.forEach((skeleton, index) => {
+    lines.push(`| ${index + 1} | ${skeleton.precondition} | ${skeleton.steps} | ${skeleton.expected} |`)
+  })
+
+  lines.push('', `### 正交表组合（共 ${orthogonalSkeletons.length} 条）`, '| # | 前置条件 | 步骤 | 预期 |', '|---|---|---|---|')
+
+  orthogonalSkeletons.forEach((skeleton, index) => {
+    lines.push(`| ${index + 1} | ${skeleton.precondition} | ${skeleton.steps} | ${skeleton.expected} |`)
+  })
+
+  return lines.join('\n')
 }
