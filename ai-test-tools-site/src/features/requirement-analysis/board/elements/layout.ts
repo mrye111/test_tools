@@ -7,6 +7,7 @@ export interface MindmapLayoutNode {
   x: number
   y: number
   depth: number
+  parentId: string | null
 }
 
 const COL_WIDTH = 200
@@ -14,26 +15,30 @@ const ROW_HEIGHT = 56
 
 /**
  * 简化版 tidy 树布局：按深度分列，叶节点均分纵向空间，
- * 父节点纵向居中于直接子节点。
+ * 父节点纵向居中于直接子节点。输出节点带 parentId，供连线使用。
  */
 export function layoutMindmap(tree: RequirementNode): MindmapLayoutNode[] {
   const result: MindmapLayoutNode[] = []
   let nextLeafY = 0
 
-  function layoutNode(node: RequirementNode, depth: number): MindmapLayoutNode[] {
+  function layoutNode(
+    node: RequirementNode,
+    depth: number,
+    parentId: string | null
+  ): MindmapLayoutNode[] {
     const x = depth * COL_WIDTH
 
     if (node.children.length === 0) {
       const y = nextLeafY
       nextLeafY += ROW_HEIGHT
-      return [{ id: node.id, title: node.title, x, y, depth }]
+      return [{ id: node.id, title: node.title, x, y, depth, parentId }]
     }
 
     const childRoots: MindmapLayoutNode[] = []
     const childrenLayout: MindmapLayoutNode[] = []
 
     for (const child of node.children) {
-      const childNodes = layoutNode(child, depth + 1)
+      const childNodes = layoutNode(child, depth + 1, node.id)
       childrenLayout.push(...childNodes)
       childRoots.push(childNodes[0])
     }
@@ -41,11 +46,11 @@ export function layoutMindmap(tree: RequirementNode): MindmapLayoutNode[] {
     const firstChildY = childRoots[0].y
     const lastChildY = childRoots[childRoots.length - 1].y
     const y = (firstChildY + lastChildY) / 2
-    const parent = { id: node.id, title: node.title, x, y, depth }
+    const parent: MindmapLayoutNode = { id: node.id, title: node.title, x, y, depth, parentId }
 
     return [parent, ...childrenLayout]
   }
 
-  result.push(...layoutNode(tree, 0))
+  result.push(...layoutNode(tree, 0, null))
   return result
 }

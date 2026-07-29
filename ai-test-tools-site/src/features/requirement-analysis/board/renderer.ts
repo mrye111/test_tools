@@ -1,9 +1,15 @@
 import type { Board, BoardElement, MindmapRefElement, CauseEffectElement, DecisionTableElement, OrthogonalElement } from './types'
 import type { Viewport } from './viewport'
+import type { RequirementNode } from '../../../lib/requirement-analysis-api'
 import { drawMindmapRef } from './elements/mindmap-ref'
 import { drawCauseEffect } from './elements/cause-effect'
 import { drawDecisionTable } from './elements/decision-table'
 import { drawOrthogonal } from './elements/orthogonal'
+
+export interface RenderBoardOptions {
+  /** 需求树根节点，用于 mindmap-ref 图元绘制真实参考树 */
+  tree?: RequirementNode
+}
 
 /**
  * 渲染白板到 Canvas。
@@ -14,7 +20,8 @@ export function renderBoard(
   canvas: HTMLCanvasElement,
   board: Board,
   vp: Viewport,
-  selection: ReadonlySet<string>
+  selection: ReadonlySet<string>,
+  options: RenderBoardOptions = {}
 ): void {
   const dpr = window.devicePixelRatio || 1
   const cssW = canvas.clientWidth
@@ -39,7 +46,7 @@ export function renderBoard(
 
   // 逐图元绘制
   for (const el of board.elements) {
-    drawElement(ctx, el, vp, selection.has(el.id))
+    drawElement(ctx, el, vp, selection.has(el.id), options.tree)
   }
 
   ctx.restore()
@@ -49,12 +56,16 @@ function drawElement(
   ctx: CanvasRenderingContext2D,
   el: BoardElement,
   vp: Viewport,
-  selected: boolean
+  selected: boolean,
+  tree?: RequirementNode
 ): void {
   switch (el.kind) {
-    case 'mindmap-ref':
-      drawMindmapRef(ctx, el as MindmapRefElement, vp, selected)
+    case 'mindmap-ref': {
+      // 未提供树时退化为单根占位，避免渲染崩溃
+      const fallbackTree: RequirementNode = { id: el.id, title: '需求树', children: [] }
+      drawMindmapRef(ctx, el as MindmapRefElement, tree ?? fallbackTree, vp, selected)
       break
+    }
     case 'cause-effect':
       drawCauseEffect(ctx, el as CauseEffectElement, vp, selected)
       break

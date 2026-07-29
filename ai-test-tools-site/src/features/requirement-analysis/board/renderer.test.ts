@@ -19,6 +19,20 @@ describe('layoutMindmap', () => {
     expect(byId.get('a1')!.x).toBeGreaterThan(byId.get('a')!.x)
     expect(byId.get('a')!.y).toBeCloseTo((byId.get('a1')!.y + byId.get('a2')!.y) / 2)
   })
+
+  it('布局节点包含正确 parentId 以支持连线', () => {
+    const layout = layoutMindmap({
+      id: 'r', title: '根', children: [
+        { id: 'a', title: 'A', children: [
+          { id: 'a1', title: 'A1', children: [] },
+        ] },
+      ],
+    })
+    const byId = new Map(layout.map((n) => [n.id, n]))
+    expect(byId.get('r')!.parentId).toBeNull()
+    expect(byId.get('a')!.parentId).toBe('r')
+    expect(byId.get('a1')!.parentId).toBe('a')
+  })
 })
 
 describe('measure', () => {

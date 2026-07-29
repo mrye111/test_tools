@@ -1,0 +1,15 @@
+// 白板 Canvas 绘制共享设计令牌近似色值（与项目 CSS 变量对齐）
+export const BOARD_COLORS = {
+  accent: '#3b82f6',
+  border: '#e2e8f0',
+  surface: '#ffffff',
+  surfaceMuted: '#f1f5f9',
+  surfaceMuted2: '#e2e8f0',
+  text: '#1e293b',
+  textMuted: '#64748b',
+  line: '#cbd5e1',
+  edgeStroke: '#94a3b8',
+  causeBorder: '#3b82f6',
+  effectBorder: '#ef4444',
+  symbol: '#475569',
+} as const

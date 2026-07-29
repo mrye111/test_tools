@@ -1,14 +1,10 @@
 import type { Viewport } from '../viewport'
 import type { DecisionTableElement } from '../types'
 import { measureDecisionTable } from './measure'
+import { BOARD_COLORS } from './colors'
+import { drawSelectionOutline, roundRect, truncate } from './canvas-utils'
 
-// 设计令牌近似色值
-const ACCENT = '#3b82f6'
-const BORDER = '#e2e8f0'
-const SURFACE = '#ffffff'
-const HEADER_BG = '#f1f5f9'
-const TEXT = '#1e293b'
-const TEXT_MUTED = '#64748b'
+const { accent, border, surface, headerBg, text, textMuted } = BOARD_COLORS
 
 const ROW_HEIGHT = 28
 const CHAR_WIDTH = 8
@@ -30,7 +26,7 @@ export function drawDecisionTable(
   ctx.translate(el.x, el.y)
 
   // 背景卡片
-  ctx.fillStyle = SURFACE
+  ctx.fillStyle = surface
   ctx.shadowColor = 'rgba(0, 0, 0, 0.08)'
   ctx.shadowBlur = 8
   ctx.shadowOffsetY = 2
@@ -38,14 +34,14 @@ export function drawDecisionTable(
   ctx.fill()
   ctx.shadowColor = 'transparent'
 
-  ctx.strokeStyle = BORDER
+  ctx.strokeStyle = border
   ctx.lineWidth = 1
   ctx.stroke()
 
   // 计算各列宽度
   const stubWidth = Math.max(
     STUB_MIN_WIDTH,
-    ...[...el.conditions, ...el.actions].map((text) => Math.min(text.length * CHAR_WIDTH, MAX_COL_WIDTH))
+    ...[...el.conditions, ...el.actions].map((t) => Math.min(t.length * CHAR_WIDTH, MAX_COL_WIDTH))
   )
 
   let ruleColWidth = 40
@@ -57,18 +53,18 @@ export function drawDecisionTable(
   }
 
   // 表头
-  ctx.fillStyle = HEADER_BG
+  ctx.fillStyle = headerBg
   ctx.fillRect(0, 0, stubWidth, ROW_HEIGHT)
-  ctx.fillStyle = TEXT_MUTED
+  ctx.fillStyle = textMuted
   ctx.font = 'bold 12px sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText('规则', stubWidth / 2, ROW_HEIGHT / 2)
 
   for (let i = 0; i < el.rules.length; i++) {
-    ctx.fillStyle = HEADER_BG
+    ctx.fillStyle = headerBg
     ctx.fillRect(stubWidth + i * ruleColWidth, 0, ruleColWidth, ROW_HEIGHT)
-    ctx.fillStyle = TEXT_MUTED
+    ctx.fillStyle = textMuted
     ctx.fillText(`${i + 1}`, stubWidth + i * ruleColWidth + ruleColWidth / 2, ROW_HEIGHT / 2)
   }
 
@@ -91,7 +87,7 @@ export function drawDecisionTable(
   })
 
   // 网格线
-  ctx.strokeStyle = BORDER
+  ctx.strokeStyle = border
   ctx.lineWidth = 1
   ctx.beginPath()
   for (let i = 0; i <= rowCount(el); i++) {
@@ -111,7 +107,7 @@ export function drawDecisionTable(
   ctx.lineTo(lastX, h)
   ctx.stroke()
 
-  drawSelectionOutline(ctx, w, h, selected)
+  drawSelectionOutline(ctx, w, h, selected, accent)
   ctx.restore()
 }
 
@@ -124,7 +120,7 @@ function drawCell(
   text: string,
   align: 'left' | 'center'
 ): void {
-  ctx.fillStyle = TEXT
+  ctx.fillStyle = text
   ctx.font = '12px sans-serif'
   ctx.textAlign = align
   ctx.textBaseline = 'middle'
@@ -136,43 +132,6 @@ function drawCell(
 
 function rowCount(el: DecisionTableElement): number {
   return 1 + el.conditions.length + el.actions.length
-}
-
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
-): void {
-  const radius = Math.min(r, w / 2, h / 2)
-  ctx.beginPath()
-  ctx.moveTo(x + radius, y)
-  ctx.arcTo(x + w, y, x + w, y + h, radius)
-  ctx.arcTo(x + w, y + h, x, y + h, radius)
-  ctx.arcTo(x, y + h, x, y, radius)
-  ctx.arcTo(x, y, x + w, y, radius)
-  ctx.closePath()
-}
-
-function truncate(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
-  if (ctx.measureText(text).width <= maxW) return text
-  let i = text.length
-  while (i > 0) {
-    const candidate = `${text.slice(0, i)}…`
-    if (ctx.measureText(candidate).width <= maxW) return candidate
-    i -= 1
-  }
-  return '…'
-}
-
-function drawSelectionOutline(ctx: CanvasRenderingContext2D, w: number, h: number, selected: boolean): void {
-  if (!selected) return
-  ctx.strokeStyle = ACCENT
-  ctx.lineWidth = 2
-  roundRect(ctx, -2, -2, w + 4, h + 4, 14)
-  ctx.stroke()
 }
 
 export { roundRect, truncate }
