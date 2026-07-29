@@ -19,6 +19,8 @@ export type Finding = {
 
 export type RequirementChartType = 'mindmap' | 'tree' | 'logic'
 
+export type BoardChartKind = 'cause-effect' | 'decision-table' | 'orthogonal'
+
 export type RequirementAnalysisResult = {
   title: string
   tree: RequirementNode
@@ -195,6 +197,21 @@ export async function exportRequirementXmind(args: {
   downloadBlob(blob, `${args.title || '需求分析'}.xmind`)
 }
 
+/** POST /api/requirement-analysis/records/:id/board/generate（AI 生成图表草稿，一次性 JSON）。 */
+export async function generateBoardChart(
+  recordId: string,
+  args: { nodeId: string; chartKind: BoardChartKind },
+  aiConfig: RuntimeAiConfig,
+): Promise<unknown> {
+  const response = await fetch(buildUrl(`/api/requirement-analysis/records/${encodeURIComponent(recordId)}/board/generate`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nodeId: args.nodeId, chartKind: args.chartKind, ai_config: aiConfig }),
+  })
+  const data = await parseRecordResponse<{ draft: unknown }>(response, '生成图表草稿失败')
+  return data.draft
+}
+
 /* ── 分析记录（ADR 0004：分析结果持久化为记录）── */
 
 export type AnalysisRecordSummary = {
@@ -217,6 +234,7 @@ export type AnalysisRecord = {
   sourceText: string
   truncated: boolean
   warnings: string[]
+  board?: unknown
   createdAt: string
   updatedAt: string
 }
@@ -242,6 +260,7 @@ export type CreateAnalysisRecordInput = {
 export type UpdateAnalysisRecordInput = {
   name?: string
   chartType?: RequirementChartType
+  board?: unknown
 }
 
 /** 统一解析记录接口响应：success:false 或 HTTP 错误都抛出服务端 error 文案。 */

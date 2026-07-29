@@ -167,3 +167,34 @@ describe('analyzeRequirement SSE 消费', () => {
     expect(events.every((e) => e.type === 'result')).toBe(true)
   })
 })
+
+// 追加到 requirement-analysis-api.test.ts
+describe('generateBoardChart & updateAnalysisRecord', () => {
+  it('generateBoardChart POST 到 records/:id/board/generate 并返回 draft', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, draft: { nodes: [], edges: [] } }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { generateBoardChart } = await import('./requirement-analysis-api')
+    const draft = await generateBoardChart('rec_1', { nodeId: 'n1', chartKind: 'cause-effect' }, aiConfig)
+    expect(draft).toEqual({ nodes: [], edges: [] })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(String(url)).toContain('/api/requirement-analysis/records/rec_1/board/generate')
+    expect(init.method).toBe('POST')
+    vi.unstubAllGlobals()
+  })
+
+  it('updateAnalysisRecord 支持 board 字段透传', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, record: { id: 'rec_1' } }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { updateAnalysisRecord } = await import('./requirement-analysis-api')
+    await updateAnalysisRecord('rec_1', { board: { version: 1, elements: [] } })
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.board).toEqual({ version: 1, elements: [] })
+    vi.unstubAllGlobals()
+  })
+})
