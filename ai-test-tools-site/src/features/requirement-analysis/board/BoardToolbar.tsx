@@ -39,6 +39,7 @@ function selectionBounds(
 export function BoardToolbar({ store, board, viewport, selection, onAction, onCopy }: BoardToolbarProps) {
   const toolbarRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
+  const [containerWidth, setContainerWidth] = useState(800)
   const bounds = selectionBounds(board.elements, selection)
 
   useLayoutEffect(() => {
@@ -47,16 +48,24 @@ export function BoardToolbar({ store, board, viewport, selection, onAction, onCo
     const width = el.offsetWidth
     const height = el.offsetHeight
     setSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }))
+    const parent = el.parentElement
+    if (parent) {
+      setContainerWidth(parent.clientWidth)
+    }
   }, [selection, bounds])
 
   if (!bounds) return null
 
   const topCenter = worldToScreen(viewport, bounds.x + bounds.w / 2, bounds.y)
   // 工具条上沿位于选中集包围盒上方，留 8px 间隙； clamp 到容器可视区域
+  // left 使用 transform: translate(-50%, 0)，因此 clamp 的是工具条中心点
   const rawTop = topCenter.y - 40
-  const containerWidth = 800 // 容器宽度在测量前保守取值，measure 后更新
+  const halfWidth = size.width / 2
   const clampedTop = Math.max(8, rawTop)
-  const clampedLeft = Math.max(8, Math.min(topCenter.x, containerWidth - size.width - 8))
+  const clampedLeft = Math.max(
+    halfWidth + 8,
+    Math.min(topCenter.x, containerWidth - halfWidth - 8),
+  )
 
   const handleBringToFront = () => {
     if (selection.size === 0) return

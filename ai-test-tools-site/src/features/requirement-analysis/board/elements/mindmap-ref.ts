@@ -21,7 +21,7 @@ export function drawMindmapRef(
   ctx.translate(el.x, el.y)
 
   // 背景
-  ctx.fillStyle = selected ? '#eff6ff' : surfaceMuted
+  ctx.fillStyle = surfaceMuted
   roundRect(ctx, 0, 0, el.w, el.h, 12)
   ctx.fill()
 

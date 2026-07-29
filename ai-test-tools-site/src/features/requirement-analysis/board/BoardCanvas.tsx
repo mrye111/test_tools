@@ -67,6 +67,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, zoom: 1 })
+  const hasFittedRef = useRef(false)
   const [selection, setSelection] = useState<Set<string>>(new Set())
   const [tool, setTool] = useState<Tool>('select')
   const [spacePressed, setSpacePressed] = useState(false)
@@ -75,6 +76,25 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const pointerRef = useRef<PointerState | null>(null)
   const rafRef = useRef<number | null>(null)
   const pasteCountRef = useRef(0)
+
+  const fitOnce = useCallback(() => {
+    if (hasFittedRef.current) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    // jsdom 等环境 canvas 尚未获得尺寸时跳过，避免视口被错误平移
+    if (rect.width === 0 || rect.height === 0) return
+    const bounds = computeBoardBounds(store.getBoard().elements)
+    if (bounds) {
+      setViewport(fitBounds(bounds, rect.width, rect.height, 40))
+    }
+    hasFittedRef.current = true
+  }, [store])
+
+  // 首次挂载 + store/tree 就绪后自动 fit 一次（spec §6.1）
+  useEffect(() => {
+    fitOnce()
+  }, [fitOnce, tree, store])
 
   const doPaste = useCallback(() => {
     const clipboard = (window as unknown as Record<string, unknown>)
@@ -380,7 +400,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
         startMarquee(sx, sy)
       }
     },
-    [editing, notifySelection, selection, spacePressed, startDrag, startMarquee, startPan, store, tool, viewport],
+    [editing, notifySelection, selection, spacePressed, startDrag, startMarquee, startPan, store, tool, tree, viewport],
   )
 
   const handlePointerMove = useCallback(
