@@ -13,8 +13,8 @@ export interface RenderBoardOptions {
 
 /**
  * 渲染白板到 Canvas。
- * 按上游视口语义：screen = world * zoom - vp，等价于
- * setTransform(dpr*zoom, 0, 0, dpr*zoom, -vp.x*dpr*zoom, -vp.y*dpr*zoom)。
+ * 按上游视口语义：screen = world * zoom - vp.{x,y}，等价于
+ * setTransform(dpr*zoom, 0, 0, dpr*zoom, -vp.x*dpr, -vp.y*dpr)。
  */
 export function renderBoard(
   canvas: HTMLCanvasElement,
@@ -42,7 +42,7 @@ export function renderBoard(
   ctx.clearRect(0, 0, canvas.width, canvas.height)
 
   // 设置世界坐标变换
-  ctx.setTransform(dpr * vp.zoom, 0, 0, dpr * vp.zoom, -vp.x * dpr * vp.zoom, -vp.y * dpr * vp.zoom)
+  ctx.setTransform(dpr * vp.zoom, 0, 0, dpr * vp.zoom, -vp.x * dpr, -vp.y * dpr)
 
   // 逐图元绘制
   for (const el of board.elements) {

@@ -1,6 +1,30 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { fitBounds, screenToWorld, worldToScreen } from './viewport'
 import { layoutMindmap } from './elements/layout'
 import { measureDecisionTable, measureOrthogonal } from './elements/measure'
+import { renderBoard } from './renderer'
+import type { Board } from './types'
+
+function createMockContext() {
+  return {
+    save: vi.fn(),
+    restore: vi.fn(),
+    setTransform: vi.fn(),
+    clearRect: vi.fn(),
+    fillRect: vi.fn(),
+    strokeRect: vi.fn(),
+    fillText: vi.fn(),
+    strokeText: vi.fn(),
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    arcTo: vi.fn(),
+    closePath: vi.fn(),
+    fill: vi.fn(),
+    stroke: vi.fn(),
+    measureText: vi.fn(() => ({ width: 0 })),
+  } as unknown as CanvasRenderingContext2D
+}
 
 describe('layoutMindmap', () => {
   it('按深度分列、父节点纵向居中于子节点', () => {
@@ -57,5 +81,52 @@ describe('measure', () => {
       rows: [['1'], ['2'], ['1'], ['2'], ['1'], ['2']],
     })
     expect(big.h).toBeGreaterThan(small.h)
+  })
+})
+
+describe('renderer viewport 互逆', () => {
+  it('fitBounds 后的 zoom 下 worldToScreen/screenToWorld 互逆', () => {
+    const bounds = { x: 40, y: 40, w: 1000, h: 5960 }
+    const vp = fitBounds(bounds, 1454, 934, 40)
+    expect(vp.zoom).toBeLessThan(1)
+
+    const wx = 40
+    const wy = 40
+    const s = worldToScreen(vp, wx, wy)
+    const recovered = screenToWorld(vp, s.x, s.y)
+    expect(recovered.x).toBeCloseTo(wx, 6)
+    expect(recovered.y).toBeCloseTo(wy, 6)
+  })
+
+  it('renderBoard setTransform 平移量只乘 dpr，与 worldToScreen 语义一致', () => {
+    // 以 dpr=1 创建 canvas 与 mock context，避免 devicePixelRatio 缩放干扰。
+    Object.defineProperty(window, 'devicePixelRatio', { value: 1, writable: true, configurable: true })
+
+    const canvas = document.createElement('canvas')
+    canvas.width = 1454
+    canvas.height = 934
+    const ctx = createMockContext()
+    vi.spyOn(canvas, 'getContext').mockReturnValue(ctx)
+
+    const board: Board = { version: 1, elements: [] }
+    const vp = { x: 649.6, y: 34.3, zoom: 0.143 }
+    renderBoard(canvas, board, vp, new Set())
+
+    const setTransformCalls = ctx.setTransform.mock.calls
+    // 第一次是 clearRect 的 identity，第二次是世界坐标变换
+    expect(setTransformCalls.length).toBeGreaterThanOrEqual(2)
+    const worldTransform = setTransformCalls[1] as [number, number, number, number, number, number]
+    expect(worldTransform[0]).toBeCloseTo(vp.zoom, 6)
+    expect(worldTransform[3]).toBeCloseTo(vp.zoom, 6)
+    expect(worldTransform[4]).toBeCloseTo(-vp.x, 4)
+    expect(worldTransform[5]).toBeCloseTo(-vp.y, 4)
+
+    // 验证该变换对应的 css 坐标与 worldToScreen 等价：
+    // css = scale * world + translate = world*zoom - vp.x
+    const wx = 40
+    const wy = 40
+    const s = worldToScreen(vp, wx, wy)
+    expect(worldTransform[0] * wx + worldTransform[4]).toBeCloseTo(s.x, 4)
+    expect(worldTransform[3] * wy + worldTransform[5]).toBeCloseTo(s.y, 4)
   })
 })
