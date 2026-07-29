@@ -1,17 +1,19 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import type { Board, BoardElement } from './types'
+import type { Board, BoardElement, CauseEffectElement, DecisionTableElement, OrthogonalElement } from './types'
 import { BoardStore } from './board-store'
 import { bringToFront, removeElements, sendToBack } from './commands'
 import type { Viewport } from './viewport'
 import { worldToScreen } from './viewport'
 import { Tooltip } from '../../../components/ui/Tooltip'
 
+type ToolbarAction = 'derive-decision-table' | 'regenerate-array' | 'edit-factor'
+
 interface BoardToolbarProps {
   store: BoardStore
   board: Board
   viewport: Viewport
   selection: ReadonlySet<string>
-  onAction?: (action: 'derive-decision-table' | 'regenerate-array' | 'edit-factor') => void
+  onAction?: (action: ToolbarAction, selection: ReadonlySet<string>) => void
   onCopy: () => void
 }
 
@@ -71,6 +73,25 @@ export function BoardToolbar({ store, board, viewport, selection, onAction, onCo
     store.execute(removeElements([...selection]))
   }
 
+  const selectedElements = board.elements.filter((el) => selection.has(el.id))
+  const selectedKinds = new Set(selectedElements.map((el) => el.kind))
+  const singleKind = selectedKinds.size === 1 ? [...selectedKinds][0] : null
+
+  const showDeriveDecisionTable = singleKind === 'cause-effect'
+  const showRegenerateArray = singleKind === 'decision-table'
+  const showEditFactor = singleKind === 'decision-table' || singleKind === 'orthogonal'
+  const showActionSeparator = showDeriveDecisionTable || showRegenerateArray || showEditFactor
+
+  const ce = showDeriveDecisionTable
+    ? (selectedElements.find((el) => el.kind === 'cause-effect') as CauseEffectElement)
+    : undefined
+  const dt = showRegenerateArray || showEditFactor
+    ? (selectedElements.find((el) => el.kind === 'decision-table') as DecisionTableElement)
+    : undefined
+  const ortho = showEditFactor
+    ? (selectedElements.find((el) => el.kind === 'orthogonal') as OrthogonalElement)
+    : undefined
+
   return (
     <div
       ref={toolbarRef}
@@ -103,16 +124,43 @@ export function BoardToolbar({ store, board, viewport, selection, onAction, onCo
       <Tooltip content="删除" placement="top">
         <button type="button" aria-label="删除" onClick={handleDelete}>×</button>
       </Tooltip>
-      <div style={{ width: 1, background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} role="separator" />
-      <Tooltip content="推导判定表" placement="top">
-        <button type="button" aria-label="推导判定表" onClick={() => onAction?.('derive-decision-table')}>表</button>
-      </Tooltip>
-      <Tooltip content="重新生成阵列" placement="top">
-        <button type="button" aria-label="重新生成阵列" onClick={() => onAction?.('regenerate-array')}>阵</button>
-      </Tooltip>
-      <Tooltip content="编辑因子" placement="top">
-        <button type="button" aria-label="编辑因子" onClick={() => onAction?.('edit-factor')}>因</button>
-      </Tooltip>
+      {showActionSeparator && <div style={{ width: 1, background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} role="separator" />}
+      {showDeriveDecisionTable && ce && (
+        <Tooltip content="推导判定表" placement="top">
+          <button
+            type="button"
+            aria-label="推导判定表"
+            onClick={() => onAction?.('derive-decision-table', new Set([ce.id]))}
+          >
+            表
+          </button>
+        </Tooltip>
+      )}
+      {showRegenerateArray && dt && (
+        <Tooltip content="重新生成阵列" placement="top">
+          <button
+            type="button"
+            aria-label="重新生成阵列"
+            onClick={() => onAction?.('regenerate-array', new Set([dt.id]))}
+          >
+            阵
+          </button>
+        </Tooltip>
+      )}
+      {showEditFactor && (dt || ortho) && (
+        <Tooltip content="编辑因子" placement="top">
+          <button
+            type="button"
+            aria-label="编辑因子"
+            onClick={() => {
+              const target = ortho ?? dt
+              if (target) onAction?.('edit-factor', new Set([target.id]))
+            }}
+          >
+            因
+          </button>
+        </Tooltip>
+      )}
     </div>
   )
 }

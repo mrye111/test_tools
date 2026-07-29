@@ -124,18 +124,16 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
   const [zoomRatio, setZoomRatio] = useState(1)
   const [exporting, setExporting] = useState<ExportKind | null>(null)
   const [bannerDismissed, setBannerDismissed] = useState(false)
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() => {
-    const mindmapRef = board.elements.find((el) => el.kind === 'mindmap-ref') as MindmapRefElement | undefined
-    return mindmapRef?.selectedNodeId ?? null
-  })
   const [activeTool, setActiveTool] = useState<ToolKey>('select')
   const [generating, setGenerating] = useState<BoardChartKind | null>(null)
   const canvasRef = useRef<BoardCanvasHandle | null>(null)
 
   // 内部 store：每个实例对应一份 board，命令执行时通过 onBoardChange 同步给父级持久化。
-  // 同时订阅 store 变更以触发本组件重绘（占位/错误卡片等）。
+  // 同时订阅 store 变更以触发本组件重绘（占位/错误卡片、插入按钮禁用态等）。
   const [renderedBoard, setRenderedBoard] = useState(board)
   const [store] = useState(() => new BoardStore(board))
+
+  const selectedNodeId = (renderedBoard.elements.find((el) => el.kind === 'mindmap-ref') as MindmapRefElement | undefined)?.selectedNodeId ?? null
 
   useEffect(() => {
     const unsubscribe = store.subscribe(() => setRenderedBoard(store.getBoard()))
@@ -449,19 +447,6 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
             store={store}
             tree={result.tree}
             onZoomChange={handleZoomScaleChange}
-            onSelectionChange={(ids) => {
-              const first = [...ids][0]
-              if (!first) {
-                setSelectedNodeId(null)
-                return
-              }
-              const el = renderedBoard.elements.find((e) => e.id === first)
-              if (el?.kind === 'mindmap-ref') {
-                setSelectedNodeId((el as MindmapRefElement).selectedNodeId ?? null)
-              } else {
-                setSelectedNodeId(null)
-              }
-            }}
             onAction={handleCanvasAction}
           />
 

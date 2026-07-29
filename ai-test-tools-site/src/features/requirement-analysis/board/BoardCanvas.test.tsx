@@ -64,17 +64,15 @@ function mindmapRefElement(x = 0, y = 0, w = 400, h = 200): MindmapRefElement {
 function renderCanvas(store: BoardStore) {
   const handleRef = { current: null as BoardCanvasHandle | null }
   const onZoomChange = vi.fn()
-  const onSelectionChange = vi.fn()
   const result = render(
     <BoardCanvas
       ref={(ref) => (handleRef.current = ref)}
       store={store}
       tree={tree}
       onZoomChange={onZoomChange}
-      onSelectionChange={onSelectionChange}
     />,
   )
-  return { ...result, handleRef, onZoomChange, onSelectionChange, store }
+  return { ...result, handleRef, onZoomChange, store }
 }
 
 describe('BoardCanvas 交互', () => {

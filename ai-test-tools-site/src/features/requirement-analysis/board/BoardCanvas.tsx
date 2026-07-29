@@ -22,7 +22,6 @@ interface BoardCanvasProps {
   store: BoardStore
   tree: RequirementNode
   onZoomChange?: (ratio: number) => void
-  onSelectionChange?: (ids: ReadonlySet<string>) => void
   onAction?: (action: 'derive-decision-table' | 'regenerate-array' | 'edit-factor', selection: ReadonlySet<string>) => void
 }
 
@@ -62,7 +61,7 @@ function generateId(): string {
 }
 
 export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(function BoardCanvas(
-  { store, tree, onZoomChange, onSelectionChange, onAction },
+  { store, tree, onZoomChange, onAction },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -93,9 +92,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, BoardCanvasProps>(funct
   const notifySelection = useCallback(
     (next: Set<string>) => {
       setSelection(next)
-      onSelectionChange?.(next)
     },
-    [onSelectionChange],
+    [],
   )
 
   const doRender = useCallback(() => {
