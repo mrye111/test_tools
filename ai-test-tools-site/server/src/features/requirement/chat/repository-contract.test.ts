@@ -322,6 +322,38 @@ export function runContractTests(
     });
 
     describe("文件库", () => {
+      it("修改库文件不影响源会话文件", async () => {
+        const session = await repo.createSession({
+          title: "S",
+          agentTemplate: "mindmap",
+        });
+        const msg = await repo.createMessage({
+          sessionId: session.id,
+          role: "assistant",
+          content: "x",
+          status: "done",
+        });
+        const source = await repo.createSessionFile({
+          sessionId: session.id,
+          messageId: msg.id,
+          kind: "mindmap",
+          title: "源",
+          payload: { tree: { id: "1", title: "根", children: [] } },
+        });
+        const library = await repo.createLibraryFile(source);
+        (library.payload as { tree: { title: string } }).tree.title = "库已改";
+
+        const reloadedLibrary = await repo.getLibraryFile(library.id);
+        expect(
+          (reloadedLibrary?.payload as { tree: { title: string } }).tree.title,
+        ).toBe("根");
+
+        const reloadedSource = await repo.getSessionFile(source.id);
+        expect(
+          (reloadedSource?.payload as { tree: { title: string } }).tree.title,
+        ).toBe("根");
+      });
+
       it("createLibraryFile 从 SessionFile 深拷贝快照", async () => {
         const session = await repo.createSession({
           title: "S",

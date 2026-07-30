@@ -1,6 +1,5 @@
 import { randomUUID } from "crypto";
 import {
-  type AgentTemplate,
   type ChatMessage,
   type ChatRepository,
   type ChatSession,
@@ -8,7 +7,6 @@ import {
   type CreateSessionFileInput,
   type CreateSessionInput,
   type LibraryFile,
-  type MessageRole,
   type MessageStatus,
   type SessionFile,
   MAX_LIBRARY_FILES,
@@ -43,11 +41,13 @@ export class MemoryChatRepository implements ChatRepository {
   async listSessions(limit = 50): Promise<ChatSession[]> {
     return Array.from(this.sessions.values())
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
-      .slice(0, limit);
+      .slice(0, limit)
+      .map((s) => deepClone(s));
   }
 
   async getSession(id: string): Promise<ChatSession | null> {
-    return this.sessions.get(id) ?? null;
+    const found = this.sessions.get(id);
+    return found ? deepClone(found) : null;
   }
 
   async createSession(input: CreateSessionInput): Promise<ChatSession> {
@@ -92,7 +92,8 @@ export class MemoryChatRepository implements ChatRepository {
   async listMessages(sessionId: string): Promise<ChatMessage[]> {
     return Array.from(this.messages.values())
       .filter((m) => m.sessionId === sessionId)
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((m) => deepClone(m));
   }
 
   async createMessage(input: CreateMessageInput): Promise<ChatMessage> {
@@ -139,7 +140,8 @@ export class MemoryChatRepository implements ChatRepository {
 
   // 会话文件
   async getSessionFile(id: string): Promise<SessionFile | null> {
-    return this.sessionFiles.get(id) ?? null;
+    const found = this.sessionFiles.get(id);
+    return found ? deepClone(found) : null;
   }
 
   async createSessionFile(
@@ -198,13 +200,14 @@ export class MemoryChatRepository implements ChatRepository {
 
   // 文件库
   async listLibraryFiles(): Promise<LibraryFile[]> {
-    return Array.from(this.libraryFiles.values()).sort(
-      (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime(),
-    );
+    return Array.from(this.libraryFiles.values())
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .map((f) => deepClone(f));
   }
 
   async getLibraryFile(id: string): Promise<LibraryFile | null> {
-    return this.libraryFiles.get(id) ?? null;
+    const found = this.libraryFiles.get(id);
+    return found ? deepClone(found) : null;
   }
 
   async createLibraryFile(source: SessionFile): Promise<LibraryFile> {
@@ -225,7 +228,7 @@ export class MemoryChatRepository implements ChatRepository {
       updatedAt: time,
     };
     this.libraryFiles.set(library.id, library);
-    return library;
+    return deepClone(library);
   }
 
   async deleteLibraryFile(id: string): Promise<void> {
