@@ -12,7 +12,7 @@ import { ErrorDialogProvider } from './components/ui/ErrorDialogProvider'
 import { ChatShell } from './features/requirement-analysis/chat/ChatShell'
 import { NewChatHome } from './features/requirement-analysis/chat/NewChatHome'
 import { ChatView } from './features/requirement-analysis/chat/ChatView'
-import { LibraryPage } from './features/requirement-analysis/chat/LibraryPage'
+import { LibraryPage } from './features/requirement-analysis/library/LibraryPage'
 
 // 需求分析页携带 echarts/markmap 等重型图表依赖，按路由懒加载，
 // 避免首页为首屏动画之外的代码付出解析成本

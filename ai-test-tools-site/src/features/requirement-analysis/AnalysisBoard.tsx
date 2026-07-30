@@ -44,6 +44,8 @@ export type AnalysisBoardProps = {
   onExportError: (message: string) => void
   error: string | null
   onBack: () => void
+  /** 文件库来源时展示徽标。 */
+  libraryBadge?: boolean
   /** 插入图表时请求 AI 生成草稿（由 AnalysisBoardPage 提供并调用 generateBoardChart）。 */
   onGenerateChart?: (chartKind: BoardChartKind, nodeId: string) => Promise<unknown>
   /** 画板内 toolbar 动作：derive-decision-table / regenerate-array / edit-factor。 */
@@ -117,7 +119,7 @@ function findNodeById(node: RequirementNode, id: string): RequirementNode | null
  * 中央为 BoardCanvas，控件全部悬浮：左上胶囊、右上生成用例、左侧可收缩工具栏、右下缩放条。
  */
 export function AnalysisBoard(props: AnalysisBoardProps) {
-  const { result, board, onBoardChange, recordName, recordId, onHandoff, onExportFile, onExportError, error, onBack, onGenerateChart, onDerive } = props
+  const { result, board, onBoardChange, recordName, recordId, onHandoff, onExportFile, onExportError, error, onBack, onGenerateChart, onDerive, libraryBadge } = props
 
   const [railExpanded, setRailExpanded] = useState(false)
   const [templateCenterOpen, setTemplateCenterOpen] = useState(false)
@@ -333,6 +335,11 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
         <div className="analysis-board-title" title={recordName}>
           {recordName || result.title || '需求分析'}
         </div>
+        {libraryBadge && (
+          <span className="analysis-board-library-badge" aria-label="文件库副本">
+            文件库副本
+          </span>
+        )}
         <div className="analysis-board-capsule-divider" role="separator" />
         <Tooltip content={exporting ? '导出中…' : '导出'}>
           <MenuButton
@@ -392,6 +399,7 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
             const Icon = tool.icon
             const isInsert = tool.insert !== undefined
             const disabled = isInsert && (!selectedNodeId || generating !== null || !onGenerateChart)
+            const tooltipContent = !onGenerateChart ? '请在会话中生成新图表' : disabled ? '先在需求树中选择一个节点' : tool.label
             const button = (
               <button
                 key={tool.key}
@@ -416,7 +424,7 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
               return (
                 <Tooltip
                   key={tool.key}
-                  content={disabled ? '先在需求树中选择一个节点' : tool.label}
+                  content={tooltipContent}
                   placement="right"
                 >
                   {button}

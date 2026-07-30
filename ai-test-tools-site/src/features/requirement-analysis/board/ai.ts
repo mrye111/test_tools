@@ -274,7 +274,7 @@ function findPlacement(board: Board, preferredX: number, preferredY: number, w: 
 export function draftToElement(
   draft: unknown,
   chartKind: BoardChartKind,
-  sourceNodeId: string,
+  sourceNodeId: string | null,
   board: Board,
 ): BoardElement {
   const errors = validateDraft(draft, chartKind)

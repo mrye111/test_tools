@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { updateAnalysisRecord } from '../../../lib/requirement-analysis-api'
-import { serializeBoard } from './persistence'
 import type { Board } from './types'
 
 const SAVE_DEBOUNCE_MS = 1500
 const RETRY_INTERVAL_MS = 10000
 
 /**
- * 白板变更自动持久化到分析记录。
- * - board 引用变化后防抖 1.5s 触发 updateAnalysisRecord(recordId, { board })
+ * 白板变更自动持久化到外部保存函数。
+ * - board 引用变化后防抖 1.5s 触发 saveFn(board)
  * - 失败时返回 saveError 文案，下一次 board 变更或 10s 后重试
  */
-export function useBoardPersistence(recordId: string, board: Board): { saveError: string | null } {
+export function useBoardPersistence(
+  saveFn: (board: Board) => Promise<void>,
+  board: Board,
+): { saveError: string | null } {
   const [saveError, setSaveError] = useState<string | null>(null)
   const boardRef = useRef(board)
   const retryTimerRef = useRef<number | null>(null)
@@ -19,9 +20,8 @@ export function useBoardPersistence(recordId: string, board: Board): { saveError
   const saveRef = useRef<() => Promise<void>>(async () => {})
 
   const save = useCallback(async () => {
-    if (!recordId) return
     try {
-      await updateAnalysisRecord(recordId, { board: serializeBoard(boardRef.current) })
+      await saveFn(boardRef.current)
       setSaveError(null)
       pendingRef.current = false
       if (retryTimerRef.current !== null) {
@@ -38,7 +38,7 @@ export function useBoardPersistence(recordId: string, board: Board): { saveError
         if (pendingRef.current) saveRef.current()
       }, RETRY_INTERVAL_MS)
     }
-  }, [recordId])
+  }, [saveFn])
 
   useEffect(() => {
     saveRef.current = save
@@ -60,7 +60,7 @@ export function useBoardPersistence(recordId: string, board: Board): { saveError
         retryTimerRef.current = null
       }
     }
-  }, [board, recordId, saveRef])
+  }, [board, saveFn, saveRef])
 
   return { saveError }
 }
