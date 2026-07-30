@@ -107,6 +107,7 @@ export interface ChatRepository {
   getSessionFile(id: string): Promise<SessionFile | null>;
   createSessionFile(input: CreateSessionFileInput): Promise<SessionFile>;
   updateSessionFileBoard(id: string, board: unknown): Promise<SessionFile>;
+  listSessionFiles(sessionId: string): Promise<SessionFile[]>;
   countSessionFiles(sessionId: string): Promise<number>;
 
   // 文件库

@@ -144,6 +144,13 @@ export class MemoryChatRepository implements ChatRepository {
     return found ? deepClone(found) : null;
   }
 
+  async listSessionFiles(sessionId: string): Promise<SessionFile[]> {
+    return Array.from(this.sessionFiles.values())
+      .filter((f) => f.sessionId === sessionId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((f) => deepClone(f));
+  }
+
   async createSessionFile(
     input: CreateSessionFileInput,
   ): Promise<SessionFile> {

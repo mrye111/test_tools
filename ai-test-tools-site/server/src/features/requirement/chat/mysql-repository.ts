@@ -292,6 +292,14 @@ export class MysqlChatRepository implements ChatRepository {
     return rows[0] ? toSessionFile(rows[0]) : null;
   }
 
+  async listSessionFiles(sessionId: string): Promise<SessionFile[]> {
+    const [rows] = await this.pool.execute<SessionFileRow[]>(
+      "SELECT id, session_id, message_id, kind, title, payload, saved_to_library, created_at, updated_at FROM ra_session_files WHERE session_id = ? ORDER BY created_at ASC",
+      [sessionId],
+    );
+    return rows.map(toSessionFile);
+  }
+
   async createSessionFile(
     input: CreateSessionFileInput,
   ): Promise<SessionFile> {
