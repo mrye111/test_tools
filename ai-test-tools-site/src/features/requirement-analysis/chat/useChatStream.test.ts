@@ -1,6 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentTemplate } from './chat-api'
 import type { RuntimeAiConfig } from '../../../shared/api-types'
 import { chatStream, getSession } from './chat-api'
 import { useChatStream } from './useChatStream'
@@ -230,6 +229,6 @@ describe('useChatStream', () => {
     localStorage.clear()
     const { result } = renderHook(() => useChatStream())
 
-    await expect(result.current.send('hello', 'mindmap')).rejects.toThrow('模型配置')
+    await expect(result.current.send('hello', 'mindmap')).rejects.toThrow('请先在模型设置中配置统一供应商')
   })
 })

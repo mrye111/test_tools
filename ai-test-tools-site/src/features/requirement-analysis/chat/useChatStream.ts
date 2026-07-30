@@ -3,7 +3,7 @@
  * 维护本地消息视图、SSE 消费、重试与历史加载。
  */
 
-import { useCallback, useMemo, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { chatStream, getSession } from './chat-api'
 import type { AgentTemplate, ChatStreamEvent, MessageRole, MessageStatus, SessionFileSummary } from './chat-api'
 import { loadStoredModelConfig } from '../../../lib/model-config-store'
@@ -31,6 +31,7 @@ interface State {
   rounds: RoundMeta[]
   streaming: boolean
   error: string | null
+  lastSessionId: string | null
 }
 
 type Action =
@@ -41,6 +42,7 @@ type Action =
   | { type: 'finalize'; status: MessageStatus }
   | { type: 'setError'; error: string }
   | { type: 'setMessages'; messages: ChatMessageView[]; rounds?: RoundMeta[] }
+  | { type: 'setSessionId'; sessionId: string }
 
 function createUserMessage(text: string, template: AgentTemplate): ChatMessageView {
   return {
@@ -130,6 +132,11 @@ function reducer(state: State, action: Action): State {
         streaming: false,
         error: null,
       }
+    case 'setSessionId':
+      return {
+        ...state,
+        lastSessionId: action.sessionId,
+      }
     default:
       return state
   }
@@ -166,6 +173,7 @@ export interface UseChatStreamReturn {
   messages: ChatMessageView[]
   streaming: boolean
   error: string | null
+  lastSessionId: string | null
   send: (text: string, template: AgentTemplate) => Promise<void>
   retry: (messageId: string) => Promise<void>
   loadHistory: () => Promise<void>
@@ -177,17 +185,20 @@ export function useChatStream(sessionId?: string): UseChatStreamReturn {
     rounds: [],
     streaming: false,
     error: null,
+    lastSessionId: null,
   })
 
   const sessionIdRef = useRef(sessionId)
-  sessionIdRef.current = sessionId
+  useEffect(() => {
+    sessionIdRef.current = sessionId
+  }, [sessionId])
 
   const aiConfigRef = useRef<RuntimeAiConfig | null>(null)
 
   const ensureAiConfig = useCallback((): RuntimeAiConfig => {
     if (aiConfigRef.current) return aiConfigRef.current
     const stored = loadStoredModelConfig()
-    if (!stored) throw new Error('模型配置未找到，请先在设置中配置模型')
+    if (!stored) throw new Error('请先在模型设置中配置统一供应商')
     aiConfigRef.current = toAiConfig(stored)
     return aiConfigRef.current
   }, [])
@@ -201,6 +212,8 @@ export function useChatStream(sessionId?: string): UseChatStreamReturn {
       dispatch({ type: 'finalize', status: event.status })
     } else if (event.type === 'error') {
       dispatch({ type: 'setError', error: event.message })
+    } else if (event.type === 'session') {
+      dispatch({ type: 'setSessionId', sessionId: event.id })
     }
   }, [])
 
@@ -214,11 +227,14 @@ export function useChatStream(sessionId?: string): UseChatStreamReturn {
     dispatch({ type: 'appendAssistant', message: assistantMessage })
 
     try {
-      await chatStream(
+      const turnResult = await chatStream(
         { sessionId: sessionIdRef.current, agentTemplate: template, text },
         config,
         handleEvent,
       )
+      if (turnResult.sessionId) {
+        dispatch({ type: 'setSessionId', sessionId: turnResult.sessionId })
+      }
     } catch (error: unknown) {
       const message = getErrorMessage(error)
       dispatch({ type: 'setError', error: message })
@@ -269,8 +285,9 @@ export function useChatStream(sessionId?: string): UseChatStreamReturn {
     messages: state.messages,
     streaming: state.streaming,
     error: state.error,
+    lastSessionId: state.lastSessionId,
     send,
     retry,
     loadHistory,
-  }), [state.messages, state.streaming, state.error, send, retry, loadHistory])
+  }), [state.messages, state.streaming, state.error, state.lastSessionId, send, retry, loadHistory])
 }

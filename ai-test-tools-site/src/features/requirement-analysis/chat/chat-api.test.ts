@@ -14,7 +14,6 @@ import {
   saveToLibrary,
   updateLibraryFileBoard,
   updateSessionFileBoard,
-  type AgentTemplate,
   type ChatStreamEvent,
 } from './chat-api'
 
