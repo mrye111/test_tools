@@ -36,7 +36,8 @@ function anthropicJsonResponse() {
 }
 
 async function withServer(run: (baseUrl: string) => Promise<void>) {
-  const app = createMcpExpressApp();
+  // express-app 工厂在 T6 改为 async（chat 域启动接线），需 await 后再 listen
+  const app = await createMcpExpressApp();
   const server: Server = await new Promise((resolve) => {
     const instance = app.listen(0, "127.0.0.1", () => resolve(instance));
   });
