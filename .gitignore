@@ -1,3 +1,10 @@
+.env
+Tools/
+/node_modules/
+/.vite/
+/artifacts/
+/TestCase/
+/.codegraph/
 Tools/
 /node_modules/
 /.vite/
