@@ -87,16 +87,27 @@ export async function createChatPool(config: DbConfig): Promise<Pool | null> {
   }
 }
 
+async function safeEndPool(pool: Pool | null): Promise<void> {
+  if (!pool) return;
+  try {
+    await pool.end();
+  } catch {
+    // ignore cleanup errors
+  }
+}
+
 export async function resolveChatDb(): Promise<ChatDbHandle> {
   loadDotEnv();
+  let pool: Pool | null = null;
   try {
-    const pool = await createChatPool(loadDbConfig(process.env));
+    pool = await createChatPool(loadDbConfig(process.env));
     if (!pool) {
       return { pool: null, mode: "memory" };
     }
     await initSchema(pool);
     return { pool, mode: "mysql" };
   } catch {
+    await safeEndPool(pool);
     return { pool: null, mode: "memory" };
   }
 }

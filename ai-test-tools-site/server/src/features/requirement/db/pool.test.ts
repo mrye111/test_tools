@@ -1,5 +1,31 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { loadDbConfig, loadDotEnv } from "./config.js";
+import { resolveChatDb, initSchema } from "./pool.js";
+import { createPool } from "mysql2/promise";
+
+type Pool = import("mysql2/promise").Pool;
+
+vi.mock("./config.js", async () => {
+  const actual = await vi.importActual<typeof import("./config.js")>("./config.js");
+  return {
+    ...actual,
+    loadDotEnv: vi.fn(),
+  };
+});
+
+vi.mock("mysql2/promise", async () => {
+  return {
+    createPool: vi.fn(),
+  };
+});
+
+function makeFakePool() {
+  return {
+    query: vi.fn(),
+    getConnection: vi.fn(),
+    end: vi.fn().mockResolvedValue(undefined),
+  };
+}
 
 describe("loadDbConfig", () => {
   it("环境变量缺失时使用默认值", () => {
@@ -46,5 +72,41 @@ describe("loadDotEnv", () => {
     } else {
       process.env.MYSQL_USER = original;
     }
+  });
+});
+
+describe("resolveChatDb", () => {
+  it("createPool 抛错时降级为 memory 且不抛出", async () => {
+    vi.mocked(createPool).mockRejectedValueOnce(new Error("connection refused"));
+    const handle = await resolveChatDb();
+    expect(handle.pool).toBeNull();
+    expect(handle.mode).toBe("memory");
+  });
+
+  it("query 成功但 initSchema 抛错时关闭连接池并降级为 memory", async () => {
+    const fakePool = makeFakePool();
+    fakePool.query.mockResolvedValue([[], []]);
+    fakePool.getConnection.mockRejectedValue(new Error("syntax error"));
+    vi.mocked(createPool).mockReturnValueOnce(fakePool as unknown as Pool);
+    const handle = await resolveChatDb();
+    expect(fakePool.query).toHaveBeenCalledWith("SELECT 1");
+    expect(fakePool.getConnection).toHaveBeenCalled();
+    expect(handle.pool).toBeNull();
+    expect(handle.mode).toBe("memory");
+    expect(fakePool.end).toHaveBeenCalledOnce();
+  });
+});
+
+describe("initSchema", () => {
+  it("执行所有建表语句并在完成后释放连接", async () => {
+    const release = vi.fn();
+    const query = vi.fn().mockResolvedValue([[], []]);
+    const connection = { query, release };
+    const pool = {
+      getConnection: vi.fn().mockResolvedValue(connection),
+    };
+    await initSchema(pool as unknown as Pool);
+    expect(query).toHaveBeenCalledTimes(6);
+    expect(release).toHaveBeenCalledOnce();
   });
 });
