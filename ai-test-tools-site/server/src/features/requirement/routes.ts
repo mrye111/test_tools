@@ -1,14 +1,13 @@
 import express, { type Express, type Request, type Response } from "express";
-import { randomUUID } from "node:crypto";
 import { parseAiRequestConfig } from "../testcase/ai.js";
 import type { JsonObject } from "../testcase/types.js";
-import { boolValue, isObject, nowIso, safeDownloadName, text } from "../testcase/utils.js";
+import { isObject, safeDownloadName, text } from "../testcase/utils.js";
 import { sendSseEvent } from "../../ai-generator.js";
 import { analyzeRequirementText } from "./ai.js";
 import { generateBoardChartDraft } from "./board-ai.js";
 import { buildRequirementXmind } from "./exporters.js";
 import { DocumentParseError, parseRequirementDocument, truncateText } from "./parsers.js";
-import { RequirementAnalysisStore, toAnalysisRecordSummary } from "./store.js";
+import { RequirementAnalysisStore } from "./store.js";
 import type { AnalysisRecord, Finding, RequirementAnalysisResult, RequirementChartType, RequirementNode } from "./types.js";
 
 type AnalysisStage = "parsing" | "analyzing" | "finalizing";
@@ -262,8 +261,6 @@ function headerAiConfig(req: Request): JsonObject {
 }
 
 const RECORD_NOT_FOUND_ERROR = "分析记录不存在。";
-const RECORDS_DEFAULT_PAGE_SIZE = 10;
-const RECORDS_MAX_PAGE_SIZE = 50;
 
 /** 默认 store 与测试用例侧同为模块级单例；集成测试可通过 registerRequirementRoutes 第二参数注入临时目录 store。 */
 const defaultAnalysisRecordStore = new RequirementAnalysisStore();
@@ -272,26 +269,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** 分页参数：非法/缺省回退 fallback，下限 1。 */
-function parsePageParam(value: unknown, fallback: number): number {
-  const parsed = Number.parseInt(text(value), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
 function registerAnalysisRecordRoutes(app: Express, store: RequirementAnalysisStore): void {
-  app.get("/api/requirement-analysis/records", (req, res) => {
-    try {
-      const page = parsePageParam(req.query.page, 1);
-      const pageSize = Math.min(RECORDS_MAX_PAGE_SIZE, parsePageParam(req.query.pageSize, RECORDS_DEFAULT_PAGE_SIZE));
-      // ISO 时间可直接按字典序比较；updatedAt 倒序，最新编辑的在前；id 作为稳定 tie-breaker 保证分页一致性。
-      const sorted = store.listRecords().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
-      const records = sorted.slice((page - 1) * pageSize, page * pageSize).map(toAnalysisRecordSummary);
-      res.json({ success: true, records, total: sorted.length, page, pageSize });
-    } catch (error) {
-      res.status(500).json({ success: false, error: errorMessage(error) });
-    }
-  });
-
   app.get("/api/requirement-analysis/records/:id", (req, res) => {
     try {
       const record = store.getRecord(req.params.id);
@@ -299,39 +277,6 @@ function registerAnalysisRecordRoutes(app: Express, store: RequirementAnalysisSt
         res.status(404).json({ success: false, error: RECORD_NOT_FOUND_ERROR });
         return;
       }
-      res.json({ success: true, record });
-    } catch (error) {
-      res.status(500).json({ success: false, error: errorMessage(error) });
-    }
-  });
-
-  app.post("/api/requirement-analysis/records", (req, res) => {
-    try {
-      const data: JsonObject = isObject(req.body) ? req.body : {};
-      const tree = normalizeNode(data.tree);
-      if (!tree) {
-        res.status(400).json({ success: false, error: "缺少有效的需求分解树（tree）。" });
-        return;
-      }
-      const title = text(data.title).trim() || tree.title;
-      const findings = Array.isArray(data.findings)
-        ? data.findings.map(normalizeFinding).filter((item): item is Finding => item !== null)
-        : [];
-      const now = nowIso();
-      const record: AnalysisRecord = {
-        id: `rec_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`,
-        name: text(data.name).trim() || title,
-        chartType: normalizeChartType(data.chartType),
-        title,
-        tree,
-        findings,
-        sourceText: text(data.sourceText),
-        truncated: boolValue(data.truncated),
-        warnings: Array.isArray(data.warnings) ? data.warnings.map((item) => text(item).trim()).filter(Boolean) : [],
-        createdAt: now,
-        updatedAt: now,
-      };
-      store.createRecord(record);
       res.json({ success: true, record });
     } catch (error) {
       res.status(500).json({ success: false, error: errorMessage(error) });

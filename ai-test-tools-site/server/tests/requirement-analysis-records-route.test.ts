@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Server } from "node:http";
@@ -38,47 +39,24 @@ async function withServer(run: (baseUrl: string, store: RequirementAnalysisStore
 
 const validTree = { id: "root", title: "登录需求", children: [{ id: "m1", title: "登录模块", children: [] }] };
 
-function postBody(overrides: Record<string, unknown> = {}) {
-  return {
+function createRecordDirectly(store: RequirementAnalysisStore, overrides: Record<string, unknown> = {}) {
+  const now = new Date().toISOString();
+  store.createRecord({
+    id: `rec_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`,
+    name: "登录需求",
+    chartType: "mindmap",
     title: "登录需求",
     tree: validTree,
     findings: [
-      { type: "risk", title: "验证码暴力破解", detail: "未说明错误次数限制", nodeId: "m1" },
-      { type: "unknown-type", title: "类型会被归一", detail: "", nodeId: "m1" },
-      { title: "缺 nodeId 会被丢弃" },
+      { id: "f1", type: "risk", title: "验证码暴力破解", detail: "未说明错误次数限制", nodeId: "m1" },
     ],
     sourceText: "用户通过手机号+验证码登录。",
+    truncated: false,
+    warnings: [],
+    createdAt: now,
+    updatedAt: now,
     ...overrides,
-  };
-}
-
-async function createRecord(baseUrl: string, body: Record<string, unknown> = postBody()) {
-  const response = await globalThis.fetch(`${baseUrl}/api/requirement-analysis/records`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return { status: response.status, body: (await response.json()) as { success: boolean; record?: AnalysisRecord; error?: string } };
-}
-
-/** 直接写 store 造分页数据：updatedAt 显式递增，排序断言不依赖真实时钟。 */
-function seedRecords(store: RequirementAnalysisStore, count: number) {
-  for (let index = 0; index < count; index += 1) {
-    const timestamp = new Date(Date.UTC(2026, 6, 24, 0, 0, index)).toISOString();
-    store.createRecord({
-      id: `rec_${String(index).padStart(2, "0")}`,
-      name: `记录 ${index}`,
-      chartType: "mindmap",
-      title: `需求 ${index}`,
-      tree: validTree,
-      findings: [{ id: "f1", type: "risk", title: "风险", detail: "", nodeId: "m1" }],
-      sourceText: "原文",
-      truncated: false,
-      warnings: [],
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
-  }
+  } as AnalysisRecord);
 }
 
 afterEach(() => {
@@ -88,97 +66,13 @@ afterEach(() => {
   }
 });
 
-describe("POST /api/requirement-analysis/records", () => {
-  it("创建记录：name 缺省回退 title，chartType 归一化，findings 过滤，id 带 rec_ 前缀", async () => {
-    await withServer(async (baseUrl, store) => {
-      const { status, body } = await createRecord(baseUrl, postBody({ chartType: "pie" }));
-
-      expect(status).toBe(200);
-      expect(body.success).toBe(true);
-      const record = body.record!;
-      expect(record.id).toMatch(/^rec_[a-z0-9]+_[0-9a-f]{8}$/);
-      expect(record.name).toBe("登录需求");
-      expect(record.chartType).toBe("mindmap");
-      expect(record.findings).toHaveLength(2);
-      expect(record.findings[1]?.type).toBe("clarification");
-      expect(record.createdAt).toBe(record.updatedAt);
-      // 立即落盘：store 内存态可读
-      expect(store.getRecord(record.id)?.name).toBe("登录需求");
-    });
-  });
-
-  it("显式 name 去空白后优先于 title，title 缺省回退树根标题", async () => {
-    await withServer(async (baseUrl) => {
-      const named = await createRecord(baseUrl, postBody({ name: "  我的分析  " }));
-      expect(named.body.record?.name).toBe("我的分析");
-
-      const untitled = await createRecord(baseUrl, postBody({ title: "" }));
-      expect(untitled.body.record?.title).toBe("登录需求");
-      expect(untitled.body.record?.name).toBe("登录需求");
-    });
-  });
-
-  it("tree 无效时返回 400 与统一错误格式", async () => {
-    await withServer(async (baseUrl) => {
-      const { status, body } = await createRecord(baseUrl, { title: "x", tree: { children: [] } });
-      expect(status).toBe(400);
-      expect(body.success).toBe(false);
-      expect(body.error).toContain("需求分解树");
-    });
-  });
-});
-
-describe("GET /api/requirement-analysis/records（列表分页）", () => {
-  it("按 updatedAt 倒序返回摘要，total/page/pageSize 正确", async () => {
-    await withServer(async (baseUrl, store) => {
-      seedRecords(store, 12);
-
-      const response = await globalThis.fetch(`${baseUrl}/api/requirement-analysis/records?page=2&pageSize=5`);
-      const body = (await response.json()) as {
-        success: boolean;
-        records: Array<{ id: string; findingsCount: { risk: number } }>;
-        total: number;
-        page: number;
-        pageSize: number;
-      };
-
-      expect(body.success).toBe(true);
-      expect(body.total).toBe(12);
-      expect(body.page).toBe(2);
-      expect(body.pageSize).toBe(5);
-      expect(body.records.map((item) => item.id)).toEqual(["rec_06", "rec_05", "rec_04", "rec_03", "rec_02"]);
-      // 摘要形态：计数而非 findings 数组
-      expect(body.records[0]?.findingsCount).toEqual({ risk: 1, ambiguity: 0, clarification: 0 });
-      expect(body.records[0]).not.toHaveProperty("tree");
-    });
-  });
-
-  it("缺省分页 page=1/pageSize=10，pageSize 超过上限按 50 截断，非法参数回退", async () => {
-    await withServer(async (baseUrl, store) => {
-      seedRecords(store, 3);
-
-      const defaults = await (await globalThis.fetch(`${baseUrl}/api/requirement-analysis/records`)).json() as {
-        page: number; pageSize: number; records: unknown[];
-      };
-      expect(defaults.page).toBe(1);
-      expect(defaults.pageSize).toBe(10);
-      expect(defaults.records).toHaveLength(3);
-
-      const capped = await (await globalThis.fetch(`${baseUrl}/api/requirement-analysis/records?pageSize=100`)).json() as { pageSize: number };
-      expect(capped.pageSize).toBe(50);
-
-      const invalid = await (await globalThis.fetch(`${baseUrl}/api/requirement-analysis/records?page=-2&pageSize=abc`)).json() as { page: number; pageSize: number };
-      expect(invalid.page).toBe(1);
-      expect(invalid.pageSize).toBe(10);
-    });
-  });
-});
-
 describe("GET/PATCH/DELETE /api/requirement-analysis/records/:id", () => {
   it("GET 单条返回完整记录，不存在返回 404 统一错误格式", async () => {
-    await withServer(async (baseUrl) => {
-      const created = await createRecord(baseUrl);
-      const id = created.body.record!.id;
+    await withServer(async (baseUrl, store) => {
+      createRecordDirectly(store);
+      const records = store.listRecords();
+      expect(records).toHaveLength(1);
+      const id = records[0].id;
 
       const found = await (await globalThis.fetch(`${baseUrl}/api/requirement-analysis/records/${id}`)).json() as {
         success: boolean; record: AnalysisRecord;
@@ -194,9 +88,9 @@ describe("GET/PATCH/DELETE /api/requirement-analysis/records/:id", () => {
   });
 
   it("PATCH 更新名称与图表类型并刷新 updatedAt；空白名不改名；未传 chartType 保持原值", async () => {
-    await withServer(async (baseUrl) => {
-      const created = await createRecord(baseUrl, postBody({ chartType: "tree" }));
-      const record = created.body.record!;
+    await withServer(async (baseUrl, store) => {
+      createRecordDirectly(store, { chartType: "tree" });
+      const record = store.listRecords()[0];
 
       const patched = await globalThis.fetch(`${baseUrl}/api/requirement-analysis/records/${record.id}`, {
         method: "PATCH",
@@ -228,9 +122,9 @@ describe("GET/PATCH/DELETE /api/requirement-analysis/records/:id", () => {
   });
 
   it("PATCH 非法 chartType 返回 400，不静默覆盖原值", async () => {
-    await withServer(async (baseUrl) => {
-      const created = await createRecord(baseUrl, postBody({ chartType: "tree" }));
-      const record = created.body.record!;
+    await withServer(async (baseUrl, store) => {
+      createRecordDirectly(store, { chartType: "tree" });
+      const record = store.listRecords()[0];
 
       const invalid = await globalThis.fetch(`${baseUrl}/api/requirement-analysis/records/${record.id}`, {
         method: "PATCH",
@@ -247,9 +141,9 @@ describe("GET/PATCH/DELETE /api/requirement-analysis/records/:id", () => {
   });
 
   it("DELETE 删除后 GET 返回 404；删除不存在的记录同样 404（与 GET 对齐）", async () => {
-    await withServer(async (baseUrl) => {
-      const created = await createRecord(baseUrl);
-      const id = created.body.record!.id;
+    await withServer(async (baseUrl, store) => {
+      createRecordDirectly(store);
+      const id = store.listRecords()[0].id;
 
       const deleted = await globalThis.fetch(`${baseUrl}/api/requirement-analysis/records/${id}`, { method: "DELETE" });
       expect(deleted.status).toBe(200);
@@ -261,12 +155,35 @@ describe("GET/PATCH/DELETE /api/requirement-analysis/records/:id", () => {
   });
 
   it("重启后记录仍在（store 从磁盘恢复，路由层无状态）", async () => {
-    await withServer(async (baseUrl, _store, storePath) => {
-      const created = await createRecord(baseUrl);
-      const id = created.body.record!.id;
+    await withServer(async (baseUrl, store, storePath) => {
+      createRecordDirectly(store);
+      const id = store.listRecords()[0].id;
       // 同一路径新实例即可读到，等价于进程重启后恢复
       const reopened = new RequirementAnalysisStore(storePath, { persistDebounceMs: 0 });
       expect(reopened.getRecord(id)?.name).toBe("登录需求");
+    });
+  });
+});
+
+/**
+ * 退役旧路由回归：POST /records 与 GET /records 列表已删除，应返回 404。
+ */
+describe("退役旧记录路由", () => {
+  it("POST /api/requirement-analysis/records 返回 404", async () => {
+    await withServer(async (baseUrl) => {
+      const response = await globalThis.fetch(`${baseUrl}/api/requirement-analysis/records`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "x", tree: validTree }),
+      });
+      expect(response.status).toBe(404);
+    });
+  });
+
+  it("GET /api/requirement-analysis/records 列表返回 404", async () => {
+    await withServer(async (baseUrl) => {
+      const response = await globalThis.fetch(`${baseUrl}/api/requirement-analysis/records`);
+      expect(response.status).toBe(404);
     });
   });
 });
