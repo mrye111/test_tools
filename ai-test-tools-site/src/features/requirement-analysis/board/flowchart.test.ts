@@ -96,10 +96,20 @@ describe('flowchart draftToElement', () => {
 describe('flowchart hit-test', () => {
   const el = flowchartEl()
 
-  it('节点命中返回 part: node', () => {
-    const hit = hitTestElement(el, 100, 100)
+  it('水平同 y 边命中返回 part: edge', () => {
+    // 源与目标在同一水平线：start(0,0) 与 process(200,0)
+    // 图元原点在 (100,100)，折线退化为水平线：从 (180,100) 到 (220,100)
+    const horizontal: FlowchartElement = {
+      ...flowchartEl(),
+      nodes: [
+        { id: 'start', kind: 'start' as FlowchartNodeKind, text: '开始', x: 0, y: 0 },
+        { id: 'process', kind: 'process' as FlowchartNodeKind, text: '处理', x: 200, y: 0 },
+      ],
+      edges: [{ id: 'e-horizontal', from: 'start', to: 'process' }],
+    }
+    const hit = hitTestElement(horizontal, 200, 103)
     expect(hit?.elementId).toBe('fc1')
-    expect(hit?.part).toBe('node')
+    expect(hit?.part).toBe('edge')
   })
 
   it('边命中返回 part: edge', () => {

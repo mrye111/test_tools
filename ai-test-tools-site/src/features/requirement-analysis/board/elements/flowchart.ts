@@ -142,7 +142,7 @@ function drawEdge(
   const toBounds = nodeBounds(to)
   const midX = (from.x + to.x) / 2
 
-  // 折线：从源节点中心出发，水平到 midX，再垂直到目标 y，最后水平到目标节点边界
+  // 折线：从源节点边界出发，水平到 midX，再垂直到目标 y，最后水平到目标节点边界
   const p1 = rectIntersection(from.x, from.y, fromBounds.x, fromBounds.y, fromBounds.w, fromBounds.h)
   const p2 = { x: midX, y: from.y }
   const p3 = { x: midX, y: to.y }
@@ -155,32 +155,21 @@ function drawEdge(
   } else {
     p4.x = toBounds.x + toBounds.w
   }
-  // 如果源节点与目标节点在水平方向重叠，简化路径从源边界直接到目标边界
-  const verticalOverlap = fromBounds.x < toBounds.x + toBounds.w && fromBounds.x + fromBounds.w > toBounds.x
-  const horizontalPass = verticalOverlap && Math.abs(from.y - to.y) <= (fromBounds.h + toBounds.h) / 2
 
   ctx.strokeStyle = edgeStroke
   ctx.lineWidth = 1.5
   ctx.beginPath()
-  if (horizontalPass) {
-    // 源与目标在同一水平带，直接水平连接
-    ctx.moveTo(p1.x, p1.y)
-    ctx.lineTo(p4.x, p4.y)
-  } else {
-    ctx.moveTo(p1.x, p1.y)
-    ctx.lineTo(p2.x, p2.y)
-    ctx.lineTo(p3.x, p3.y)
-    ctx.lineTo(p4.x, p4.y)
-  }
+  ctx.moveTo(p1.x, p1.y)
+  ctx.lineTo(p2.x, p2.y)
+  ctx.lineTo(p3.x, p3.y)
+  ctx.lineTo(p4.x, p4.y)
   ctx.stroke()
 
   drawArrow(ctx, p3.x, p3.y, p4.x, p4.y)
 
   if (label) {
     // label 放在实际路径中点（折线总长度中点）
-    const segments = horizontalPass
-      ? [{ x: p1.x, y: p1.y }, { x: p4.x, y: p4.y }]
-      : [{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }, { x: p3.x, y: p3.y }, { x: p4.x, y: p4.y }]
+    const segments = [{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }, { x: p3.x, y: p3.y }, { x: p4.x, y: p4.y }]
     const totalLen = segments.slice(1).reduce((sum, seg, i) => {
       const dx = seg.x - segments[i].x
       const dy = seg.y - segments[i].y
