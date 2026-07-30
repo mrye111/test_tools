@@ -138,6 +138,60 @@ describe('ChatView', () => {
     })
   })
 
+  it('流式输出期间同一条消息 content 增长时触发滚动到锚点', async () => {
+    const scrollIntoView = vi.fn()
+    // jsdom 未实现 scrollIntoView，挂到 Element.prototype 上捕获
+    const originalScrollIntoView = window.Element.prototype.scrollIntoView
+    window.Element.prototype.scrollIntoView = scrollIntoView
+
+    const messages: ChatMessageView[] = [
+      {
+        id: 'msg-assistant-stream',
+        role: 'assistant',
+        content: '开始',
+        reasoning: null,
+        status: 'streaming',
+        agentTemplate: 'mindmap',
+        files: [],
+      },
+    ]
+
+    // 先设置 mock 再 render，避免 useChatStream 返回 undefined
+    mockUseChatStream.mockReturnValue(makeMock({ messages: [], streaming: false }))
+    const { rerender } = renderChatView()
+
+    // 首次 render 不算流式增长，不触发滚动
+    mockUseChatStream.mockReturnValue(makeMock({ messages, streaming: true }))
+    rerender(
+      <MemoryRouter initialEntries={['/requirement-analysis/chat/sess-123']}>
+        <Routes>
+          <Route path="/requirement-analysis/chat/:sessionId" element={<ChatView />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    // 流式期间 content 变长，应触发滚动
+    mockUseChatStream.mockReturnValue(
+      makeMock({
+        messages: [{ ...messages[0], content: '开始生成思维导图' }],
+        streaming: true,
+      }),
+    )
+    rerender(
+      <MemoryRouter initialEntries={['/requirement-analysis/chat/sess-123']}>
+        <Routes>
+          <Route path="/requirement-analysis/chat/:sessionId" element={<ChatView />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalled()
+    })
+
+    window.Element.prototype.scrollIntoView = originalScrollIntoView
+  })
+
   it('error 消息显示重试按钮且点击调用 retry', async () => {
     const retry = vi.fn()
     const messages: ChatMessageView[] = [

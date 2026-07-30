@@ -16,18 +16,19 @@ export function ChatView() {
 
   const [text, setText] = useState('')
   // useChatStream 未暴露会话 agentTemplate，默认 'mindmap'；T14 再做模板切换。
-  const selectedTemplate = useState<AgentTemplate>('mindmap')[0]
+  const [selectedTemplate] = useState<AgentTemplate>('mindmap')
   const messagesRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
   const prevMessageCountRef = useRef(messages.length)
+  const prevLastMessageContentRef = useRef('')
 
   // 挂载或 sessionId 变化时加载历史
   useEffect(() => {
     loadHistory()
   }, [loadHistory, sessionId])
 
-  // 自动滚动到底部：新增消息或流式中，且用户未上翻超过 100px
+  // 自动滚动到底部：新增消息、流式内容增长或流式中，且用户未上翻超过 100px
   useEffect(() => {
     const container = messagesRef.current
     const bottom = bottomRef.current
@@ -37,11 +38,18 @@ export function ChatView() {
       return container.scrollHeight - container.scrollTop - container.clientHeight <= 100
     }
 
-    if (messages.length !== prevMessageCountRef.current || streaming) {
+    const lastMessage = messages[messages.length - 1]
+    const lastContent = lastMessage?.content ?? ''
+    const messageCountChanged = messages.length !== prevMessageCountRef.current
+    const streamingContentGrew =
+      streaming && lastMessage?.role === 'assistant' && lastContent.length > prevLastMessageContentRef.current.length
+
+    if (messageCountChanged || streamingContentGrew || streaming) {
       if (nearBottomRef.current) {
         bottom.scrollIntoView({ behavior: 'smooth', block: 'end' })
       }
       prevMessageCountRef.current = messages.length
+      prevLastMessageContentRef.current = lastContent
     }
 
     const handleScroll = () => {
@@ -50,7 +58,7 @@ export function ChatView() {
 
     container.addEventListener('scroll', handleScroll)
     return () => container.removeEventListener('scroll', handleScroll)
-  }, [messages.length, streaming])
+  }, [messages, streaming])
 
   const handleSubmit = async () => {
     const trimmed = text.trim()

@@ -16,6 +16,7 @@ export function FileCard({ file }: FileCardProps) {
   const navigate = useNavigate()
   const [saved, setSaved] = useState(file.savedToLibrary)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const meta = AGENT_TEMPLATES.find((t) => t.kind === file.kind)
   const Icon = meta?.icon
@@ -27,14 +28,15 @@ export function FileCard({ file }: FileCardProps) {
   const handleSave = async () => {
     if (saved || saving) return
     setSaving(true)
+    setError(null)
     try {
       const result = await saveToLibrary(file.sessionFileId)
       setSaved(true)
       window.dispatchEvent(
         new CustomEvent('ra-library-count', { detail: { count: result.libraryCount } }),
       )
-    } catch (error) {
-      alert(error instanceof Error ? error.message : '保存失败')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存失败')
     } finally {
       setSaving(false)
     }
@@ -68,6 +70,7 @@ export function FileCard({ file }: FileCardProps) {
         >
           {saved ? '已保存' : saving ? '保存中…' : '保存到文件库'}
         </button>
+        {error && <span className="ra-chat-file-card-error">{error}</span>}
       </div>
     </div>
   )
