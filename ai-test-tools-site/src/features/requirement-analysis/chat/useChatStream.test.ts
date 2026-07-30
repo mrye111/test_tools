@@ -88,6 +88,7 @@ describe('useChatStream', () => {
     expect(result.current.messages).toHaveLength(2)
     expect(result.current.messages[0].role).toBe('user')
     expect(result.current.messages[0].content).toBe('hello')
+    expect(result.current.messages[0].agentTemplate).toBe('mindmap')
     expect(result.current.messages[1].role).toBe('assistant')
     expect(result.current.messages[1].status).toBe('streaming')
   })
@@ -172,12 +173,12 @@ describe('useChatStream', () => {
     expect(result.current.streaming).toBe(false)
   })
 
-  it('retry 用前一条 user 消息重新发送一轮', async () => {
+  it('retry 用前一条 user 消息的原文与模板重发一轮', async () => {
     const stream = createStreamEmitter()
     const { result } = renderHook(() => useChatStream('s-1'))
 
     await act(async () => {
-      const sendPromise = result.current.send('hello', 'mindmap')
+      const sendPromise = result.current.send('hello', 'orthogonal')
       await Promise.resolve()
       stream.emit({ type: 'error', message: '失败' })
       stream.done({ sessionId: 's-1', messageId: 'm-1', file: null })
@@ -197,8 +198,13 @@ describe('useChatStream', () => {
     expect(result.current.messages).toHaveLength(4)
     expect(result.current.messages[2].role).toBe('user')
     expect(result.current.messages[2].content).toBe('hello')
+    expect(result.current.messages[2].agentTemplate).toBe('orthogonal')
     expect(result.current.messages[3].role).toBe('assistant')
     expect(result.current.messages[3].status).toBe('done')
+
+    // 验证 chatStream 第二次调用使用了相同的模板
+    const secondCall = mockChatStream.mock.calls[1]
+    expect(secondCall?.[0]).toMatchObject({ text: 'hello', agentTemplate: 'orthogonal' })
   })
 
   it('loadHistory 将服务端消息映射为视图模型并保留 error 残骸', async () => {
