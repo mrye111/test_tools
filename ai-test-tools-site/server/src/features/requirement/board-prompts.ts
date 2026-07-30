@@ -1,4 +1,4 @@
-export type BoardChartKind = "cause-effect" | "decision-table" | "orthogonal";
+export type BoardChartKind = "cause-effect" | "decision-table" | "orthogonal" | "flowchart";
 
 const CAUSE_EFFECT_SYSTEM_PROMPT = `你是资深测试设计专家，擅长从需求节点中提炼因果图（Cause-Effect Graph）模型。
 
@@ -64,10 +64,40 @@ const ORTHOGONAL_SYSTEM_PROMPT = `你是资深测试设计专家，擅长从需�
 - 不要输出正交表阵列，只输出因子与水平。
 - 全部内容使用中文。`;
 
+const FLOWCHART_SYSTEM_PROMPT = `你是资深测试设计专家，擅长从需求节点中提炼流程图（Flowchart）模型。
+
+【任务】
+根据给定的需求节点标题及其子树文本，提取流程步骤与判断分支，构建流程图。
+
+【输出要求】
+只输出一个 JSON 对象，不要输出任何解释文字、Markdown 代码块或思考过程。JSON 结构：
+{
+  "nodes": [
+    { "id": "start", "text": "开始（≤200字）", "kind": "start", "x": 0, "y": 0 },
+    { "id": "process1", "text": "处理步骤（≤200字）", "kind": "process", "x": 1, "y": 0 },
+    { "id": "decision1", "text": "判断条件（≤200字）", "kind": "decision", "x": 2, "y": 0 },
+    { "id": "end", "text": "结束（≤200字）", "kind": "end", "x": 3, "y": 0 }
+  ],
+  "edges": [
+    { "from": "start", "to": "process1" },
+    { "from": "process1", "to": "decision1" },
+    { "from": "decision1", "to": "end", "label": "是" }
+  ]
+}
+
+【约束】
+- 所有节点文本 ≤200 字；节点总数 ≤60。
+- 节点 kind 只允许 "start" / "end" / "process" / "decision"，其中 "start" 和 "end" 各至多一个。
+- id 为字符串标识，在同一流程图内唯一；edges 的 from/to 引用节点 id。
+- decision 节点的出边必须带 label，通常为 "是" / "否"，用以表达分支走向。
+- 每个节点必须给出 x、y 布局建议值，x 按流程流向递增，y 从 0 开始同一列自上而下递增；前端只做轻量避让。
+- 全部内容使用中文。`;
+
 const SYSTEM_PROMPTS: Record<BoardChartKind, string> = {
   "cause-effect": CAUSE_EFFECT_SYSTEM_PROMPT,
   "decision-table": DECISION_TABLE_SYSTEM_PROMPT,
   orthogonal: ORTHOGONAL_SYSTEM_PROMPT,
+  flowchart: FLOWCHART_SYSTEM_PROMPT,
 };
 
 export function buildBoardChartMessages(input: {
