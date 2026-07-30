@@ -119,4 +119,19 @@ describe('NewChatHome', () => {
       expect(screen.getByTestId('location')).toHaveTextContent('/requirement-analysis/chat/sess-abc')
     })
   })
+
+  it('发送成功后无 sessionId 时给出可见错误提示', async () => {
+    const send = vi.fn().mockResolvedValue(undefined)
+    mockUseChatStream.mockReturnValue(makeMock({ send, lastSessionId: null }))
+    renderWithRouter()
+
+    const textarea = screen.getByPlaceholderText('输入你要分析的需求，或粘贴需求文档文本')
+    fireEvent.change(textarea, { target: { value: '生成测试分析' } })
+
+    fireEvent.click(screen.getByLabelText('发送'))
+
+    await waitFor(() => {
+      expect(screen.getByText('会话创建异常，请重试')).toBeInTheDocument()
+    })
+  })
 })

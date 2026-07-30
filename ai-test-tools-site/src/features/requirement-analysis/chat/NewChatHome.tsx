@@ -57,6 +57,8 @@ export function NewChatHome() {
       const sessionId = lastSessionIdRef.current
       if (sessionId) {
         navigate(`/requirement-analysis/chat/${sessionId}`)
+      } else {
+        setSubmitError('会话创建异常，请重试')
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : '发送失败，请重试'
@@ -73,13 +75,13 @@ export function NewChatHome() {
   }, [])
 
   return (
-    <div className="ra-newchat">
-      <div className="ra-newchat-hero">
-        <h1 className="ra-newchat-title">你好，开始一次需求分析</h1>
-        <p className="ra-newchat-subtitle">选择智能体模板，输入需求，AI 为你产出测试设计图表</p>
+    <div className="ra-chat-home">
+      <div className="ra-chat-home-hero">
+        <h1 className="ra-chat-home-title">你好，开始一次需求分析</h1>
+        <p className="ra-chat-home-subtitle">选择智能体模板，输入需求，AI 为你产出测试设计图表</p>
       </div>
 
-      <div className="ra-newchat-composer">
+      <div className="ra-chat-home-composer">
         <AgentTemplateChips
           selected={template}
           onSelect={handleTemplateSelect}
@@ -96,24 +98,24 @@ export function NewChatHome() {
         />
       </div>
 
-      <div className="ra-newchat-examples">
-        <p className="ra-newchat-examples-title">试试这些示例</p>
-        <div className="ra-newchat-examples-grid" role="list">
+      <div className="ra-chat-home-examples">
+        <p className="ra-chat-home-examples-title">试试这些示例</p>
+        <div className="ra-chat-home-examples-grid" role="list">
           {EXAMPLES.map((example) => (
             <button
               key={example.title}
               type="button"
               role="listitem"
-              className="ra-example-card"
+              className="ra-chat-example-card"
               onClick={() => handleExampleClick(example.prompt)}
             >
-              <span className="ra-example-card-title">{example.title}</span>
+              <span className="ra-chat-example-card-title">{example.title}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {submitError && <p className="ra-newchat-error">{submitError}</p>}
+      {submitError && <p className="ra-chat-home-error">{submitError}</p>}
 
       <TemplateCenterModal open={modalOpen} onClose={() => setModalOpen(false)} />
     </div>

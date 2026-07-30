@@ -19,7 +19,7 @@ export function AgentTemplateChips({
   templates = AGENT_TEMPLATES,
 }: AgentTemplateChipsProps) {
   return (
-    <div className="ra-chips" role="list" aria-label="智能体模板">
+    <div className="ra-chat-chips" role="list" aria-label="智能体模板">
       {templates.map((template) => {
         const Icon = template.icon
         const isSelected = selected === template.kind
@@ -28,26 +28,26 @@ export function AgentTemplateChips({
             key={template.kind}
             type="button"
             role="listitem"
-            className={`ra-chip${isSelected ? ' is-selected' : ''}`}
+            className={`ra-chat-chip${isSelected ? ' is-selected' : ''}`}
             aria-pressed={isSelected}
             onClick={() => onSelect(template.kind)}
           >
-            <span className={`ra-chip-icon bg-gradient-to-r ${template.gradient}`}>
+            <span className={`ra-chat-chip-icon bg-gradient-to-r ${template.gradient}`}>
               <Icon className="h-3.5 w-3.5" />
             </span>
-            <span className="ra-chip-label">{template.label}</span>
+            <span className="ra-chat-chip-label">{template.label}</span>
           </button>
         )
       })}
 
       <button
         type="button"
-        className="ra-chip ra-chip-more"
+        className="ra-chat-chip ra-chat-chip-more"
         onClick={onMore}
         aria-label="更多智能体"
       >
-        <span className="ra-chip-label">更多智能体</span>
-        <ChevronRight className="ra-chip-more-icon" />
+        <span className="ra-chat-chip-label">更多智能体</span>
+        <ChevronRight className="ra-chat-chip-more-icon" />
       </button>
     </div>
   )

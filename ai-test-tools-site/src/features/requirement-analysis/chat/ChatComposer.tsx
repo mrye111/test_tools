@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useRef, useCallback, useEffect } from 'react'
 import { Send, Loader2 } from 'lucide-react'
 import type { AgentTemplate, AgentTemplateMeta } from './agent-templates'
 
@@ -9,7 +9,6 @@ interface ChatComposerProps {
   onChange: (value: string) => void
   template: AgentTemplate
   templates: AgentTemplateMeta[]
-  onTemplateChange?: (template: AgentTemplate) => void
   onSubmit: () => void
   disabled?: boolean
   size?: ComposerSize
@@ -23,7 +22,6 @@ interface ChatComposerProps {
 export function ChatComposer(props: ChatComposerProps) {
   const { value, onChange, template, templates, onSubmit, disabled = false, size = 'compact' } = props
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [isShiftPressed, setIsShiftPressed] = useState(false)
 
   // 多行文本框自动增高
   useEffect(() => {
@@ -34,23 +32,13 @@ export function ChatComposer(props: ChatComposerProps) {
   }, [value])
 
   const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Shift') {
-      setIsShiftPressed(true)
-      return
-    }
-    if (event.key === 'Enter' && !isShiftPressed && !disabled) {
+    if (event.key === 'Enter' && !event.shiftKey && !disabled) {
       event.preventDefault()
       if (value.trim()) {
         onSubmit()
       }
     }
-  }, [isShiftPressed, disabled, value, onSubmit])
-
-  const handleKeyUp = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Shift') {
-      setIsShiftPressed(false)
-    }
-  }, [])
+  }, [disabled, value, onSubmit])
 
   const handleChange = useCallback((event: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(event.target.value)
@@ -61,45 +49,44 @@ export function ChatComposer(props: ChatComposerProps) {
 
   return (
     <div
-      className={`ra-composer ${isLarge ? 'ra-composer-large' : 'ra-composer-compact'}`}
+      className={`ra-chat-composer ${isLarge ? 'ra-chat-composer-large' : 'ra-chat-composer-compact'}`}
       data-disabled={disabled}
     >
       <textarea
         ref={textareaRef}
-        className="ra-composer-input"
+        className="ra-chat-composer-input"
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
-        onKeyUp={handleKeyUp}
         placeholder="输入你要分析的需求，或粘贴需求文档文本"
         rows={isLarge ? 4 : 2}
         disabled={disabled}
         aria-label="需求分析输入框"
       />
 
-      <div className="ra-composer-footer">
-        <div className="ra-composer-meta">
+      <div className="ra-chat-composer-footer">
+        <div className="ra-chat-composer-meta">
           {currentTemplate ? (
             <>
-              <span className={`ra-composer-dot bg-gradient-to-r ${currentTemplate.gradient}`} />
-              <span className="ra-composer-template-name">{currentTemplate.label}</span>
+              <span className={`ra-chat-composer-dot bg-gradient-to-r ${currentTemplate.gradient}`} />
+              <span className="ra-chat-composer-template-name">{currentTemplate.label}</span>
             </>
           ) : (
-            <span className="ra-composer-template-name">智能助手</span>
+            <span className="ra-chat-composer-template-name">智能助手</span>
           )}
         </div>
 
         <button
           type="button"
-          className="ra-composer-send"
+          className="ra-chat-composer-send"
           aria-label="发送"
           onClick={onSubmit}
           disabled={disabled || !value.trim()}
         >
           {disabled ? (
-            <Loader2 className="ra-composer-send-icon animate-spin" />
+            <Loader2 className="ra-chat-composer-send-icon animate-spin" />
           ) : (
-            <Send className="ra-composer-send-icon" />
+            <Send className="ra-chat-composer-send-icon" />
           )}
         </button>
       </div>
