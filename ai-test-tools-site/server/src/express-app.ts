@@ -7,6 +7,8 @@ import { createInterface } from "node:readline";
 import { registerTestCaseRoutes } from "./features/testcase/routes.js";
 import { registerDataFactoryRoutes } from "./features/datafactory/routes.js";
 import { registerRequirementRoutes } from "./features/requirement/routes.js";
+import { registerChatRoutes } from "./features/requirement/chat/routes.js";
+import { bootstrapChat } from "./features/requirement/chat/migrate.js";
 import { registerLogRoutes } from "./log-routes.js";
 import { traceMiddleware } from "./middleware/trace.js";
 import { AppError, badRequest, internal, notFound } from "./app-error.js";
@@ -39,7 +41,7 @@ function toolErrorToAppError(code: string, message: string): AppError {
   }
 }
 
-export function createMcpExpressApp(runtime = new JmeterMcpRuntime()): Express {
+export async function createMcpExpressApp(runtime = new JmeterMcpRuntime()): Promise<Express> {
   const app = express();
   const sessions = new Map<string, SseSession>();
   const generatedRoot = resolve(process.cwd(), "server", "generated");
@@ -63,6 +65,8 @@ export function createMcpExpressApp(runtime = new JmeterMcpRuntime()): Express {
 
   registerTestCaseRoutes(app);
   registerDataFactoryRoutes(app);
+  const chatRepo = await bootstrapChat();
+  registerChatRoutes(app, chatRepo);
   registerRequirementRoutes(app);
   registerLogRoutes(app);
 

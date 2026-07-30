@@ -3,6 +3,7 @@ import {
   type ChatMessage,
   type ChatRepository,
   type ChatSession,
+  type CreateLibraryFileInput,
   type CreateMessageInput,
   type CreateSessionFileInput,
   type CreateSessionInput,
@@ -217,25 +218,42 @@ export class MemoryChatRepository implements ChatRepository {
     return found ? deepClone(found) : null;
   }
 
-  async createLibraryFile(source: SessionFile): Promise<LibraryFile> {
+  async createLibraryFile(source: SessionFile | CreateLibraryFileInput): Promise<LibraryFile> {
     if (this.libraryFiles.size >= MAX_LIBRARY_FILES) {
       throw new Error(
         `文件库数量已达上限 ${MAX_LIBRARY_FILES}，无法继续创建`,
       );
     }
-    const session = this.sessions.get(source.sessionId);
+    const session = "sessionId" in source ? this.sessions.get(source.sessionId) : undefined;
+    const sourceSessionTitle = "sourceSessionTitle" in source
+      ? source.sourceSessionTitle
+      : session?.title ?? null;
     const time = now();
     const library: LibraryFile = {
       id: newId("lf_"),
       kind: source.kind,
       title: source.title,
       payload: deepClone(source.payload),
-      sourceSessionTitle: session?.title ?? null,
+      sourceSessionTitle,
       createdAt: time,
       updatedAt: time,
     };
     this.libraryFiles.set(library.id, library);
     return deepClone(library);
+  }
+
+  async updateLibraryFileBoard(id: string, board: unknown): Promise<LibraryFile> {
+    const existing = this.libraryFiles.get(id);
+    if (!existing) {
+      throw new Error(`文件库文件不存在: ${id}`);
+    }
+    const updated: LibraryFile = {
+      ...existing,
+      payload: deepClone(board),
+      updatedAt: now(),
+    };
+    this.libraryFiles.set(id, updated);
+    return updated;
   }
 
   async deleteLibraryFile(id: string): Promise<void> {

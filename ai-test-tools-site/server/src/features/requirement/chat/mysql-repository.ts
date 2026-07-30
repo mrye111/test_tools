@@ -5,6 +5,7 @@ import {
   type ChatMessage,
   type ChatRepository,
   type ChatSession,
+  type CreateLibraryFileInput,
   type CreateMessageInput,
   type CreateSessionFileInput,
   type CreateSessionInput,
@@ -385,14 +386,17 @@ export class MysqlChatRepository implements ChatRepository {
     return rows[0] ? toLibraryFile(rows[0]) : null;
   }
 
-  async createLibraryFile(source: SessionFile): Promise<LibraryFile> {
+  async createLibraryFile(source: SessionFile | CreateLibraryFileInput): Promise<LibraryFile> {
     const count = await this.countLibraryFiles();
     if (count >= MAX_LIBRARY_FILES) {
       throw new Error(
         `文件库数量已达上限 ${MAX_LIBRARY_FILES}，无法继续创建`,
       );
     }
-    const session = await this.getSession(source.sessionId);
+    const session = "sessionId" in source ? await this.getSession(source.sessionId) : null;
+    const sourceSessionTitle = "sourceSessionTitle" in source
+      ? source.sourceSessionTitle
+      : session?.title ?? null;
     const id = newId("lf_");
     const time = now();
     await this.pool.execute(
@@ -402,7 +406,7 @@ export class MysqlChatRepository implements ChatRepository {
         source.kind,
         source.title,
         JSON.stringify(source.payload),
-        session?.title ?? null,
+        sourceSessionTitle,
         time,
         time,
       ],
@@ -412,6 +416,22 @@ export class MysqlChatRepository implements ChatRepository {
       throw new Error("创建文件库文件后读取失败");
     }
     return library;
+  }
+
+  async updateLibraryFileBoard(id: string, board: unknown): Promise<LibraryFile> {
+    const time = now();
+    const [result] = await this.pool.execute(
+      "UPDATE ra_library_files SET payload = ?, updated_at = ? WHERE id = ?",
+      [JSON.stringify(board), time, id],
+    );
+    if ((result as { affectedRows: number }).affectedRows === 0) {
+      throw new Error(`文件库文件不存在: ${id}`);
+    }
+    const file = await this.getLibraryFile(id);
+    if (!file) {
+      throw new Error(`文件库文件不存在: ${id}`);
+    }
+    return file;
   }
 
   async deleteLibraryFile(id: string): Promise<void> {

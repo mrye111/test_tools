@@ -75,6 +75,14 @@ export interface CreateMessageInput {
   status: MessageStatus;
 }
 
+/** 创建文件库文件入参（支持从会话文件深拷贝或迁移直接构造） */
+export interface CreateLibraryFileInput {
+  kind: AgentTemplate;
+  title: string;
+  payload: unknown;
+  sourceSessionTitle: string | null;
+}
+
 /** 创建会话文件入参 */
 export interface CreateSessionFileInput {
   sessionId: string;
@@ -113,7 +121,8 @@ export interface ChatRepository {
   // 文件库
   listLibraryFiles(): Promise<LibraryFile[]>;
   getLibraryFile(id: string): Promise<LibraryFile | null>;
-  createLibraryFile(source: SessionFile): Promise<LibraryFile>;
+  createLibraryFile(source: SessionFile | CreateLibraryFileInput): Promise<LibraryFile>;
+  updateLibraryFileBoard(id: string, board: unknown): Promise<LibraryFile>;
   deleteLibraryFile(id: string): Promise<void>;
   countLibraryFiles(): Promise<number>;
   markSavedToLibrary(sessionFileId: string): Promise<SessionFile>;

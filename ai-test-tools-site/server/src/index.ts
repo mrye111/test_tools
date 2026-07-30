@@ -10,7 +10,7 @@ if (mode.toLowerCase() === "stdio") {
 } else {
   const portArg = mode.toLowerCase() === "http" ? process.argv[3] : process.argv[2];
   const port = Number(portArg ?? process.env.PORT ?? 3000);
-  const app = createMcpExpressApp(runtime);
+  const app = await createMcpExpressApp(runtime);
   app.listen(port, () => {
     logger.info({ port }, "JMeter MCP TypeScript server started");
     logger.info({ endpoint: `/sse` }, "SSE endpoint ready");
