@@ -10,6 +10,7 @@ import type {
   CauseEffectElement,
   DecisionTableConditionValue,
   DecisionTableElement,
+  FlowchartElement,
   OrthogonalElement,
 } from './types'
 import { BOARD_LIMITS, CE_NODE_H, CE_NODE_W } from './types'
@@ -24,6 +25,7 @@ const DEFAULT_DIMENSIONS: Record<Exclude<BoardChartKind, 'mindmap-ref'>, { w: nu
   'cause-effect': { w: 480, h: 320 },
   'decision-table': { w: 400, h: 200 },
   'orthogonal': { w: 400, h: 240 },
+  'flowchart': { w: 480, h: 320 },
 }
 
 function generateId(): string {
@@ -43,6 +45,33 @@ function isStringArray(value: unknown): value is string[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function validateFlowchartNode(node: unknown, prefix: string): DraftValidationError[] {
+  const errors: DraftValidationError[] = []
+  if (!isRecord(node)) {
+    errors.push({ field: prefix, message: '节点必须是对象' })
+    return errors
+  }
+  if (!isString(node.id) || node.id.trim() === '') {
+    errors.push({ field: `${prefix}.id`, message: '节点 id 不能为空' })
+  }
+  if (!isString(node.text) || node.text.length > BOARD_LIMITS.MAX_TEXT_LENGTH) {
+    errors.push({ field: `${prefix}.text`, message: `节点文本必须是长度不超过 ${BOARD_LIMITS.MAX_TEXT_LENGTH} 的字符串` })
+  }
+  const kind = node.kind
+  if (!isString(kind) || !['start', 'end', 'process', 'decision'].includes(kind)) {
+    errors.push({ field: `${prefix}.kind`, message: '节点 kind 必须是 start/end/process/decision 之一' })
+  }
+  const x = node.x
+  const y = node.y
+  if (typeof x !== 'number' || !Number.isFinite(x)) {
+    errors.push({ field: `${prefix}.x`, message: '节点 x 坐标必须是有限数字' })
+  }
+  if (typeof y !== 'number' || !Number.isFinite(y)) {
+    errors.push({ field: `${prefix}.y`, message: '节点 y 坐标必须是有限数字' })
+  }
+  return errors
 }
 
 function validateNode(node: unknown, prefix: string): DraftValidationError[] {
@@ -184,6 +213,37 @@ function validateDraft(draft: unknown, chartKind: BoardChartKind): DraftValidati
     return errors
   }
 
+  if (chartKind === 'flowchart') {
+    const nodes = Array.isArray(draft.nodes) ? draft.nodes : []
+    const edges = Array.isArray(draft.edges) ? draft.edges : []
+    if (nodes.length === 0) {
+      errors.push({ field: 'nodes', message: '流程图至少需要一个节点' })
+    }
+    if (nodes.length > BOARD_LIMITS.MAX_CE_NODES) {
+      errors.push({ field: 'nodes', message: `流程图节点数超过上限 ${BOARD_LIMITS.MAX_CE_NODES}` })
+    }
+    nodes.forEach((node, index) => {
+      errors.push(...validateFlowchartNode(node, `nodes[${index}]`))
+    })
+    const validNodeIds = new Set(nodes.filter((n): n is Record<string, unknown> => isRecord(n) && isString(n.id)).map((n) => String(n.id)))
+    edges.forEach((edge, index) => {
+      if (!isRecord(edge)) {
+        errors.push({ field: `edges[${index}]`, message: '边必须是对象' })
+        return
+      }
+      if (!isString(edge.from) || edge.from.trim() === '' || !validNodeIds.has(edge.from)) {
+        errors.push({ field: `edges[${index}].from`, message: '边 from 必须引用存在的节点 id' })
+      }
+      if (!isString(edge.to) || edge.to.trim() === '' || !validNodeIds.has(edge.to)) {
+        errors.push({ field: `edges[${index}].to`, message: '边 to 必须引用存在的节点 id' })
+      }
+      if (edge.label !== undefined && (!isString(edge.label) || edge.label.length > BOARD_LIMITS.MAX_TEXT_LENGTH)) {
+        errors.push({ field: `edges[${index}].label`, message: `边 label 必须是长度不超过 ${BOARD_LIMITS.MAX_TEXT_LENGTH} 的字符串` })
+      }
+    })
+    return errors
+  }
+
   return [{ field: 'chartKind', message: `不支持的图表类型 ${chartKind}` }]
 }
 
@@ -288,6 +348,10 @@ export function draftToElement(
     return element
   }
 
+  if (chartKind === 'flowchart') {
+    return buildFlowchartFromDraft(d, base)
+  }
+
   const element: OrthogonalElement = {
     ...base,
     kind: 'orthogonal',
@@ -299,6 +363,43 @@ export function draftToElement(
     rows: (d.rows as string[][]).map((row) => row.map((cell) => cell.slice(0, BOARD_LIMITS.MAX_TEXT_LENGTH))),
   }
   return element
+}
+
+function buildFlowchartFromDraft(draft: Record<string, unknown>, base: Omit<BoardElement, 'kind' | 'nodes' | 'edges' | 'conditions' | 'actions' | 'rules' | 'factors' | 'arrayName' | 'rows' | 'selectedNodeId'>): FlowchartElement {
+  const nodesInput = draft.nodes as Array<Record<string, unknown>>
+  const edgesInput = (draft.edges as Array<Record<string, unknown>> | undefined) ?? []
+  const idMap = new Map<string, string>()
+  const nodes = nodesInput.map((node) => {
+    const newId = generateId()
+    idMap.set(String(node.id), newId)
+    return {
+      id: newId,
+      kind: String(node.kind) as FlowchartElement['nodes'][number]['kind'],
+      text: String(node.text).slice(0, BOARD_LIMITS.MAX_TEXT_LENGTH),
+      x: Number(node.x),
+      y: Number(node.y),
+    }
+  })
+  const edges = edgesInput.map((edge) => ({
+    id: generateId(),
+    from: idMap.get(String(edge.from)) ?? String(edge.from),
+    to: idMap.get(String(edge.to)) ?? String(edge.to),
+    label: edge.label !== undefined ? String(edge.label).slice(0, BOARD_LIMITS.MAX_TEXT_LENGTH) : undefined,
+  }))
+  const maxX = Math.max(0, ...nodes.map((n) => n.x + CE_NODE_W / 2))
+  const maxY = Math.max(0, ...nodes.map((n) => n.y + CE_NODE_H / 2))
+  const minX = Math.min(0, ...nodes.map((n) => n.x - CE_NODE_W / 2))
+  const minY = Math.min(0, ...nodes.map((n) => n.y - CE_NODE_H / 2))
+  return {
+    ...base,
+    kind: 'flowchart',
+    x: base.x,
+    y: base.y,
+    w: Math.max(base.w, maxX - minX + 40),
+    h: Math.max(base.h, maxY - minY + 40),
+    nodes: nodes.map((n) => ({ ...n, x: n.x - minX + 20, y: n.y - minY + 20 })),
+    edges,
+  }
 }
 
 /** 构建需求树参考图元，用于空板自动占位；尺寸按真实布局树自适应 */

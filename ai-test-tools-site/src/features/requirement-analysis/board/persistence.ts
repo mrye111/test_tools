@@ -1,15 +1,4 @@
-import type {
-  Board,
-  BoardElement,
-  CauseEffectConstraint,
-  CauseEffectElement,
-  CauseEffectNodeRole,
-  DecisionTableConditionValue,
-  DecisionTableElement,
-  ElementKind,
-  MindmapRefElement,
-  OrthogonalElement,
-} from './types'
+import { BOARD_LIMITS, type Board, type BoardElement, type CauseEffectConstraint, type CauseEffectElement, type CauseEffectNodeRole, type DecisionTableConditionValue, type DecisionTableElement, type ElementKind, type FlowchartElement, type MindmapRefElement, type OrthogonalElement } from './types'
 
 /** 创建空白白板 */
 export function emptyBoard(): Board {
@@ -57,7 +46,7 @@ function isStringOrNull(value: unknown): value is string | null {
   return value === null || isString(value)
 }
 
-const VALID_ELEMENT_KINDS: ElementKind[] = ['mindmap-ref', 'cause-effect', 'decision-table', 'orthogonal']
+const VALID_ELEMENT_KINDS: ElementKind[] = ['mindmap-ref', 'cause-effect', 'decision-table', 'orthogonal', 'flowchart']
 
 function parseElement(raw: unknown): BoardElement | null {
   if (!isRecord(raw)) return null
@@ -108,6 +97,15 @@ function parseElement(raw: unknown): BoardElement | null {
       const rows = raw.rows.map(parseOrthogonalRow).filter((r): r is typeof r => r !== null)
       if (factors.length !== raw.factors.length || rows.length !== raw.rows.length) return null
       return { ...base, kind: 'orthogonal', factors, arrayName: raw.arrayName, rows } as OrthogonalElement
+    }
+    case 'flowchart': {
+      if (!Array.isArray(raw.nodes) || !Array.isArray(raw.edges)) return null
+      const nodes = raw.nodes.map(parseFlowchartNode).filter((n): n is typeof n => n !== null)
+      if (nodes.length !== raw.nodes.length) return null
+      const nodeIds = new Set(nodes.map((n) => n!.id))
+      const edges = raw.edges.map((e) => parseFlowchartEdge(e, nodeIds)).filter((e): e is typeof e => e !== null)
+      if (edges.length !== raw.edges.length) return null
+      return { ...base, kind: 'flowchart', nodes, edges } as FlowchartElement
     }
     default:
       return null
@@ -164,4 +162,32 @@ function parseOrthogonalRow(raw: unknown): string[] | null {
   const row = raw.map((v) => (isString(v) ? v : null)).filter((v): v is string => v !== null)
   if (row.length !== raw.length) return null
   return row
+}
+
+function parseFlowchartNode(raw: unknown): { id: string; kind: 'start' | 'end' | 'process' | 'decision'; text: string; x: number; y: number } | null {
+  if (!isRecord(raw)) return null
+  const id = raw.id
+  const kind = raw.kind
+  const text = raw.text
+  const x = raw.x
+  const y = raw.y
+  if (!isString(id) || id === '') return null
+  if (!isString(kind) || !['start', 'end', 'process', 'decision'].includes(kind)) return null
+  if (!isString(text) || text.length > BOARD_LIMITS.MAX_TEXT_LENGTH) return null
+  if (!isFiniteNumber(x) || !isFiniteNumber(y)) return null
+  return { id, kind: kind as 'start' | 'end' | 'process' | 'decision', text, x, y }
+}
+
+function parseFlowchartEdge(raw: unknown, nodeIds: Set<string>): { id: string; from: string; to: string; label?: string } | null {
+  if (!isRecord(raw)) return null
+  const id = raw.id
+  const from = raw.from
+  const to = raw.to
+  const label = raw.label
+  if (!isString(id) || id === '') return null
+  if (!isString(from) || from === '' || !nodeIds.has(from)) return null
+  if (!isString(to) || to === '' || !nodeIds.has(to)) return null
+  if (label !== undefined && !isString(label)) return null
+  if (label !== undefined && label.length > BOARD_LIMITS.MAX_TEXT_LENGTH) return null
+  return { id, from, to, label }
 }

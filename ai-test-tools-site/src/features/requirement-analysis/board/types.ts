@@ -13,7 +13,7 @@ export const BOARD_LIMITS = {
 export const CE_NODE_W = 160
 export const CE_NODE_H = 40
 
-export type ElementKind = 'mindmap-ref' | 'cause-effect' | 'decision-table' | 'orthogonal'
+export type ElementKind = 'mindmap-ref' | 'cause-effect' | 'decision-table' | 'orthogonal' | 'flowchart'
 
 export interface ElementBase {
   id: string
@@ -87,11 +87,35 @@ export interface OrthogonalElement extends ElementBase {
   rows: string[][]
 }
 
+export type FlowchartNodeKind = 'start' | 'end' | 'process' | 'decision'
+
+export interface FlowchartNode {
+  id: string
+  kind: FlowchartNodeKind
+  text: string
+  x: number
+  y: number
+}
+
+export interface FlowchartEdge {
+  id: string
+  from: string
+  to: string
+  label?: string
+}
+
+export interface FlowchartElement extends ElementBase {
+  kind: 'flowchart'
+  nodes: FlowchartNode[]
+  edges: FlowchartEdge[]
+}
+
 export type BoardElement =
   | MindmapRefElement
   | CauseEffectElement
   | DecisionTableElement
   | OrthogonalElement
+  | FlowchartElement
 
 export interface Board {
   version: 1

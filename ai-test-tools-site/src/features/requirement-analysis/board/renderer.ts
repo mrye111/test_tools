@@ -1,10 +1,11 @@
-import type { Board, BoardElement, MindmapRefElement, CauseEffectElement, DecisionTableElement, OrthogonalElement } from './types'
+import type { Board, BoardElement, MindmapRefElement, CauseEffectElement, DecisionTableElement, OrthogonalElement, FlowchartElement } from './types'
 import type { Viewport } from './viewport'
 import type { RequirementNode } from '../../../lib/requirement-analysis-api'
 import { drawMindmapRef } from './elements/mindmap-ref'
 import { drawCauseEffect } from './elements/cause-effect'
 import { drawDecisionTable } from './elements/decision-table'
 import { drawOrthogonal } from './elements/orthogonal'
+import { drawFlowchart } from './elements/flowchart'
 
 export interface RenderBoardOptions {
   /** 需求树根节点，用于 mindmap-ref 图元绘制真实参考树 */
@@ -74,6 +75,9 @@ function drawElement(
       break
     case 'orthogonal':
       drawOrthogonal(ctx, el as OrthogonalElement, vp, selected)
+      break
+    case 'flowchart':
+      drawFlowchart(ctx, el as FlowchartElement, vp, selected)
       break
   }
 }

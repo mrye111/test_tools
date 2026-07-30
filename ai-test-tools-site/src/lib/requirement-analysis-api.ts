@@ -19,7 +19,7 @@ export type Finding = {
 
 export type RequirementChartType = 'mindmap' | 'tree' | 'logic'
 
-export type BoardChartKind = 'cause-effect' | 'decision-table' | 'orthogonal'
+export type BoardChartKind = 'cause-effect' | 'decision-table' | 'orthogonal' | 'flowchart'
 
 export type RequirementAnalysisResult = {
   title: string

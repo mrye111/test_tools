@@ -1,4 +1,4 @@
-import { CE_NODE_H, CE_NODE_W, type BoardElement, type CauseEffectElement, type MindmapRefElement } from './types'
+import { CE_NODE_H, CE_NODE_W, type BoardElement, type CauseEffectElement, type FlowchartElement, type MindmapRefElement } from './types'
 import { layoutMindmap } from './elements/layout'
 import type { RequirementNode } from '../../../lib/requirement-analysis-api'
 
@@ -49,6 +49,10 @@ export function hitTestElement(el: BoardElement, wx: number, wy: number, tree?: 
     return hitTestCauseEffect(el, wx, wy)
   }
 
+  if (el.kind === 'flowchart') {
+    return hitTestFlowchart(el, wx, wy)
+  }
+
   if (el.kind === 'mindmap-ref') {
     return hitTestMindmapRef(el, wx, wy, tree)
   }
@@ -74,6 +78,41 @@ function hitTestMindmapRef(el: MindmapRefElement, wx: number, wy: number, tree?:
     }
   }
 
+  if (inRect(wx, wy, el.x, el.y, el.w, el.h)) {
+    return { elementId: el.id, part: 'body' }
+  }
+
+  return null
+}
+
+/** 流程图命中：先节点，再边，最后整体包围盒 */
+function hitTestFlowchart(el: FlowchartElement, wx: number, wy: number): HitResult | null {
+  // 1. 节点：按节点包围盒（decision 用外接矩形近似）
+  for (const node of el.nodes) {
+    const nx = el.x + node.x
+    const ny = el.y + node.y
+    if (inRect(wx, wy, nx - CE_NODE_W / 2, ny - CE_NODE_H / 2, CE_NODE_W, CE_NODE_H)) {
+      return { elementId: el.id, part: 'node', nodeId: node.id }
+    }
+  }
+
+  // 2. 边：两端节点中心连线，容差 4
+  for (const edge of el.edges) {
+    const fromNode = el.nodes.find((n) => n.id === edge.from)
+    const toNode = el.nodes.find((n) => n.id === edge.to)
+    if (!fromNode || !toNode) continue
+
+    const x1 = el.x + fromNode.x
+    const y1 = el.y + fromNode.y
+    const x2 = el.x + toNode.x
+    const y2 = el.y + toNode.y
+
+    if (distToSegment(wx, wy, x1, y1, x2, y2) <= EDGE_HIT_TOLERANCE) {
+      return { elementId: el.id, part: 'edge', edgeId: edge.id }
+    }
+  }
+
+  // 3. 整体包围盒
   if (inRect(wx, wy, el.x, el.y, el.w, el.h)) {
     return { elementId: el.id, part: 'body' }
   }
