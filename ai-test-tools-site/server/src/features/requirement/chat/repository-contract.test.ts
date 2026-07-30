@@ -9,6 +9,7 @@ import {
   MAX_LIBRARY_FILES,
 } from "./types.js";
 import { MemoryChatRepository } from "./repository.js";
+import { MysqlChatRepository } from "./mysql-repository.js";
 
 export function runContractTests(
   name: string,
@@ -524,3 +525,24 @@ export function runContractTests(
 describe("MemoryChatRepository contract", () => {
   runContractTests("memory", () => new MemoryChatRepository());
 });
+
+if (process.env.TEST_MYSQL === "1") {
+  describe("MysqlChatRepository 契约", async () => {
+    const { resolveChatDb } = await import("../db/pool.js");
+    const handle = await resolveChatDb();
+    if (!handle.pool) {
+      throw new Error("TEST_MYSQL 已启用但无法连接 MySQL");
+    }
+
+    beforeEach(async () => {
+      await handle.pool!.execute("DELETE FROM ra_session_files");
+      await handle.pool!.execute("DELETE FROM ra_messages");
+      await handle.pool!.execute("DELETE FROM ra_sessions");
+      await handle.pool!.execute("DELETE FROM ra_library_files");
+    });
+
+    runContractTests("mysql", () => new MysqlChatRepository(handle.pool!));
+  });
+} else {
+  describe.skip("MysqlChatRepository 契约", () => {});
+}
