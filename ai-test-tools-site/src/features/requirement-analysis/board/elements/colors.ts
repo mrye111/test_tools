@@ -14,7 +14,11 @@ export const BOARD_COLORS = {
   effectBorder: '#ef4444',
   symbol: '#475569',
   flowchartStart: '#dcfce7',
+  flowchartStartBorder: '#22c55e',
   flowchartEnd: '#fee2e2',
+  flowchartEndBorder: '#ef4444',
   flowchartProcess: '#dbeafe',
+  flowchartProcessBorder: '#3b82f6',
   flowchartDecision: '#ffedd5',
+  flowchartDecisionBorder: '#f97316',
 } as const

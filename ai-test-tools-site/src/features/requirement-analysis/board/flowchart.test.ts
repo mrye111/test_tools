@@ -103,8 +103,10 @@ describe('flowchart hit-test', () => {
   })
 
   it('边命中返回 part: edge', () => {
-    // start(0,0) -> p1(200,0) 中点 (100,0)
-    const hit = hitTestElement(el, 100, 100)
-    expect(hit?.part === 'node' || hit?.part === 'edge').toBe(true)
+    // 图元原点在 (100,100)；start 节点中心在 (100,100)，p1 节点中心在 (300,100)
+    // 折线从 start -> (200,100) -> p1；取中点正下方 (200,103) 应命中边且不在节点包围盒内
+    const hit = hitTestElement(el, 200, 103)
+    expect(hit?.elementId).toBe('fc1')
+    expect(hit?.part).toBe('edge')
   })
 })

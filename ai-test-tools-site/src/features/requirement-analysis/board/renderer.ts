@@ -77,7 +77,7 @@ function drawElement(
       drawOrthogonal(ctx, el as OrthogonalElement, vp, selected)
       break
     case 'flowchart':
-      drawFlowchart(ctx, el as FlowchartElement, vp, selected)
+      drawFlowchart(ctx, el as FlowchartElement, selected)
       break
   }
 }

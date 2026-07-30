@@ -96,7 +96,7 @@ function hitTestFlowchart(el: FlowchartElement, wx: number, wy: number): HitResu
     }
   }
 
-  // 2. 边：两端节点中心连线，容差 4
+  // 2. 边：与渲染一致的折线段（源 -> (midX, 源.y) -> (midX, 目标.y) -> 目标），逐段容差 4
   for (const edge of el.edges) {
     const fromNode = el.nodes.find((n) => n.id === edge.from)
     const toNode = el.nodes.find((n) => n.id === edge.to)
@@ -106,8 +106,13 @@ function hitTestFlowchart(el: FlowchartElement, wx: number, wy: number): HitResu
     const y1 = el.y + fromNode.y
     const x2 = el.x + toNode.x
     const y2 = el.y + toNode.y
+    const midX = (x1 + x2) / 2
 
-    if (distToSegment(wx, wy, x1, y1, x2, y2) <= EDGE_HIT_TOLERANCE) {
+    if (
+      distToSegment(wx, wy, x1, y1, midX, y1) <= EDGE_HIT_TOLERANCE ||
+      distToSegment(wx, wy, midX, y1, midX, y2) <= EDGE_HIT_TOLERANCE ||
+      distToSegment(wx, wy, midX, y2, x2, y2) <= EDGE_HIT_TOLERANCE
+    ) {
       return { elementId: el.id, part: 'edge', edgeId: edge.id }
     }
   }

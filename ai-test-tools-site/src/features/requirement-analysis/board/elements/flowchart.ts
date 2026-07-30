@@ -1,4 +1,3 @@
-import type { Viewport } from '../viewport'
 import type { FlowchartElement, FlowchartNode, FlowchartNodeKind } from '../types'
 import { CE_NODE_H, CE_NODE_W } from '../types'
 import { BOARD_COLORS } from './colors'
@@ -11,15 +10,18 @@ const {
   text,
   edgeStroke,
   flowchartStart,
+  flowchartStartBorder,
   flowchartEnd,
+  flowchartEndBorder,
   flowchartProcess,
+  flowchartProcessBorder,
   flowchartDecision,
+  flowchartDecisionBorder,
 } = BOARD_COLORS
 
 export function drawFlowchart(
   ctx: CanvasRenderingContext2D,
   el: FlowchartElement,
-  _vp: Viewport,
   selected: boolean
 ): void {
   ctx.save()
@@ -58,14 +60,18 @@ export function drawFlowchart(
 function nodeColor(kind: FlowchartNodeKind): { fill: string; stroke: string } {
   switch (kind) {
     case 'start':
-      return { fill: flowchartStart, stroke: '#22c55e' }
+      return { fill: flowchartStart, stroke: flowchartStartBorder }
     case 'end':
-      return { fill: flowchartEnd, stroke: '#ef4444' }
+      return { fill: flowchartEnd, stroke: flowchartEndBorder }
     case 'process':
-      return { fill: flowchartProcess, stroke: '#3b82f6' }
+      return { fill: flowchartProcess, stroke: flowchartProcessBorder }
     case 'decision':
-      return { fill: flowchartDecision, stroke: '#f97316' }
+      return { fill: flowchartDecision, stroke: flowchartDecisionBorder }
   }
+}
+
+function nodeBounds(node: FlowchartNode): { x: number; y: number; w: number; h: number } {
+  return { x: node.x - CE_NODE_W / 2, y: node.y - CE_NODE_H / 2, w: CE_NODE_W, h: CE_NODE_H }
 }
 
 function drawNode(ctx: CanvasRenderingContext2D, node: FlowchartNode): void {
@@ -106,32 +112,100 @@ function drawNode(ctx: CanvasRenderingContext2D, node: FlowchartNode): void {
   ctx.fillText(truncate(ctx, node.text, w - 16), node.x, node.y)
 }
 
+/** 计算从矩形内中心向外射线到 cx,cy 与矩形边界的交点；用于边终点不进入节点内部 */
+function rectIntersection(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  rw: number,
+  rh: number
+): { x: number; y: number } {
+  const halfW = rw / 2
+  const halfH = rh / 2
+  const dx = cx - (rx + halfW)
+  const dy = cy - (ry + halfH)
+  if (dx === 0 && dy === 0) return { x: rx + halfW, y: ry }
+  const absDx = Math.abs(dx)
+  const absDy = Math.abs(dy)
+  const scale = absDy === 0 ? halfW / absDx : absDx === 0 ? halfH / absDy : Math.min(halfW / absDx, halfH / absDy)
+  return { x: cx - dx * scale, y: cy - dy * scale }
+}
+
 function drawEdge(
   ctx: CanvasRenderingContext2D,
   from: FlowchartNode,
   to: FlowchartNode,
   label?: string
 ): void {
+  const fromBounds = nodeBounds(from)
+  const toBounds = nodeBounds(to)
   const midX = (from.x + to.x) / 2
-  const midY = (from.y + to.y) / 2
+
+  // 折线：从源节点中心出发，水平到 midX，再垂直到目标 y，最后水平到目标节点边界
+  const p1 = rectIntersection(from.x, from.y, fromBounds.x, fromBounds.y, fromBounds.w, fromBounds.h)
+  const p2 = { x: midX, y: from.y }
+  const p3 = { x: midX, y: to.y }
+  const p4 = rectIntersection(to.x, to.y, toBounds.x, toBounds.y, toBounds.w, toBounds.h)
+  // 当 midX 已经在目标节点范围内时，p4 可能落在左侧/右侧；需要保证最后一段从 p3 到 p4 是水平向目标中心
+  p4.y = to.y
+  // 修正 p4.x：从目标中心向 p3 方向取边界交点
+  if (p3.x <= to.x) {
+    p4.x = toBounds.x
+  } else {
+    p4.x = toBounds.x + toBounds.w
+  }
+  // 如果源节点与目标节点在水平方向重叠，简化路径从源边界直接到目标边界
+  const verticalOverlap = fromBounds.x < toBounds.x + toBounds.w && fromBounds.x + fromBounds.w > toBounds.x
+  const horizontalPass = verticalOverlap && Math.abs(from.y - to.y) <= (fromBounds.h + toBounds.h) / 2
 
   ctx.strokeStyle = edgeStroke
   ctx.lineWidth = 1.5
   ctx.beginPath()
-  ctx.moveTo(from.x, from.y)
-  ctx.lineTo(midX, from.y)
-  ctx.lineTo(midX, to.y)
-  ctx.lineTo(to.x, to.y)
+  if (horizontalPass) {
+    // 源与目标在同一水平带，直接水平连接
+    ctx.moveTo(p1.x, p1.y)
+    ctx.lineTo(p4.x, p4.y)
+  } else {
+    ctx.moveTo(p1.x, p1.y)
+    ctx.lineTo(p2.x, p2.y)
+    ctx.lineTo(p3.x, p3.y)
+    ctx.lineTo(p4.x, p4.y)
+  }
   ctx.stroke()
 
-  drawArrow(ctx, midX, to.y, to.x, to.y)
+  drawArrow(ctx, p3.x, p3.y, p4.x, p4.y)
 
   if (label) {
+    // label 放在实际路径中点（折线总长度中点）
+    const segments = horizontalPass
+      ? [{ x: p1.x, y: p1.y }, { x: p4.x, y: p4.y }]
+      : [{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }, { x: p3.x, y: p3.y }, { x: p4.x, y: p4.y }]
+    const totalLen = segments.slice(1).reduce((sum, seg, i) => {
+      const dx = seg.x - segments[i].x
+      const dy = seg.y - segments[i].y
+      return sum + Math.sqrt(dx * dx + dy * dy)
+    }, 0)
+    let half = totalLen / 2
+    let mid = segments[0]
+    for (let i = 0; i < segments.length - 1; i++) {
+      const a = segments[i]
+      const b = segments[i + 1]
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const len = Math.sqrt(dx * dx + dy * dy)
+      if (half <= len || i === segments.length - 2) {
+        const t = half / len || 0
+        mid = { x: a.x + dx * t, y: a.y + dy * t }
+        break
+      }
+      half -= len
+    }
     ctx.fillStyle = text
     ctx.font = '11px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(label, midX, midY - 6)
+    ctx.fillText(label, mid.x, mid.y - 6)
   }
 }
 
@@ -146,5 +220,3 @@ function drawArrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: nu
   ctx.fillStyle = edgeStroke
   ctx.fill()
 }
-
-export { roundRect, truncate }
