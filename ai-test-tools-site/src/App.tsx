@@ -9,12 +9,13 @@ import { TestReportPage } from './pages/TestReportPage'
 import { ReportViewPage } from './pages/ReportViewPage'
 import { DataFactoryPage } from './pages/DataFactoryPage'
 import { ErrorDialogProvider } from './components/ui/ErrorDialogProvider'
+import { ChatShell } from './features/requirement-analysis/chat/ChatShell'
+import { NewChatHome } from './features/requirement-analysis/chat/NewChatHome'
+import { ChatView } from './features/requirement-analysis/chat/ChatView'
+import { LibraryPage } from './features/requirement-analysis/chat/LibraryPage'
 
 // 需求分析页携带 echarts/markmap 等重型图表依赖，按路由懒加载，
 // 避免首页为首屏动画之外的代码付出解析成本
-const RequirementAnalysisPage = lazy(() =>
-  import('./pages/RequirementAnalysisPage').then((module) => ({ default: module.RequirementAnalysisPage })),
-)
 
 // 分析画板为独立路由（ADR 0006），同样懒加载并与需求分析页共享重型依赖分包
 const AnalysisBoardPage = lazy(() =>
@@ -45,14 +46,11 @@ export default function App() {
             <Route path="/testreport" element={<TestReportPage />} />
             <Route path="/testreport/view" element={<ReportViewPage />} />
             <Route path="/data-factory" element={<DataFactoryPage />} />
-            <Route
-              path="/requirement-analysis"
-              element={
-                <Suspense fallback={<div className="mx-auto max-w-[1200px] px-6 py-16 text-center text-muted">需求分析加载中…</div>}>
-                  <RequirementAnalysisPage />
-                </Suspense>
-              }
-            />
+            <Route path="/requirement-analysis" element={<ChatShell />}>
+              <Route index element={<NewChatHome />} />
+              <Route path="chat/:sessionId" element={<ChatView />} />
+              <Route path="library" element={<LibraryPage />} />
+            </Route>
             <Route
               path="/requirement-analysis/board/:id"
               element={
