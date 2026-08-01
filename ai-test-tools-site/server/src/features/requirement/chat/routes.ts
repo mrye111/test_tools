@@ -180,8 +180,9 @@ export function registerChatRoutes(app: Express, repo: ChatRepository): void {
     } catch (error) {
       const message = errorMessage(error);
       if (isLimitError(message)) {
+        // SSE 流内无法再用 HTTP 状态码表达，统一走 error 事件 + ok:false（前端按 error 展示）
+        emit(res, "error", { message });
         endSse(res, false);
-        res.status(409).json({ success: false, error: message });
         return;
       }
       emit(res, "error", { message });

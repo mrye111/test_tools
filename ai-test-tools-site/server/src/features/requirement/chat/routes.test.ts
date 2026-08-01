@@ -266,6 +266,29 @@ describe("registerChatRoutes", () => {
     expect(secondJson.libraryCount).toBe(1);
   });
 
+  it("DELETE /sessions/:id 后 GET /library/files 仍在", async () => {
+    const app = await createApp(repo);
+    const session = await repo.createSession({ title: "S", agentTemplate: "mindmap" });
+    const msg = await repo.createMessage({ sessionId: session.id, role: "assistant", content: "x", status: "done" });
+    const file = await repo.createSessionFile({
+      sessionId: session.id,
+      messageId: msg.id,
+      kind: "mindmap",
+      title: "M",
+      payload: { tree: { id: "root" } },
+    });
+    await fetchJson(app, `/api/requirement-analysis/session-files/${file.id}/save-to-library`, { method: "POST" });
+
+    const deleted = await fetchJson(app, `/api/requirement-analysis/sessions/${session.id}`, { method: "DELETE" });
+    expect(deleted.status).toBe(200);
+
+    const { status, json } = await fetchJson(app, "/api/requirement-analysis/library/files");
+    expect(status).toBe(200);
+    const body = json as { success: boolean; files: unknown[] };
+    expect(body.success).toBe(true);
+    expect(body.files).toHaveLength(1);
+  });
+
   it("GET /storage-status 返回当前存储模式", async () => {
     const app = await createApp(repo);
     const { status, json } = await fetchJson(app, "/api/requirement-analysis/storage-status");
