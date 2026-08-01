@@ -2,6 +2,7 @@
 @import url("https://cdn.jsdelivr.net/npm/misans@4.1.0/lib/Normal/MiSans-Bold.min.css");
 @import url("https://cdn.jsdelivr.net/npm/misans@4.1.0/lib/Normal/MiSans-Heavy.min.css");
 @import "tailwindcss";
+@import "./features/requirement-analysis/chat/chat-glass.css";
 
 /* ── Design Tokens · Aurora Glass ──────────────────────────── */
 @theme {

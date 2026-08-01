@@ -1,9 +1,6 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
   type ChatRepository,
-  type SessionFile,
-  type CreateSessionInput,
-  type AgentTemplate,
   MAX_MESSAGES_PER_SESSION,
   MAX_SESSION_FILES_PER_SESSION,
   MAX_LIBRARY_FILES,

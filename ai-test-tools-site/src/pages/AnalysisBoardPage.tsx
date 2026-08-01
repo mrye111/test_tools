@@ -45,7 +45,6 @@ export function AnalysisBoardPage() {
   const [boardError, setBoardError] = useState<string | null>(null)
 
   const fileTitle = file?.title ?? ''
-  const fileKind = file?.kind ?? 'mindmap'
 
   useEffect(() => {
     if (!id) return
@@ -322,5 +321,3 @@ async function exportRequirementXmind(args: { title: string; tree: RequirementNo
   const { exportRequirementXmind: impl } = await import('../lib/requirement-analysis-api')
   return (impl as (args: { title: string; tree: RequirementNode; findings: unknown[]; chartType: 'tree' }) => Promise<void>)(args)
 }
-
-export { selectOrthogonalArray }

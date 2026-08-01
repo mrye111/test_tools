@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Express } from "express";
 import express from "express";
-import type { ChatRepository, SessionFile } from "./types.js";
+import type { ChatRepository } from "./types.js";
 import { MemoryChatRepository } from "./repository.js";
 import { registerChatRoutes } from "./routes.js";
 import type { RequirementNode } from "../types.js";
@@ -27,10 +27,8 @@ vi.mock("../board-ai.js", async () => {
 });
 
 import { analyzeRequirementText } from "../ai.js";
-import { generateBoardChartDraft } from "../board-ai.js";
 
 const mockedAnalyze = vi.mocked(analyzeRequirementText);
-const mockedBoard = vi.mocked(generateBoardChartDraft);
 
 function makeAnalysisResult(title: string) {
   const tree: RequirementNode = { id: "n1", title, children: [] };
@@ -229,7 +227,7 @@ describe("registerChatRoutes", () => {
     const { status, json } = await fetchJson(app, `/api/requirement-analysis/session-files/${file.id}`);
 
     expect(status).toBe(200);
-    const response = json as { success: boolean; file: SessionFile };
+    const response = json as { success: boolean; file: { payload: unknown } };
     expect(response.success).toBe(true);
     expect(response.file.payload).toEqual({ board: { a: 1 } });
   });

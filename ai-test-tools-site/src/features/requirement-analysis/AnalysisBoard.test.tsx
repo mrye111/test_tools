@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Finding, RequirementNode } from '../../lib/requirement-analysis-api'
 import { AnalysisBoard, type AnalysisBoardProps } from './AnalysisBoard'
@@ -173,11 +173,22 @@ describe('AnalysisBoard 分析画板', () => {
     expect(props.onHandoff).toHaveBeenCalledTimes(1)
   })
 
-  it('插入模板打开模板中心，"使用模板"按钮禁用', () => {
+  it('插入模板打开模板中心，测试设计模板可用、静态模板禁用', () => {
     renderBoard()
     fireEvent.click(screen.getByRole('button', { name: '插入模板' }))
     expect(screen.getByRole('dialog', { name: '模板中心' })).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: '使用模板' })[0]).toBeDisabled()
+
+    // 测试设计分类默认选中，思维导图模板可用
+    const templateCards = screen.getAllByRole('article')
+    expect(templateCards.length).toBeGreaterThan(0)
+    const firstUseButton = within(templateCards[0]).getByRole('button', { name: '使用模板' })
+    expect(firstUseButton).toBeEnabled()
+
+    // 切换至绘图分类，静态模板（如组织结构图）不可用
+    fireEvent.click(screen.getByRole('button', { name: '绘图&创作' }))
+    const staticCard = screen.getByText('组织结构图').closest('article') as HTMLElement
+    const staticButton = within(staticCard).getByRole('button', { name: '使用模板' })
+    expect(staticButton).toBeDisabled()
   })
 
   it('缩放条：放大/缩小按 ±20% 步进驱动画板，外部缩放回报更新百分比', () => {

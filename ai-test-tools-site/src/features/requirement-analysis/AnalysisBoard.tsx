@@ -24,11 +24,12 @@ import { BoardCanvas, type BoardCanvasHandle } from './board/BoardCanvas'
 import { BoardStore } from './board/board-store'
 import type { Board, BoardElement, MindmapRefElement } from './board/types'
 import { BOARD_LIMITS } from './board/types'
-import { removeElements, updateElement } from './board/commands'
+import { removeElements, updateElement, addElement } from './board/commands'
 import { TemplateCenterModal } from './TemplateCenterModal'
+import type { BoardTemplate } from './templates'
 import { BOARD_ZOOM_MAX, BOARD_ZOOM_MIN, formatZoom, stepZoom } from './board/viewport'
 import { renderBoard } from './board/renderer'
-import { draftToElement } from './board/ai'
+import { draftToElement, buildMindmapRefElement } from './board/ai'
 
 /** 导出格式：文件类由父级处理，PNG 由本组件离屏渲染。 */
 type ExportKind = 'xmind' | 'freemind' | 'markdown' | 'png'
@@ -306,6 +307,25 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
     }
   }, [onDerive, store])
 
+  /** 模板中心使用模板：测试设计图表复用 handleInsertChart，思维导图直接插入参考图元。 */
+  const handleUseTemplate = useCallback(async (template: BoardTemplate) => {
+    const chartKind = template.chartKind
+    if (!chartKind) return
+
+    if (store.getBoard().elements.length >= BOARD_LIMITS.MAX_ELEMENTS) {
+      onExportError('画板图元数量已达上限')
+      return
+    }
+
+    if (chartKind === 'mindmap') {
+      const el = buildMindmapRefElement(result.tree, 40, 40)
+      store.execute(addElement(el))
+      return
+    }
+
+    await handleInsertChart(chartKind)
+  }, [result.tree, store, handleInsertChart, onExportError])
+
   const railTool = (
     <button
       type="button"
@@ -514,7 +534,7 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
         </div>
       </div>
 
-      <TemplateCenterModal open={templateCenterOpen} onClose={() => setTemplateCenterOpen(false)} />
+      <TemplateCenterModal open={templateCenterOpen} onClose={() => setTemplateCenterOpen(false)} onUseTemplate={handleUseTemplate} />
     </div>
   )
 }

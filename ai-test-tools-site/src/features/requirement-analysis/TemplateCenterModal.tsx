@@ -1,20 +1,20 @@
 import { useMemo, useState } from 'react'
 import { LayoutTemplate, Search, X } from 'lucide-react'
 import { ModalShell } from '../../components/ui/ModalShell'
-import { BOARD_TEMPLATES, TEMPLATE_CATEGORIES } from './templates'
+import { BOARD_TEMPLATES, TEMPLATE_CATEGORIES, type BoardTemplate } from './templates'
 
 type TemplateCenterModalProps = {
   open: boolean
   onClose: () => void
+  onUseTemplate?: (template: BoardTemplate) => void
 }
 
 /**
- * 模板中心：分析画板"插入模板"工具的入口窗口（本期纯骨架，ADR 0005）。
- * 左侧分类导航 + 右侧模板卡片网格，"使用模板"暂不真正插入画布——
- * 画板当前为只读形态，尚无可插入的对象模型，按钮置灰并说明原因。
+ * 模板中心：分析画板"插入模板"工具的入口窗口。
+ * 左侧分类导航 + 右侧模板卡片网格；测试设计类模板支持在画板中直接插入。
  */
-export function TemplateCenterModal({ open, onClose }: TemplateCenterModalProps) {
-  const [categoryId, setCategoryId] = useState('all')
+export function TemplateCenterModal({ open, onClose, onUseTemplate }: TemplateCenterModalProps) {
+  const [categoryId, setCategoryId] = useState('test-design')
   const [keyword, setKeyword] = useState('')
 
   const visibleTemplates = useMemo(() => {
@@ -27,6 +27,11 @@ export function TemplateCenterModal({ open, onClose }: TemplateCenterModalProps)
   }, [categoryId, keyword])
 
   const activeCategory = TEMPLATE_CATEGORIES.find((category) => category.id === categoryId)
+
+  const handleUseTemplate = (template: BoardTemplate) => {
+    onUseTemplate?.(template)
+    onClose()
+  }
 
   return (
     <ModalShell open={open} onClose={onClose} closeOnBackdrop closeOnEscape>
@@ -88,6 +93,7 @@ export function TemplateCenterModal({ open, onClose }: TemplateCenterModalProps)
             <div className="template-center-grid">
               {visibleTemplates.map((template) => {
                 const Icon = template.icon
+                const usable = template.chartKind !== undefined
                 return (
                   <article key={template.id} className="template-card">
                     <div className="template-card-thumb" aria-hidden="true">
@@ -99,8 +105,9 @@ export function TemplateCenterModal({ open, onClose }: TemplateCenterModalProps)
                       <button
                         type="button"
                         className="secondary-action px-3 py-1.5 text-xs"
-                        disabled
-                        title="画板编辑能力上线后开放"
+                        disabled={!usable}
+                        title={usable ? '在画板中使用此模板' : '该模板暂不支持直接插入'}
+                        onClick={() => handleUseTemplate(template)}
                       >
                         使用模板
                       </button>

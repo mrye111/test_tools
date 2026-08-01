@@ -71,7 +71,7 @@ describe('AI 请求温度参数兼容', () => {
     ))
 
     const consume = async () => {
-      for await (const _chunk of streamChatCompletion({
+      for await (const chunk of streamChatCompletion({
         apiKey: 'test-key',
         baseUrl: 'https://api.kimi.com/coding/v1',
         endpointType: 'openai_chat',
@@ -80,7 +80,7 @@ describe('AI 请求温度参数兼容', () => {
       }, {
         messages: [{ role: 'user', content: '生成登录测试用例' }],
       })) {
-        // 消费完整流，验证结束时的空正文判定。
+        void chunk
       }
     }
 

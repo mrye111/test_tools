@@ -1,4 +1,5 @@
 import {
+  Beaker,
   Brain,
   FileText,
   GitBranch,
@@ -15,6 +16,7 @@ import {
   Target,
   Users,
 } from 'lucide-react'
+import { AGENT_TEMPLATES } from './chat/agent-templates'
 
 export type TemplateCategory = {
   id: string
@@ -28,10 +30,12 @@ export type BoardTemplate = {
   description: string
   categoryId: string
   icon: typeof MapIcon
+  chartKind?: 'mindmap' | 'cause-effect' | 'decision-table' | 'orthogonal' | 'flowchart'
 }
 
-/** 模板中心分类导航（本期纯骨架，对齐 boardmix 模板中心结构）。 */
+/** 模板中心分类导航（对齐 boardmix 模板中心结构，测试设计类优先展示）。 */
 export const TEMPLATE_CATEGORIES: TemplateCategory[] = [
+  { id: 'test-design', label: '测试设计', icon: Beaker },
   { id: 'all', label: '全部模板', icon: Layers },
   { id: 'drawing', label: '绘图&创作', icon: GitBranch },
   { id: 'research', label: '调研分析', icon: Target },
@@ -42,10 +46,20 @@ export const TEMPLATE_CATEGORIES: TemplateCategory[] = [
   { id: 'meeting', label: '会议&工作坊', icon: Users },
 ]
 
-/** 内置静态模板列表；本期仅用于模板中心展示，"使用模板"不真正插入画布（ADR 0005）。 */
+const TEST_DESIGN_TEMPLATES: BoardTemplate[] = AGENT_TEMPLATES.map((template) => ({
+  id: `td-${template.kind}`,
+  name: template.label,
+  description: template.description,
+  categoryId: 'test-design',
+  icon: template.icon,
+  chartKind: template.kind as BoardTemplate['chartKind'],
+}))
+
+/** 内置模板列表；测试设计分类复用聊天智能体模板，支持在画板中直接插入。 */
 export const BOARD_TEMPLATES: BoardTemplate[] = [
-  { id: 'mindmap', name: '思维导图', description: '围绕中心主题发散整理思路', categoryId: 'drawing', icon: MapIcon },
-  { id: 'flowchart', name: '流程图', description: '表达流程步骤与分支判断', categoryId: 'drawing', icon: GitBranch },
+  ...TEST_DESIGN_TEMPLATES,
+  { id: 'mindmap', name: '思维导图', description: '围绕中心主题发散整理思路', categoryId: 'drawing', icon: MapIcon, chartKind: 'mindmap' },
+  { id: 'flowchart', name: '流程图', description: '表达流程步骤与分支判断', categoryId: 'drawing', icon: GitBranch, chartKind: 'flowchart' },
   { id: 'org-chart', name: '组织结构图', description: '呈现团队层级与汇报关系', categoryId: 'drawing', icon: ListTree },
   { id: 'architecture', name: '架构图', description: '描述系统分层与模块依赖', categoryId: 'drawing', icon: Network },
   { id: 'timeline', name: '时间轴', description: '按时间顺序排布里程碑', categoryId: 'drawing', icon: Route },

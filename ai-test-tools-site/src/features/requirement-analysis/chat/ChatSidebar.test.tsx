@@ -77,7 +77,7 @@ describe('ChatSidebar', () => {
       expect(screen.getByText('3')).toBeInTheDocument()
     })
 
-    expect(document.querySelector('.chat-sidebar-count.is-bumping')).toBeInTheDocument()
+    expect(document.querySelector('.ra-chat-sidebar-count.is-bumping')).toBeInTheDocument()
     expect(screen.getByText('+1')).toBeInTheDocument()
   })
 })

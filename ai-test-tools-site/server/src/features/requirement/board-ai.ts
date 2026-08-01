@@ -1,5 +1,5 @@
 import { streamChatCompletionParts } from "../testcase/ai.js";
-import type { AiRequestConfig, JsonObject } from "../testcase/types.js";
+import type { AiRequestConfig } from "../testcase/types.js";
 import { parseMaybeJsonObject } from "../testcase/utils.js";
 import { logger } from "../../logger.js";
 import { buildBoardChartMessages, type BoardChartKind } from "./board-prompts.js";
