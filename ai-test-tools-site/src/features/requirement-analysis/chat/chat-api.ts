@@ -291,6 +291,14 @@ export async function deleteLibraryFile(id: string): Promise<void> {
   )
 }
 
+export async function getStorageStatus(): Promise<'mysql' | 'memory'> {
+  return httpJson(
+    buildUrl('/api/requirement-analysis/storage-status'),
+    { method: 'GET' },
+    (value) => (isRecord(value) && value.mode === 'mysql' ? 'mysql' : 'memory'),
+  )
+}
+
 export async function getLibraryCount(): Promise<number> {
   return httpJson(
     buildUrl('/api/requirement-analysis/library/count'),

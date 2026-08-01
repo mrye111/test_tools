@@ -266,7 +266,17 @@ describe("registerChatRoutes", () => {
     expect(secondJson.libraryCount).toBe(1);
   });
 
-  it("DELETE /sessions/:id 后 GET /library/files 仍在", async () => {
+  it("GET /storage-status 返回当前存储模式", async () => {
+    const app = await createApp(repo);
+    const { status, json } = await fetchJson(app, "/api/requirement-analysis/storage-status");
+
+    expect(status).toBe(200);
+    const response = json as { success: boolean; mode: string };
+    expect(response.success).toBe(true);
+    expect(response.mode).toBe("memory");
+  });
+
+  it("PATCH /session-files/:id 合并 board，保留 tree/findings/sourceText", async () => {
     const session = await repo.createSession({ title: "S", agentTemplate: "mindmap" });
     const msg = await repo.createMessage({
       sessionId: session.id,
@@ -279,18 +289,127 @@ describe("registerChatRoutes", () => {
       messageId: msg.id,
       kind: "mindmap",
       title: "M",
-      payload: { tree: {} },
+      payload: {
+        tree: { id: "root" },
+        findings: [{ id: "f1" }],
+        sourceText: "原始需求",
+        board: { old: 1 },
+      },
     });
-    await repo.createLibraryFile(file);
-    await repo.markSavedToLibrary(file.id);
 
     const app = await createApp(repo);
-    await fetchJson(app, `/api/requirement-analysis/sessions/${session.id}`, { method: "DELETE" });
+    const patch = await fetchJson(app, `/api/requirement-analysis/session-files/${file.id}`, {
+      method: "PATCH",
+      body: { board: { new: 2 } },
+    });
+    expect(patch.status).toBe(200);
 
-    const { status, json } = await fetchJson(app, "/api/requirement-analysis/library/files");
+    const { status, json } = await fetchJson(app, `/api/requirement-analysis/session-files/${file.id}`);
     expect(status).toBe(200);
-    const response = json as { success: boolean; files: unknown[] };
+    const response = json as { success: boolean; file: { payload: Record<string, unknown> } };
     expect(response.success).toBe(true);
-    expect(response.files).toHaveLength(1);
+    expect(response.file.payload.tree).toEqual({ id: "root" });
+    expect(response.file.payload.findings).toEqual([{ id: "f1" }]);
+    expect(response.file.payload.sourceText).toBe("原始需求");
+    expect(response.file.payload.board).toEqual({ new: 2 });
+  });
+
+  it("PATCH /session-files/:id 接受字符串 board 并 JSON.parse", async () => {
+    const session = await repo.createSession({ title: "S", agentTemplate: "mindmap" });
+    const msg = await repo.createMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "x",
+      status: "done",
+    });
+    const file = await repo.createSessionFile({
+      sessionId: session.id,
+      messageId: msg.id,
+      kind: "mindmap",
+      title: "M",
+      payload: { board: "old" },
+    });
+
+    const app = await createApp(repo);
+    await fetchJson(app, `/api/requirement-analysis/session-files/${file.id}`, {
+      method: "PATCH",
+      body: { board: JSON.stringify({ serialized: true }) },
+    });
+
+    const { json } = await fetchJson(app, `/api/requirement-analysis/session-files/${file.id}`);
+    const response = json as { success: boolean; file: { payload: Record<string, unknown> } };
+    expect(response.file.payload.board).toEqual({ serialized: true });
+  });
+
+  it("PATCH /library/files/:id 合并 board，保留 tree/findings/sourceText", async () => {
+    const session = await repo.createSession({ title: "S", agentTemplate: "mindmap" });
+    const msg = await repo.createMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "x",
+      status: "done",
+    });
+    const sf = await repo.createSessionFile({
+      sessionId: session.id,
+      messageId: msg.id,
+      kind: "mindmap",
+      title: "M",
+      payload: {
+        tree: { id: "root" },
+        findings: [{ id: "f1" }],
+        sourceText: "原始需求",
+        board: { old: 1 },
+      },
+    });
+    const library = await repo.createLibraryFile(sf);
+
+    const app = await createApp(repo);
+    const patch = await fetchJson(app, `/api/requirement-analysis/library/files/${library.id}`, {
+      method: "PATCH",
+      body: { board: { new: 2 } },
+    });
+    expect(patch.status).toBe(200);
+
+    const { status, json } = await fetchJson(app, `/api/requirement-analysis/library/files/${library.id}`);
+    expect(status).toBe(200);
+    const response = json as { success: boolean; file: { payload: Record<string, unknown> } };
+    expect(response.success).toBe(true);
+    expect(response.file.payload.tree).toEqual({ id: "root" });
+    expect(response.file.payload.findings).toEqual([{ id: "f1" }]);
+    expect(response.file.payload.sourceText).toBe("原始需求");
+    expect(response.file.payload.board).toEqual({ new: 2 });
+  });
+
+  it("POST save-to-library 当文件库达到上限时返回 409", async () => {
+    class LimitRepo extends MemoryChatRepository {
+      async createLibraryFile(): Promise<import("./types.js").LibraryFile> {
+        throw new Error("文件库数量已达上限 500，无法继续创建");
+      }
+    }
+    const limitedRepo = new LimitRepo();
+    const session = await limitedRepo.createSession({ title: "S", agentTemplate: "mindmap" });
+    const msg = await limitedRepo.createMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "x",
+      status: "done",
+    });
+    const file = await limitedRepo.createSessionFile({
+      sessionId: session.id,
+      messageId: msg.id,
+      kind: "mindmap",
+      title: "M",
+      payload: { tree: {} },
+    });
+
+    const app = await createApp(limitedRepo);
+    const { status, json } = await fetchJson(app, `/api/requirement-analysis/session-files/${file.id}/save-to-library`, {
+      method: "POST",
+    });
+
+    expect(status).toBe(409);
+    const response = json as { success: boolean; error: string };
+    expect(response.success).toBe(false);
+    expect(response.error).toContain("已达上限");
   });
 });

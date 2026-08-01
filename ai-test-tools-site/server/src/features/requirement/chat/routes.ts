@@ -3,6 +3,7 @@ import { isObject, text } from "../../testcase/utils.js";
 import type { AgentTemplate, ChatRepository, ChatSession } from "./types.js";
 import { runChatTurn } from "./service.js";
 import { beginSse, emit, endSse } from "./sse.js";
+import { chatDbMode } from "./migrate.js";
 
 const AGENT_TEMPLATES: AgentTemplate[] = [
   "mindmap",
@@ -34,6 +35,26 @@ function isAgentTemplate(value: unknown): value is AgentTemplate {
   return typeof value === "string" && (AGENT_TEMPLATES as string[]).includes(value);
 }
 
+/** 解析可能是 JSON 字符串的 payload；解析失败时返回原值。 */
+function parsePayload(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+/** 将对象 payload 规范化为可展开的对象；非对象时返回空对象。 */
+function normalizeExistingPayload(value: unknown): Record<string, unknown> {
+  const parsed = parsePayload(value);
+  return isObject(parsed) ? parsed : {};
+}
+
+function isLimitError(message: string): boolean {
+  return message.includes("已达上限") || message.includes("超过上限");
+}
+
 async function withSessionAndMessages(repo: ChatRepository, id: string): Promise<{ session: ChatSession; messages: unknown[] } | null> {
   const session = await repo.getSession(id);
   if (!session) return null;
@@ -51,6 +72,15 @@ async function withSessionAndMessages(repo: ChatRepository, id: string): Promise
 }
 
 export function registerChatRoutes(app: Express, repo: ChatRepository): void {
+  // 存储模式状态
+  app.get("/api/requirement-analysis/storage-status", async (_req, res) => {
+    try {
+      ok(res, { mode: chatDbMode() });
+    } catch (error) {
+      fail(res, errorMessage(error), 500);
+    }
+  });
+
   // 会话列表
   app.get("/api/requirement-analysis/sessions", async (_req, res) => {
     try {
@@ -148,7 +178,13 @@ export function registerChatRoutes(app: Express, repo: ChatRepository): void {
       });
       endSse(res, true);
     } catch (error) {
-      emit(res, "error", { message: errorMessage(error) });
+      const message = errorMessage(error);
+      if (isLimitError(message)) {
+        endSse(res, false);
+        res.status(409).json({ success: false, error: message });
+        return;
+      }
+      emit(res, "error", { message });
       endSse(res, false);
     }
   });
@@ -167,22 +203,36 @@ export function registerChatRoutes(app: Express, repo: ChatRepository): void {
     }
   });
 
-  // 更新会话文件 board（整 payload 覆盖）
+  // 更新会话文件 board（合并 payload，保留 tree/findings/sourceText/draft）
   app.patch("/api/requirement-analysis/session-files/:id", async (req, res) => {
     try {
-      const board = body(req).board;
-      if (board === undefined) {
+      const id = req.params.id;
+      const boardRaw = body(req).board;
+      if (boardRaw === undefined) {
         fail(res, "board 字段不能为空");
         return;
       }
-      const file = await repo.updateSessionFileBoard(req.params.id, board);
-      ok(res, { file });
-    } catch (error) {
-      if (errorMessage(error).includes("会话文件不存在")) {
+      const existing = await repo.getSessionFile(id);
+      if (!existing) {
         fail(res, "会话文件不存在", 404);
         return;
       }
-      fail(res, errorMessage(error), 500);
+      const board = parsePayload(boardRaw);
+      const existingPayload = normalizeExistingPayload(existing.payload);
+      const merged = { ...existingPayload, board };
+      const file = await repo.updateSessionFileBoard(id, merged);
+      ok(res, { file });
+    } catch (error) {
+      const message = errorMessage(error);
+      if (message.includes("会话文件不存在")) {
+        fail(res, "会话文件不存在", 404);
+        return;
+      }
+      if (isLimitError(message)) {
+        fail(res, message, 409);
+        return;
+      }
+      fail(res, message, 500);
     }
   });
 
@@ -214,7 +264,12 @@ export function registerChatRoutes(app: Express, repo: ChatRepository): void {
       const count = await repo.countLibraryFiles();
       ok(res, { libraryFileId: library.id, libraryCount: count });
     } catch (error) {
-      fail(res, errorMessage(error), 500);
+      const message = errorMessage(error);
+      if (isLimitError(message)) {
+        fail(res, message, 409);
+        return;
+      }
+      fail(res, message, 500);
     }
   });
 
@@ -252,22 +307,36 @@ export function registerChatRoutes(app: Express, repo: ChatRepository): void {
     }
   });
 
-  // 更新文件库文件 board（整 payload 覆盖）
+  // 更新文件库文件 board（合并 payload，保留 tree/findings/sourceText/draft）
   app.patch("/api/requirement-analysis/library/files/:id", async (req, res) => {
     try {
-      const board = body(req).board;
-      if (board === undefined) {
+      const id = req.params.id;
+      const boardRaw = body(req).board;
+      if (boardRaw === undefined) {
         fail(res, "board 字段不能为空");
         return;
       }
-      const file = await repo.updateLibraryFileBoard(req.params.id, board);
-      ok(res, { file });
-    } catch (error) {
-      if (errorMessage(error).includes("文件库文件不存在")) {
+      const existing = await repo.getLibraryFile(id);
+      if (!existing) {
         fail(res, "文件库文件不存在", 404);
         return;
       }
-      fail(res, errorMessage(error), 500);
+      const board = parsePayload(boardRaw);
+      const existingPayload = normalizeExistingPayload(existing.payload);
+      const merged = { ...existingPayload, board };
+      const file = await repo.updateLibraryFileBoard(id, merged);
+      ok(res, { file });
+    } catch (error) {
+      const message = errorMessage(error);
+      if (message.includes("文件库文件不存在")) {
+        fail(res, "文件库文件不存在", 404);
+        return;
+      }
+      if (isLimitError(message)) {
+        fail(res, message, 409);
+        return;
+      }
+      fail(res, message, 500);
     }
   });
 

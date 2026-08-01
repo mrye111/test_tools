@@ -7,14 +7,23 @@ import { MemoryChatRepository } from "./repository.js";
 import { MysqlChatRepository } from "./mysql-repository.js";
 import type { ChatRepository } from "./types.js";
 
+let currentDbMode: "mysql" | "memory" = "memory";
+
+/** 返回当前 Chat 仓库的存储模式（mysql 或 memory）。 */
+export function chatDbMode(): "mysql" | "memory" {
+  return currentDbMode;
+}
+
 /** 启动时初始化 Chat 仓库并迁移旧数据。 */
 export async function bootstrapChat(): Promise<ChatRepository> {
   const handle = await resolveChatDb();
   if (handle.mode === "mysql" && handle.pool) {
+    currentDbMode = "mysql";
     const repo = new MysqlChatRepository(handle.pool);
     await migrateLegacyStore(handle.pool, repo);
     return repo;
   }
+  currentDbMode = "memory";
   logger.warn("未连接 MySQL，Chat 使用内存仓库");
   return new MemoryChatRepository();
 }
