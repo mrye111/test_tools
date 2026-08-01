@@ -35,17 +35,14 @@ describe('TemplateCenterModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('点击思维导图模板时回调 chartKind 为 mindmap', () => {
-    const onUseTemplate = vi.fn()
-    const onClose = vi.fn()
-    render(<TemplateCenterModal open onClose={onClose} onUseTemplate={onUseTemplate} />)
+  it('非测试设计模板按钮显示即将上线且不可点击', () => {
+    render(<TemplateCenterModal open onClose={vi.fn()} onUseTemplate={vi.fn()} />,
+    )
 
-    fireEvent.click(screen.getByRole('button', { name: '测试设计' }))
-    const card = screen.getByText('思维导图').closest('article') as HTMLElement
-    fireEvent.click(within(card).getByRole('button', { name: '使用模板' }))
+    fireEvent.click(screen.getByRole('button', { name: '绘图&创作' }))
+    const card = screen.getByText('组织结构图').closest('article') as HTMLElement
+    const button = within(card).getByRole('button', { name: '该模板即将上线' })
 
-    const calledTemplate = onUseTemplate.mock.calls[0][0]
-    expect(calledTemplate.id).toBe('td-mindmap')
-    expect(calledTemplate.chartKind).toBe('mindmap')
+    expect(button).toBeDisabled()
   })
 })

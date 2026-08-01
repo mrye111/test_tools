@@ -187,7 +187,7 @@ describe('AnalysisBoard 分析画板', () => {
     // 切换至绘图分类，静态模板（如组织结构图）不可用
     fireEvent.click(screen.getByRole('button', { name: '绘图&创作' }))
     const staticCard = screen.getByText('组织结构图').closest('article') as HTMLElement
-    const staticButton = within(staticCard).getByRole('button', { name: '使用模板' })
+    const staticButton = within(staticCard).getByRole('button', { name: '该模板即将上线' })
     expect(staticButton).toBeDisabled()
   })
 

@@ -106,10 +106,10 @@ export function TemplateCenterModal({ open, onClose, onUseTemplate }: TemplateCe
                         type="button"
                         className="secondary-action px-3 py-1.5 text-xs"
                         disabled={!usable}
-                        title={usable ? '在画板中使用此模板' : '该模板暂不支持直接插入'}
+                        title={usable ? '在画板中使用此模板' : '该模板即将上线'}
                         onClick={() => handleUseTemplate(template)}
                       >
-                        使用模板
+                        {usable ? '使用模板' : '该模板即将上线'}
                       </button>
                     </div>
                   </article>
