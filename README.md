@@ -26,9 +26,8 @@ Test_Tools_Demo/
 │   ├── src/                   # 页面、组件、features、hooks、lib
 │   └── server/                # Express 后端（src/features、tests）
 ├── docs/                      # 领域文档
-│   ├── adr/                   # 架构决策记录（0001–0004）
+│   ├── adr/                   # 架构决策记录（0001–0007）
 │   └── agents/                # 协作约定（issue 跟踪、标签、文档）
-├── PRODUCT.md                 # 产品定位、品牌与设计原则
 ├── CONTEXT.md                 # 领域词汇表
 └── all-tools-check.jmx        # JMeter 全元素手工验证资产
 ```
@@ -68,7 +67,6 @@ Vitest + Testing Library（jsdom），覆盖前端页面/组件与后端路由�
 
 ## 文档
 
-- [PRODUCT.md](PRODUCT.md) — 产品定位、品牌与设计原则
 - [CONTEXT.md](CONTEXT.md) — 领域词汇表（项目/测试用例集/覆盖模式等核心概念）
 - [docs/adr/](docs/adr/) — 架构决策记录：覆盖模式、结构化追踪、JMeter 工具面对齐、需求分析记录
 - [ai-test-tools-site/docs/frontend-integration.md](ai-test-tools-site/docs/frontend-integration.md) — 前后端集成说明
