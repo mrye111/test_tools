@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>缺数占位交互原型 · 快速简报</title>
+<style>
+  :root {
+    --paper: #F0EFEB; --ink: #1C1C1A; --muted: #8F8E88; --faint: #C6C5BF; --grid: #DEDDD6;
+    --accent: #F5572F;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--paper); font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--ink); padding: 40px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; max-width: 1000px; margin: 0 auto; }
+  .card { background: var(--paper); border-radius: 24px; padding: 28px 28px 20px; }
+  h2 { font-weight: 700; font-size: 16.5px; letter-spacing: -.02em; margin-bottom: 3px; }
+  .sub { font-size: 11.5px; color: var(--muted); margin-bottom: 14px; }
+  .src { font-size: 9.5px; color: var(--faint); margin-top: 10px; letter-spacing: .08em; font-weight: 500; text-transform: uppercase; }
+  .proto-note { max-width: 1000px; margin: 0 auto 22px; font-size: 12px; color: var(--muted); line-height: 1.8; }
+  .proto-note code { background: var(--grid); padding: 1px 6px; border-radius: 6px; }
+
+  /* ── 占位卡：原型核心 ── */
+  .card-placeholder {
+    border: 1.5px dashed var(--faint);
+    display: flex; flex-direction: column; min-height: 320px;
+  }
+  .card-placeholder .ph-icon {
+    width: 44px; height: 44px; border-radius: 14px; background: var(--grid);
+    display: flex; align-items: center; justify-content: center; margin: 18px 0 12px;
+    font-size: 20px; color: var(--muted);
+  }
+  .card-placeholder .ph-need { font-size: 12.5px; color: var(--muted); line-height: 1.9; }
+  .card-placeholder .ph-need li { margin-left: 18px; }
+  .card-placeholder .ph-action {
+    margin-top: auto; align-self: flex-start;
+    border: 0; border-radius: 12px; background: var(--ink); color: var(--paper);
+    font-size: 12.5px; font-weight: 600; padding: 9px 18px; cursor: pointer;
+    transition: transform .15s ease;
+  }
+  .card-placeholder .ph-action:hover { transform: translateY(-1px); }
+
+  /* ── 补数弹窗 ── */
+  .mask { position: fixed; inset: 0; background: rgba(28,28,26,.32); display: none; align-items: center; justify-content: center; }
+  .mask.open { display: flex; }
+  .modal { background: #fff; border-radius: 20px; width: 420px; padding: 26px; box-shadow: 0 24px 60px -20px rgba(28,28,26,.35); }
+  .modal h3 { font-size: 15px; margin-bottom: 4px; }
+  .modal .modal-sub { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+  .field { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 12px; }
+  .field label { font-size: 13px; }
+  .field input { width: 120px; border: 1px solid var(--grid); border-radius: 10px; padding: 8px 10px; font-size: 13px; font-family: inherit; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+  .btn-ghost { border: 1px solid var(--grid); background: none; border-radius: 10px; padding: 8px 16px; font-size: 12.5px; cursor: pointer; }
+  .btn-primary { border: 0; background: var(--ink); color: #fff; border-radius: 10px; padding: 8px 16px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .generating { font-size: 12.5px; color: var(--accent); display: none; margin-right: auto; }
+</style>
+</head>
+<body>
+<p class="proto-note">
+  <strong>原型说明</strong>：定性输入生成的快速简报中，缺数图型以占位卡呈现（虚线边框 + <code>data-missing</code> 标记）。
+  点击「补录数据」弹出极简补数表 → 提交后走<strong>追改通路整体重生成</strong>（一期），占位卡被真实图表替换。
+  本页为交互原型，图表用静态示意代替。
+</p>
+
+<div class="grid2">
+  <!-- 已解锁的真实图卡（示意） -->
+  <div class="card">
+    <h2>测试重点按维度归类</h2>
+    <div class="sub">1 格 = 1 条重点 · AI 归类计数 · 共 6 条</div>
+    <svg viewBox="0 0 400 200">
+      <g font-size="9" font-weight="700" fill="#6A6963" text-anchor="end">
+        <text x="86" y="40">功能逻辑</text><text x="86" y="90">状态流转</text><text x="86" y="140">异常处理</text>
+      </g>
+      <g stroke="#1C1C1A" stroke-width="1">
+        <line x1="96" y1="36" x2="180" y2="36"/><line x1="96" y1="86" x2="152" y2="86"/><line x1="96" y1="136" x2="124" y2="136"/>
+      </g>
+      <g font-size="11" font-weight="800" fill="#1C1C1A">
+        <text x="188" y="40">3</text><text x="160" y="90">2</text><text x="132" y="140">1</text>
+      </g>
+    </svg>
+    <div class="src">Tick Rows · 重点归类 · 用户输入</div>
+  </div>
+
+  <!-- 缺数占位卡（原型主角） -->
+  <div class="card card-placeholder" data-missing="pass-rate" id="phCard">
+    <h2>用例通过率</h2>
+    <div class="sub">补数据后可解锁 · Tick Gauge 进度图</div>
+    <div class="ph-icon">∅</div>
+    <ul class="ph-need">
+      <li>本轮计划执行用例数</li>
+      <li>实际通过用例数</li>
+      <li>（可选）阻塞 / 未执行数</li>
+    </ul>
+    <button class="ph-action" id="openModal">补录数据</button>
+    <div class="src">Placeholder · 缺数占位</div>
+  </div>
+</div>
+
+<!-- 补数弹窗 -->
+<div class="mask" id="mask">
+  <div class="modal">
+    <h3>补录执行数据</h3>
+    <div class="modal-sub">补录后将以追改方式整体重新生成报告（约 10–30 秒）</div>
+    <div class="field"><label>计划执行用例数</label><input type="number" id="fTotal" value="100" min="0"></div>
+    <div class="field"><label>通过用例数</label><input type="number" id="fPass" value="92" min="0"></div>
+    <div class="field"><label>阻塞 / 未执行</label><input type="number" id="fBlocked" value="3" min="0"></div>
+    <div class="modal-actions">
+      <span class="generating" id="generating">正在重新生成报告…</span>
+      <button class="btn-ghost" id="cancel">取消</button>
+      <button class="btn-primary" id="submit">重新生成报告</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const mask = document.getElementById('mask');
+  document.getElementById('openModal').onclick = () => mask.classList.add('open');
+  document.getElementById('cancel').onclick = () => mask.classList.remove('open');
+  document.getElementById('submit').onclick = () => {
+    document.getElementById('generating').style.display = 'inline';
+    // 原型：模拟追改通路整体重生成后，占位卡被真实图卡替换
+    setTimeout(() => {
+      mask.classList.remove('open');
+      document.getElementById('generating').style.display = 'none';
+      const pass = Number(document.getElementById('fPass').value);
+      const total = Number(document.getElementById('fTotal').value);
+      const pct = total ? Math.round((pass / total) * 100) : 0;
+      const card = document.getElementById('phCard');
+      card.classList.remove('card-placeholder');
+      card.removeAttribute('data-missing');
+      card.innerHTML = `
+        <h2>本轮通过率 ${pct}%</h2>
+        <div class="sub">1 tick = 1% · 执行 ${total} / 通过 ${pass}</div>
+        <svg viewBox="0 0 400 120">
+          <g font-size="6" fill="#8F8E88">${Array.from({ length: 21 }, (_, i) => `<text x="${18 + i * 18}" y="112" text-anchor="middle">${i * 5}</text>`).join('')}</g>
+          <g stroke="#1C1C1A" stroke-width="1">
+            ${Array.from({ length: pct }, (_, i) => `<line x1="${20 + i * (360 / 100)}" y1="86" x2="${20 + i * (360 / 100)}" y2="98"/>`).join('')}
+          </g>
+          <g stroke="#DEDDD6" stroke-width="1">
+            ${Array.from({ length: 100 - pct }, (_, i) => `<line x1="${20 + (pct + i) * (360 / 100)}" y1="86" x2="${20 + (pct + i) * (360 / 100)}" y2="98"/>`).join('')}
+          </g>
+          <text x="200" y="52" font-size="34" font-weight="800" fill="#1C1C1A" text-anchor="middle">${pct}%</text>
+        </svg>
+        <div class="src">Tick Gauge · 用例执行 · 用户补录</div>`;
+    }, 1200);
+  };
+</script>
+</body>
+</html>
