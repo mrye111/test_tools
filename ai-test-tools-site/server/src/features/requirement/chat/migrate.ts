@@ -2,7 +2,7 @@ import { existsSync, readFileSync, renameSync } from "node:fs";
 import { resolve } from "node:path";
 import { logger } from "../../../logger.js";
 import { isObject } from "../../testcase/utils.js";
-import { resolveChatDb } from "../db/pool.js";
+import { resolveSharedChatDb } from "../db/pool.js";
 import { MemoryChatRepository } from "./repository.js";
 import { MysqlChatRepository } from "./mysql-repository.js";
 import type { ChatRepository } from "./types.js";
@@ -16,7 +16,7 @@ export function chatDbMode(): "mysql" | "memory" {
 
 /** 启动时初始化 Chat 仓库并迁移旧数据。 */
 export async function bootstrapChat(): Promise<ChatRepository> {
-  const handle = await resolveChatDb();
+  const handle = await resolveSharedChatDb();
   if (handle.mode === "mysql" && handle.pool) {
     currentDbMode = "mysql";
     const repo = new MysqlChatRepository(handle.pool);

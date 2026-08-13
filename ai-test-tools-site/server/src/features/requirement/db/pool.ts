@@ -111,3 +111,16 @@ export async function resolveChatDb(): Promise<ChatDbHandle> {
     return { pool: null, mode: "memory" };
   }
 }
+
+let sharedHandlePromise: Promise<ChatDbHandle> | null = null;
+
+/**
+ * 进程内共享的数据库句柄（memoized resolveChatDb）。
+ * 聊天域与报告域复用同一连接池，避免每个域各建一套 pool。
+ */
+export function resolveSharedChatDb(): Promise<ChatDbHandle> {
+  if (!sharedHandlePromise) {
+    sharedHandlePromise = resolveChatDb();
+  }
+  return sharedHandlePromise;
+}

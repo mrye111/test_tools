@@ -9,6 +9,8 @@ import { registerDataFactoryRoutes } from "./features/datafactory/routes.js";
 import { registerRequirementRoutes } from "./features/requirement/routes.js";
 import { registerChatRoutes } from "./features/requirement/chat/routes.js";
 import { bootstrapChat } from "./features/requirement/chat/migrate.js";
+import { bootstrapReports } from "./features/report/migrate.js";
+import { registerReportRoutes } from "./features/report/routes.js";
 import { registerLogRoutes } from "./log-routes.js";
 import { traceMiddleware } from "./middleware/trace.js";
 import { AppError, badRequest, internal, notFound } from "./app-error.js";
@@ -67,6 +69,8 @@ export async function createMcpExpressApp(runtime = new JmeterMcpRuntime()): Pro
   registerDataFactoryRoutes(app);
   const chatRepo = await bootstrapChat();
   registerChatRoutes(app, chatRepo);
+  const reportRepo = await bootstrapReports();
+  registerReportRoutes(app, reportRepo);
   registerRequirementRoutes(app);
   registerLogRoutes(app);
 
