@@ -111,11 +111,12 @@ const SKELETON_CONTRACT = `## 单文件 HTML 骨架契约
     <svg id="ch1" viewBox="0 0 400 320"></svg>
     <div class="src">{图型名 · 系列 · 来源}</div>
   </div>
-  <!-- 缺数占位卡： -->
+  <!-- 缺数占位卡（必须带补录按钮，桥接宿主页面）： -->
   <!-- <div class="card card-placeholder" data-missing="pass-rate">
     <h2>{标题}</h2>
     <div class="sub">补数据后可解锁</div>
     <p class="placeholder-need">{需要的数据清单}</p>
+    <button type="button" onclick="parent.postMessage({type:'nexus-report-supplement',missing:'pass-rate'},'*')">补录数据</button>
     <div class="src">PLACEHOLDER</div>
   </div> -->
 </div>
@@ -128,7 +129,7 @@ const SKELETON_CONTRACT = `## 单文件 HTML 骨架契约
 ## 硬规则
 - 每个 .card 必须有 h2 + .sub + 图容器 + .src 四件套；标题写结论不写图型名。
 - 整份 HTML 只用一套色彩系统（Mono 灰阶；wire 时可加一个强调色 #F5572F 标唯一主角）。
-- 占位卡（data-missing）内禁止出现 svg/canvas/echarts 实例，只能有文字说明。
+- 占位卡（data-missing）内禁止出现 svg/canvas/echarts 实例，只能有文字说明；且必须包含补录按钮（onclick postMessage {type:'nexus-report-supplement',missing:'<标识>'}），供宿主页面弹出补数入口。
 - 数值与视觉严格成正比；面积编码用 sqrt 换算半径。
 - reveal 用 MONO.obsReveal（滚入播放 + 点击重播）；演示抖动用 MONO.rnd，禁止 Math.random()。
 - 外链白名单：仅 echarts@6 CDN 与 Google Fonts，其余一律不得出现。

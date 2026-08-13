@@ -44,7 +44,7 @@ export default function App() {
             <Route path="/jmeter" element={<JmeterPage />} />
             <Route path="/testcase" element={<TestCasePage />} />
             <Route path="/testreport" element={<TestReportPage />} />
-            <Route path="/testreport/view" element={<ReportViewPage />} />
+<Route path="/testreport/reports/:id" element={<ReportViewPage />} />
             <Route path="/data-factory" element={<DataFactoryPage />} />
             <Route path="/requirement-analysis" element={<ChatShell />}>
               <Route index element={<NewChatHome />} />
