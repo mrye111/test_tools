@@ -1,6 +1,9 @@
 import type { Express, Request, Response } from "express";
 import { isObject, text } from "../testcase/utils.js";
 import { reportDbMode } from "./migrate.js";
+import { parseAiRequestConfig } from "../testcase/ai.js";
+import { beginSse, emit, endSse } from "../requirement/chat/sse.js";
+import { generateReport, ReportGenerateError, type GenerateReportInput } from "./generate.js";
 import type { CreateReportInput, ReportRepository, ReportSourceType, ReportType } from "./types.js";
 
 const REPORT_TYPES: ReportType[] = ["summary", "brief", "defect", "free"];
@@ -9,6 +12,7 @@ const SOURCE_TYPES: ReportSourceType[] = ["text", "csv"];
 const MAX_TITLE_LENGTH = 200;
 const MAX_HTML_LENGTH = 4 * 1024 * 1024;
 const MAX_SOURCE_DIGEST_LENGTH = 1024 * 1024;
+const MAX_SOURCE_TEXT_LENGTH = 100 * 1024;
 
 function body(req: Request): Record<string, unknown> {
   return isObject(req.body) ? req.body : {};
@@ -184,6 +188,78 @@ export function registerReportRoutes(app: Express, repo: ReportRepository): void
   });
 
   // 删除报告记录（轻量确认语义由前端承载）
+  // AI 报告生成（SSE）：选图 → 组装 → 校验 → 落库；只保存完成态
+  app.post("/api/test-report/reports/generate", async (req, res) => {
+    const raw = body(req);
+    if (!isReportType(raw.reportType)) {
+      fail(res, `reportType 必须是 ${REPORT_TYPES.join("/")} 之一`);
+      return;
+    }
+    if (!isSourceType(raw.sourceType)) {
+      fail(res, `sourceType 必须是 ${SOURCE_TYPES.join("/")} 之一`);
+      return;
+    }
+    // 文本输入直接取 sourceText；CSV 输入由前端解析后上传 JSON（csvData）
+    let sourceText: string;
+    if (raw.sourceType === "text") {
+      sourceText = text(raw.sourceText).trim();
+      if (!sourceText) {
+        fail(res, "sourceText 不能为空");
+        return;
+      }
+    } else {
+      if (!isObject(raw.csvData)) {
+        fail(res, "csvData 必须是解析后的结构化 JSON 对象");
+        return;
+      }
+      sourceText = JSON.stringify(raw.csvData);
+    }
+    if (sourceText.length > MAX_SOURCE_TEXT_LENGTH) {
+      fail(res, "输入素材超过大小上限");
+      return;
+    }
+
+    let config;
+    try {
+      config = parseAiRequestConfig(raw);
+    } catch (error) {
+      fail(res, errorMessage(error));
+      return;
+    }
+
+    const input: GenerateReportInput = {
+      reportType: raw.reportType,
+      sourceType: raw.sourceType,
+      sourceText,
+      titleHint: text(raw.title) || undefined,
+    };
+
+    beginSse(res);
+    try {
+      await generateReport(config, repo, input, (event) => {
+        if (event.type === "done") {
+          emit(res, "report", { report: event.report });
+        } else if (event.type === "error") {
+          emit(res, "error", { message: event.message, code: event.code });
+        } else {
+          emit(res, "progress", event);
+        }
+      });
+      endSse(res, true);
+    } catch (error) {
+      const message = errorMessage(error);
+      if (error instanceof ReportGenerateError) {
+        emit(res, "error", { message, code: error.code });
+      } else if (isLimitError(message)) {
+        // 上限错误走 error 事件（与聊天域对齐），由前端统一提示
+        emit(res, "error", { message, code: "LIMIT" });
+      } else {
+        emit(res, "error", { message, code: "INTERNAL" });
+      }
+      endSse(res, false);
+    }
+  });
+
   app.delete("/api/test-report/reports/:id", async (req, res) => {
     try {
       await repo.deleteReport(req.params.id);

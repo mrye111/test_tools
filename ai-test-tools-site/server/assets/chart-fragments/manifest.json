@@ -1,0 +1,114 @@
+[
+  {
+    "code": "F1",
+    "cardTitle": "Revenue by plan, rung by rung",
+    "contract": "少类目比较（≤8），单位可数；1 档 = 1 个诚实单位",
+    "echarts": false,
+    "file": "F1.js"
+  },
+  {
+    "code": "F2",
+    "cardTitle": "Thirty days of sign-ups",
+    "contract": "日序列（≤30 天，逐日读数）",
+    "echarts": false,
+    "file": "F2.js"
+  },
+  {
+    "code": "F4",
+    "cardTitle": "Where the traffic comes from",
+    "contract": "100% 构成（≤6 段）；1 tick = 1%",
+    "echarts": false,
+    "file": "F4.js"
+  },
+  {
+    "code": "F5",
+    "cardTitle": "Six teams, shipped and counted",
+    "contract": "横向排名比较，单位可数（≤8 行）",
+    "echarts": false,
+    "file": "F5.js"
+  },
+  {
+    "code": "F6",
+    "cardTitle": "This year against last, plan by plan",
+    "contract": "分组对比（每类 2 系列，如今昔）",
+    "echarts": false,
+    "file": "F6.js"
+  },
+  {
+    "code": "F7",
+    "cardTitle": "Where each region's revenue sits",
+    "contract": "堆叠构成（≤4 类 × ≤3 段）",
+    "echarts": false,
+    "file": "F7.js"
+  },
+  {
+    "code": "F9",
+    "cardTitle": "From gross to net, step by step",
+    "contract": "瀑布 / 增减分解（≤6 级）",
+    "echarts": false,
+    "file": "F9.js"
+  },
+  {
+    "code": "F10",
+    "cardTitle": "When support gets loud",
+    "contract": "星期×小时×量（小热力）",
+    "echarts": false,
+    "file": "F10.js"
+  },
+  {
+    "code": "F11",
+    "cardTitle": "How far to the quarter's goal",
+    "contract": "单值进度（0–100%）",
+    "echarts": false,
+    "file": "F11.js"
+  },
+  {
+    "code": "L3",
+    "cardTitle": "Ninety days as a barcode",
+    "contract": "每天一个读数的日序列（90 天级，要肌理）",
+    "echarts": false,
+    "file": "L3.js"
+  },
+  {
+    "code": "L4",
+    "cardTitle": "Eight products land in twelve cities",
+    "contract": "分类×分类+量，小数据（≤100 格）",
+    "echarts": false,
+    "file": "L4.js"
+  },
+  {
+    "code": "L5",
+    "cardTitle": "48 requests pull toward five themes",
+    "contract": "多对一归属，不丢明细（≤60 条）",
+    "echarts": false,
+    "file": "L5.js"
+  },
+  {
+    "code": "L12",
+    "cardTitle": "Forty-four repos, ten owners",
+    "contract": "多对一归属+逐条名单（≤50 条）",
+    "echarts": false,
+    "file": "L12.js"
+  },
+  {
+    "code": "L14",
+    "cardTitle": "A hundred of us, four minds",
+    "contract": "100% 构成（占比），≤6 类小数据；1 点 = 1 单位",
+    "echarts": false,
+    "file": "L14.js"
+  },
+  {
+    "code": "G7",
+    "cardTitle": "Everything the platform ships",
+    "contract": "层级结构（2–3 层）；ECharts",
+    "echarts": true,
+    "file": "G7.js"
+  },
+  {
+    "code": "G15",
+    "cardTitle": "Response times, spread out",
+    "contract": "分组分布，逐条记录（几百点）；ECharts",
+    "echarts": true,
+    "file": "G15.js"
+  }
+]

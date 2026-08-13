@@ -1,9 +1,25 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Express } from "express";
 import express from "express";
 import { MemoryReportRepository } from "./repository.js";
 import { registerReportRoutes } from "./routes.js";
 import { MAX_REPORTS } from "./types.js";
+
+// mock AI 模块：streamChatCompletionParts 按脚本产出，其余（含 parseAiRequestConfig）保留真实实现
+vi.mock("../testcase/ai.js", async () => {
+  const actual = await vi.importActual<typeof import("../testcase/ai.js")>("../testcase/ai.js");
+  return { ...actual, streamChatCompletionParts: vi.fn() };
+});
+
+import { streamChatCompletionParts } from "../testcase/ai.js";
+
+const mockStream = vi.mocked(streamChatCompletionParts);
+
+const aiConfigFields: Record<string, unknown> = {
+  baseUrl: "http://ai.test/v1",
+  apiKey: "test-key",
+  model: "test-model",
+};
 
 function createApp(): { app: Express; repo: MemoryReportRepository } {
   const repo = new MemoryReportRepository();
@@ -14,6 +30,30 @@ function createApp(): { app: Express; repo: MemoryReportRepository } {
 }
 
 /** 最小请求辅助：直接操作 app 的 HTTP 层（起随机端口监听）。 */
+
+/** SSE 变体：返回原始文本，用于解析事件流断言。 */
+async function requestRaw(
+  app: Express,
+  method: string,
+  path: string,
+  payload?: unknown,
+): Promise<{ status: number; text: string }> {
+  const server = await new Promise<ReturnType<Express["listen"]>>((resolve) => {
+    const s = app.listen(0, () => resolve(s));
+  });
+  try {
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+      method,
+      headers: payload === undefined ? undefined : { "Content-Type": "application/json" },
+      body: payload === undefined ? undefined : JSON.stringify(payload),
+    });
+    return { status: res.status, text: await res.text() };
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
 async function request(
   app: Express,
   method: string,
@@ -171,4 +211,91 @@ describe("报告记录路由", () => {
     const res = await request(app, "POST", "/api/test-report/reports", validPayload());
     expect(res.status).toBe(409);
   }, 30000);
+});
+
+describe("AI 报告生成路由（SSE）", () => {
+  let app: Express;
+  let repo: MemoryReportRepository;
+
+  const SELECTION = JSON.stringify({
+    title: "登录测试简报",
+    charts: [
+      { code: "F5", title: "重点条目", sub: "1 tick = 1 条", source: "TICK ROWS", data: { items: ["启动", "上限"] } },
+    ],
+  });
+  const HTML = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>登录测试简报</title></head>
+<body><div class="grid2">
+<div class="card"><h2>重点条目</h2><div class="sub">1 tick = 1 条</div><svg id="c1"></svg><div class="src">TICK ROWS</div></div>
+</div><script>const D=[2];</script></body></html>`;
+
+  function scriptResponses(...responses: string[]) {
+    for (const text of responses) {
+      mockStream.mockImplementationOnce(async function* () {
+        yield { type: "content" as const, text };
+      });
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    ({ app, repo } = createApp());
+  });
+
+  it("生成成功：SSE 事件序列完整且报告落库", async () => {
+    scriptResponses(SELECTION, HTML);
+    const res = await requestRaw(app, "POST", "/api/test-report/reports/generate", {
+      ...aiConfigFields,
+      reportType: "brief",
+      sourceType: "text",
+      sourceText: "测试了登录功能的启动与上限两个点",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("event: progress");
+    expect(res.text).toContain("event: report");
+    expect(res.text).toContain('"ok":true');
+    expect(await repo.countReports()).toBe(1);
+  });
+
+  it("参数缺失：非法 reportType / 空 sourceText 返回 400", async () => {
+    const badType = await request(app, "POST", "/api/test-report/reports/generate", {
+      ...aiConfigFields,
+      reportType: "weekly",
+      sourceType: "text",
+      sourceText: "x",
+    });
+    expect(badType.status).toBe(400);
+
+    const emptyText = await request(app, "POST", "/api/test-report/reports/generate", {
+      ...aiConfigFields,
+      reportType: "brief",
+      sourceType: "text",
+      sourceText: "  ",
+    });
+    expect(emptyText.status).toBe(400);
+  });
+
+  it("CSV 输入缺少结构化 JSON 返回 400", async () => {
+    const res = await request(app, "POST", "/api/test-report/reports/generate", {
+      ...aiConfigFields,
+      reportType: "summary",
+      sourceType: "csv",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("AI 失败：发出 error 事件且不落库", async () => {
+    scriptResponses("垃圾", "垃圾");
+    const res = await requestRaw(app, "POST", "/api/test-report/reports/generate", {
+      ...aiConfigFields,
+      reportType: "summary",
+      sourceType: "csv",
+      csvData: { cases: [] },
+    });
+
+    expect(res.text).toContain("event: error");
+    expect(res.text).toContain('"ok":false');
+    expect(await repo.countReports()).toBe(0);
+  });
 });
