@@ -4,6 +4,7 @@ import { reportDbMode } from "./migrate.js";
 import { parseAiRequestConfig } from "../testcase/ai.js";
 import { beginSse, emit, endSse } from "../requirement/chat/sse.js";
 import { generateReport, reviseReport, ReportGenerateError, type GenerateReportInput } from "./generate.js";
+import { BrowserNotFoundError, renderReportPdf } from "./pdf.js";
 import type { CreateReportInput, ReportRepository, ReportSourceType, ReportType } from "./types.js";
 
 const REPORT_TYPES: ReportType[] = ["summary", "brief", "defect", "free"];
@@ -304,6 +305,28 @@ export function registerReportRoutes(app: Express, repo: ReportRepository): void
         emit(res, "error", { message, code: "INTERNAL" });
       }
       endSse(res, false);
+    }
+  });
+
+  // PDF 导出：无头浏览器渲染报告 HTML 为 A4 PDF（本机 Chrome/Edge，不下载 Chromium）
+  app.get("/api/test-report/reports/:id/pdf", async (req, res) => {
+    try {
+      const report = await repo.getReport(req.params.id);
+      if (!report) {
+        fail(res, "报告记录不存在", 404);
+        return;
+      }
+      const pdf = await renderReportPdf(report.html);
+      res.status(200);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="report-${report.id}.pdf"`);
+      res.send(pdf);
+    } catch (error) {
+      if (error instanceof BrowserNotFoundError) {
+        fail(res, errorMessage(error), 503);
+        return;
+      }
+      fail(res, errorMessage(error), 500);
     }
   });
 

@@ -15,6 +15,16 @@ import { streamChatCompletionParts } from "../testcase/ai.js";
 
 const mockStream = vi.mocked(streamChatCompletionParts);
 
+// mock PDF 渲染边界：不真开浏览器
+vi.mock("./pdf.js", async () => {
+  const actual = await vi.importActual<typeof import("./pdf.js")>("./pdf.js");
+  return { ...actual, renderReportPdf: vi.fn() };
+});
+
+import { renderReportPdf, BrowserNotFoundError } from "./pdf.js";
+
+const mockRenderPdf = vi.mocked(renderReportPdf);
+
 const aiConfigFields: Record<string, unknown> = {
   baseUrl: "http://ai.test/v1",
   apiKey: "test-key",
@@ -334,5 +344,37 @@ describe("AI 报告生成路由（SSE）", () => {
     });
     expect(missing.text).toContain("event: error");
     expect(missing.text).toContain("NOT_FOUND");
+  });
+
+  it("PDF 导出：成功返回 application/pdf；记录不存在 404；无浏览器 503", async () => {
+    const created = await repo.createReport({
+      title: "报告",
+      reportType: "brief",
+      sourceType: "text",
+      html: "<html>x</html>",
+    });
+
+    mockRenderPdf.mockResolvedValueOnce(Buffer.from("%PDF-1.4 fake"));
+    const server = await new Promise<ReturnType<Express["listen"]>>((resolve) => {
+      const s = app.listen(0, () => resolve(s));
+    });
+    try {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      const pdfRes = await fetch(`http://127.0.0.1:${port}/api/test-report/reports/${created.id}/pdf`);
+      expect(pdfRes.status).toBe(200);
+      expect(pdfRes.headers.get("content-type")).toBe("application/pdf");
+      expect(Buffer.from(await pdfRes.arrayBuffer()).toString()).toBe("%PDF-1.4 fake");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+
+    const missing = await request(app, "GET", "/api/test-report/reports/rpt_missing/pdf");
+    expect(missing.status).toBe(404);
+
+    mockRenderPdf.mockRejectedValueOnce(new BrowserNotFoundError());
+    const noBrowser = await request(app, "GET", `/api/test-report/reports/${created.id}/pdf`);
+    expect(noBrowser.status).toBe(503);
+    expect(String(noBrowser.body.error)).toContain("浏览器打印");
   });
 });
