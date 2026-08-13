@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ChatSidebar } from './ChatSidebar'
+import { ErrorDialogProvider } from '../../../components/ui/ErrorDialogProvider'
 import * as chatApi from './chat-api'
 
 //  mock chat-api 的异步加载，避免测试实际发起网络请求
@@ -11,20 +12,49 @@ vi.mock('./chat-api', async () => {
     ...actual,
     listSessions: vi.fn(),
     getLibraryCount: vi.fn(),
+    deleteSession: vi.fn(),
   }
 })
 
 const mockListSessions = vi.mocked(chatApi.listSessions)
 const mockGetLibraryCount = vi.mocked(chatApi.getLibraryCount)
+const mockDeleteSession = vi.mocked(chatApi.deleteSession)
+
+/** 渲染当前路由路径，用于断言删除当前会话后的跳转行为。 */
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location-probe">{location.pathname}</div>
+}
 
 function renderSidebar(initialEntries: string[] = ['/requirement-analysis']) {
   return render(
-    <MemoryRouter initialEntries={initialEntries}>
-      <Routes>
-        <Route path="/requirement-analysis/*" element={<ChatSidebar />} />
-      </Routes>
-    </MemoryRouter>,
+    <ErrorDialogProvider>
+      <MemoryRouter initialEntries={initialEntries}>
+        <Routes>
+          <Route
+            path="/requirement-analysis/*"
+            element={
+              <>
+                <ChatSidebar />
+                <LocationProbe />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    </ErrorDialogProvider>,
   )
+}
+
+/** 构造一条会话列表数据。 */
+function makeSession(id: string, title: string) {
+  return {
+    id,
+    title,
+    agentTemplate: 'mindmap',
+    createdAt: new Date(Date.now() - 1000 * 60 * 30),
+    updatedAt: new Date(Date.now() - 1000 * 60 * 30),
+  }
 }
 
 describe('ChatSidebar', () => {
@@ -32,6 +62,7 @@ describe('ChatSidebar', () => {
     vi.clearAllMocks()
     mockListSessions.mockResolvedValue([])
     mockGetLibraryCount.mockResolvedValue(0)
+    mockDeleteSession.mockResolvedValue(undefined)
   })
 
   it('渲染 Logo、新聊天、文件库与最近列表', async () => {
@@ -79,5 +110,61 @@ describe('ChatSidebar', () => {
 
     expect(document.querySelector('.ra-chat-sidebar-count.is-bumping')).toBeInTheDocument()
     expect(screen.getByText('+1')).toBeInTheDocument()
+  })
+
+  it('点击删除按钮弹出轻量确认，取消后不调用接口且条目保留', async () => {
+    mockListSessions.mockResolvedValue([makeSession('s1', '登录需求')])
+    renderSidebar()
+
+    expect(await screen.findByText('登录需求')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '删除会话 登录需求' }))
+
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('将删除会话「登录需求」及其全部消息记录；已保存到文件库的文件不受影响。')
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(mockDeleteSession).not.toHaveBeenCalled()
+    expect(screen.getByText('登录需求')).toBeInTheDocument()
+  })
+
+  it('确认删除后调用接口并从列表移除该会话', async () => {
+    mockListSessions.mockResolvedValue([makeSession('s1', '登录需求'), makeSession('s2', '下单需求')])
+    renderSidebar()
+
+    expect(await screen.findByText('下单需求')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '删除会话 登录需求' }))
+    fireEvent.click(await screen.findByRole('button', { name: '确认删除' }))
+
+    await waitFor(() => expect(mockDeleteSession).toHaveBeenCalledWith('s1'))
+    await waitFor(() => expect(screen.queryByText('登录需求')).not.toBeInTheDocument())
+    expect(screen.getByText('下单需求')).toBeInTheDocument()
+  })
+
+  it('删除当前打开的会话后跳转回新聊天首页', async () => {
+    mockListSessions.mockResolvedValue([makeSession('s1', '登录需求')])
+    renderSidebar(['/requirement-analysis/chat/s1'])
+
+    expect(await screen.findByText('登录需求')).toBeInTheDocument()
+    expect(screen.getByTestId('location-probe').textContent).toBe('/requirement-analysis/chat/s1')
+
+    fireEvent.click(screen.getByRole('button', { name: '删除会话 登录需求' }))
+    fireEvent.click(await screen.findByRole('button', { name: '确认删除' }))
+
+    await waitFor(() => expect(screen.getByTestId('location-probe').textContent).toBe('/requirement-analysis'))
+  })
+
+  it('删除失败时条目保留并弹出错误提示', async () => {
+    mockDeleteSession.mockRejectedValue(new Error('网络异常'))
+    mockListSessions.mockResolvedValue([makeSession('s1', '登录需求')])
+    renderSidebar()
+
+    expect(await screen.findByText('登录需求')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '删除会话 登录需求' }))
+    fireEvent.click(await screen.findByRole('button', { name: '确认删除' }))
+
+    expect(await screen.findByText('网络异常')).toBeInTheDocument()
+    expect(screen.getByText('登录需求')).toBeInTheDocument()
   })
 })

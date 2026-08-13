@@ -609,7 +609,7 @@
   align-items: center;
   gap: 0.75rem;
   width: 100%;
-  padding: 0.625rem 0.75rem;
+  padding: 0.625rem 2rem 0.625rem 0.75rem;
   text-align: left;
   font-size: 0.875rem;
   font-weight: 500;
@@ -764,6 +764,46 @@
 .ra-chat-sidebar-session-time {
   font-size: 0.75rem;
   color: var(--color-muted);
+}
+
+.ra-chat-sidebar-session-wrap {
+  position: relative;
+}
+
+.ra-chat-sidebar-session-actions {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+/* 悬停或键盘聚焦时显现删除入口 */
+.ra-chat-sidebar-session-wrap:hover .ra-chat-sidebar-session-actions,
+.ra-chat-sidebar-session-wrap:focus-within .ra-chat-sidebar-session-actions {
+  opacity: 1;
+}
+
+.ra-chat-sidebar-session-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.ra-chat-sidebar-session-delete:hover {
+  background: oklch(0.55 0.2 25 / 0.1);
+  color: var(--color-danger);
 }
 
 /* ── 会话视图 ───────────────────────────── */
