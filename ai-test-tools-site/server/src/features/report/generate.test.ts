@@ -8,7 +8,7 @@ vi.mock("../testcase/ai.js", async () => {
 });
 
 import { streamChatCompletionParts } from "../testcase/ai.js";
-import { generateReport, ReportGenerateError, extractHtml, type ReportGenerateEvent } from "./generate.js";
+import { generateReport, reviseReport, ReportGenerateError, extractHtml, type ReportGenerateEvent } from "./generate.js";
 import type { AiRequestConfig } from "../testcase/types.js";
 
 const mockStream = vi.mocked(streamChatCompletionParts);
@@ -151,6 +151,43 @@ describe("generateReport 管线", () => {
       titleHint: "8 月登录模块回归总结",
     });
     expect(report.title).toBe("8 月登录模块回归总结");
+  });
+});
+
+describe("reviseReport 追改", () => {
+  let repo: MemoryReportRepository;
+  let events: ReportGenerateEvent[];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    repo = new MemoryReportRepository();
+    events = [];
+  });
+
+  it("整体重生成替换 html 与 chartKinds", async () => {
+    const created = await repo.createReport({
+      title: "登录总结",
+      reportType: "summary",
+      sourceType: "csv",
+      sourceDigest: JSON.stringify({ total: 100, passed: 92 }),
+      chartKinds: { charts: [{ code: "F11" }] },
+      html: "<html>v1</html>",
+    });
+    scriptResponses(VALID_SELECTION, VALID_HTML);
+
+    const updated = await reviseReport(aiConfig, repo, { reportId: created.id, instruction: "把标题改激进一点" }, (e) => events.push(e));
+
+    expect(updated.id).toBe(created.id);
+    expect(updated.html).toContain("<!doctype html>");
+    expect(updated.chartKinds).toMatchObject({ charts: [{ code: "F11" }] });
+    expect(events.map((e) => (e.type === "progress" ? e.stage : e.type))).toEqual(["select", "assemble", "save", "done"]);
+    // 追改装箱应携带修改指令
+    const firstCall = mockStream.mock.calls[0][1] as { messages: { content: string }[] };
+    expect(firstCall.messages[1].content).toContain("把标题改激进一点");
+  });
+
+  it("报告不存在时抛错", async () => {
+    await expect(reviseReport(aiConfig, repo, { reportId: "rpt_missing", instruction: "改" })).rejects.toThrow("不存在");
   });
 });
 

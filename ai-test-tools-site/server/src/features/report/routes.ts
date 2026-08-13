@@ -3,7 +3,7 @@ import { isObject, text } from "../testcase/utils.js";
 import { reportDbMode } from "./migrate.js";
 import { parseAiRequestConfig } from "../testcase/ai.js";
 import { beginSse, emit, endSse } from "../requirement/chat/sse.js";
-import { generateReport, ReportGenerateError, type GenerateReportInput } from "./generate.js";
+import { generateReport, reviseReport, ReportGenerateError, type GenerateReportInput } from "./generate.js";
 import type { CreateReportInput, ReportRepository, ReportSourceType, ReportType } from "./types.js";
 
 const REPORT_TYPES: ReportType[] = ["summary", "brief", "defect", "free"];
@@ -252,6 +252,53 @@ export function registerReportRoutes(app: Express, repo: ReportRepository): void
         emit(res, "error", { message, code: error.code });
       } else if (isLimitError(message)) {
         // 上限错误走 error 事件（与聊天域对齐），由前端统一提示
+        emit(res, "error", { message, code: "LIMIT" });
+      } else {
+        emit(res, "error", { message, code: "INTERNAL" });
+      }
+      endSse(res, false);
+    }
+  });
+
+  // 对话式追改（SSE）：原输入 + 修改指令 + 当前 HTML 整体重生成替换
+  app.post("/api/test-report/reports/:id/revise", async (req, res) => {
+    const instruction = text(body(req).instruction).trim();
+    if (!instruction) {
+      fail(res, "instruction 不能为空");
+      return;
+    }
+    if (instruction.length > 2000) {
+      fail(res, "instruction 超过长度上限");
+      return;
+    }
+
+    let config;
+    try {
+      config = parseAiRequestConfig(body(req));
+    } catch (error) {
+      fail(res, errorMessage(error));
+      return;
+    }
+
+    beginSse(res);
+    try {
+      await reviseReport(config, repo, { reportId: req.params.id, instruction }, (event) => {
+        if (event.type === "done") {
+          emit(res, "report", { report: event.report });
+        } else if (event.type === "error") {
+          emit(res, "error", { message: event.message, code: event.code });
+        } else {
+          emit(res, "progress", event);
+        }
+      });
+      endSse(res, true);
+    } catch (error) {
+      const message = errorMessage(error);
+      if (isNotFoundError(message)) {
+        emit(res, "error", { message, code: "NOT_FOUND" });
+      } else if (error instanceof ReportGenerateError) {
+        emit(res, "error", { message, code: error.code });
+      } else if (isLimitError(message)) {
         emit(res, "error", { message, code: "LIMIT" });
       } else {
         emit(res, "error", { message, code: "INTERNAL" });

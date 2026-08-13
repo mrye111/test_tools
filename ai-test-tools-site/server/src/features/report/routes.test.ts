@@ -298,4 +298,41 @@ describe("AI 报告生成路由（SSE）", () => {
     expect(res.text).toContain('"ok":false');
     expect(await repo.countReports()).toBe(0);
   });
+
+  it("追改成功：整体重生成并替换落库内容", async () => {
+    const created = await repo.createReport({
+      title: "登录测试简报",
+      reportType: "brief",
+      sourceType: "text",
+      sourceDigest: "测试了登录功能",
+      chartKinds: null,
+      html: "<html>v1</html>",
+    });
+    scriptResponses(SELECTION, HTML);
+
+    const res = await requestRaw(app, "POST", `/api/test-report/reports/${created.id}/revise`, {
+      ...aiConfigFields,
+      instruction: "把重点条目换成层级图",
+    });
+
+    expect(res.text).toContain("event: report");
+    expect(res.text).toContain('"ok":true');
+    const stored = await repo.getReport(created.id);
+    expect(stored!.html).toContain("<!doctype html>");
+  });
+
+  it("追改参数校验：空 instruction 返回 400；不存在记录走 error 事件", async () => {
+    const empty = await request(app, "POST", "/api/test-report/reports/rpt_x/revise", {
+      ...aiConfigFields,
+      instruction: " ",
+    });
+    expect(empty.status).toBe(400);
+
+    const missing = await requestRaw(app, "POST", "/api/test-report/reports/rpt_missing/revise", {
+      ...aiConfigFields,
+      instruction: "改一下",
+    });
+    expect(missing.text).toContain("event: error");
+    expect(missing.text).toContain("NOT_FOUND");
+  });
 });

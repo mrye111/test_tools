@@ -191,3 +191,47 @@ export async function generateReport(
   onEvent({ type: "done", report });
   return report;
 }
+
+/** 追改入参：原报告 id + 自然语言修改指令。 */
+export interface ReviseReportInput {
+  reportId: string;
+  instruction: string;
+}
+
+/**
+ * 对话式追改：原始素材 + 修改指令 + 上次选型重新装箱，整体重生成（一期不做局部 patch）。
+ * 版本策略：仅保留当前版（一期不存历史快照）。
+ */
+export async function reviseReport(
+  config: AiRequestConfig,
+  repo: ReportRepository,
+  input: ReviseReportInput,
+  onEvent: (event: ReportGenerateEvent) => void = () => {},
+): Promise<TestReport> {
+  const existing = await repo.getReport(input.reportId);
+  if (!existing) {
+    throw new ReportGenerateError("报告记录不存在", "VALIDATION");
+  }
+
+  // 追改装箱：指令与上次选型进入溯源池，用户给出的数字视为可溯源素材
+  const revisedInput: GenerateReportInput = {
+    reportType: existing.reportType,
+    sourceType: existing.sourceType,
+    sourceText: [
+      existing.sourceDigest ?? "",
+      `【用户修改指令】${input.instruction}`,
+      `【上一次选型】${JSON.stringify(existing.chartKinds ?? null)}`,
+    ].join("\n\n"),
+  };
+
+  onEvent({ type: "progress", stage: "select", message: "正在按修改指令重新选图…" });
+  const selection = await selectCharts(config, revisedInput);
+  onEvent({ type: "progress", stage: "assemble", message: "正在重新组装报告…" });
+
+  const html = await assembleHtml(config, revisedInput, selection);
+  onEvent({ type: "progress", stage: "save", message: "校验通过，正在更新报告…" });
+
+  const updated = await repo.updateReportContent(existing.id, { html, chartKinds: selection });
+  onEvent({ type: "done", report: updated });
+  return updated;
+}
