@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, renameSync } from "node:fs";
 import { resolve } from "node:path";
+import type { Pool, RowDataPacket } from "mysql2/promise";
 import { logger } from "../../../logger.js";
+import { normalizeErrorMessage } from "../../../error-message.js";
 import { isObject } from "../../testcase/utils.js";
 import { resolveSharedChatDb } from "../db/pool.js";
 import { MemoryChatRepository } from "./repository.js";
@@ -21,6 +23,7 @@ export async function bootstrapChat(): Promise<ChatRepository> {
     currentDbMode = "mysql";
     const repo = new MysqlChatRepository(handle.pool);
     await migrateLegacyStore(handle.pool, repo);
+    await sanitizeLegacyErrorMessages(handle.pool);
     return repo;
   }
   currentDbMode = "memory";
@@ -107,4 +110,31 @@ export async function migrateLegacyStore(_pool: unknown, repo: ChatRepository): 
   }
 
   renameSync(path, `${path}.migrated`);
+}
+
+/** 脏错误消息的旧格式前缀（落库即友好改造前的历史遗留）。 */
+const LEGACY_ERROR_PREFIX = "处理失败：";
+
+/**
+ * 一次性清理存量脏错误消息：
+ * 早期版本把供应商原始错误（含英文 JSON、账号与 request id）作为消息内容落库；
+ * 启动时将这些行改写为归一化后的友好文案。无脏数据时零开销跳过。
+ */
+export async function sanitizeLegacyErrorMessages(pool: Pool): Promise<number> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    "SELECT id, content FROM ra_messages WHERE status = 'error' AND content LIKE ?",
+    [`${LEGACY_ERROR_PREFIX}%`],
+  );
+  if (rows.length === 0) return 0;
+
+  for (const row of rows) {
+    const content = String(row.content ?? "");
+    const raw = content.startsWith(LEGACY_ERROR_PREFIX) ? content.slice(LEGACY_ERROR_PREFIX.length) : content;
+    const friendly = normalizeErrorMessage(raw, { fallbackMessage: "请求处理失败，请重试。" });
+    if (friendly !== content) {
+      await pool.execute("UPDATE ra_messages SET content = ? WHERE id = ?", [friendly, row.id]);
+    }
+  }
+  logger.info({ count: rows.length }, "已清理历史脏错误消息");
+  return rows.length;
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Board } from './types'
+import { normalizeErrorMessage } from '../../../lib/app-error'
 
 const SAVE_DEBOUNCE_MS = 1500
 const RETRY_INTERVAL_MS = 10000
@@ -29,7 +30,7 @@ export function useBoardPersistence(
         retryTimerRef.current = null
       }
     } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : '自动保存失败，将在下次变更后重试')
+      setSaveError(normalizeErrorMessage(err, { fallbackMessage: '自动保存失败，将在下次变更后重试' }))
       pendingRef.current = true
       if (retryTimerRef.current !== null) {
         window.clearTimeout(retryTimerRef.current)

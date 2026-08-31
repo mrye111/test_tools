@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { loadDbConfig, loadDotEnv } from "./config.js";
 import { resolveChatDb, initSchema } from "./pool.js";
-import { createPool } from "mysql2/promise";
+import { createConnection, createPool } from "mysql2/promise";
 
 type Pool = import("mysql2/promise").Pool;
 
@@ -16,8 +16,16 @@ vi.mock("./config.js", async () => {
 vi.mock("mysql2/promise", async () => {
   return {
     createPool: vi.fn(),
+    createConnection: vi.fn(),
   };
 });
+
+/** 引导连接 stub：建库检查用，与业务连接池分离。 */
+function stubBootstrapConnection() {
+  const connection = { query: vi.fn().mockResolvedValue([[], []]), end: vi.fn().mockResolvedValue(undefined) };
+  vi.mocked(createConnection).mockResolvedValue(connection as unknown as import("mysql2/promise").Connection);
+  return connection;
+}
 
 function makeFakePool() {
   return {
@@ -77,6 +85,7 @@ describe("loadDotEnv", () => {
 
 describe("resolveChatDb", () => {
   it("createPool 抛错时降级为 memory 且不抛出", async () => {
+    stubBootstrapConnection();
     vi.mocked(createPool).mockRejectedValueOnce(new Error("connection refused"));
     const handle = await resolveChatDb();
     expect(handle.pool).toBeNull();
@@ -84,6 +93,7 @@ describe("resolveChatDb", () => {
   });
 
   it("query 成功但 initSchema 抛错时关闭连接池并降级为 memory", async () => {
+    stubBootstrapConnection();
     const fakePool = makeFakePool();
     fakePool.query.mockResolvedValue([[], []]);
     fakePool.getConnection.mockRejectedValue(new Error("syntax error"));
@@ -106,7 +116,9 @@ describe("initSchema", () => {
       getConnection: vi.fn().mockResolvedValue(connection),
     };
     await initSchema(pool as unknown as Pool);
-    expect(query).toHaveBeenCalledTimes(6);
+    // 4 张表（ra_sessions / ra_messages / ra_session_files / ra_library_files）；
+    // 建库与 USE 已前移到 createChatPool 的引导连接
+    expect(query).toHaveBeenCalledTimes(4);
     expect(release).toHaveBeenCalledOnce();
   });
 });

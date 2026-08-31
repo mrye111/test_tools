@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { chatStream, getSession } from './chat-api'
 import type { AgentTemplate, ChatStreamEvent, MessageRole, MessageStatus, SessionFileSummary } from './chat-api'
 import { loadStoredModelConfig } from '../../../lib/model-config-store'
+import { normalizeErrorMessage } from '../../../lib/app-error'
 import { toAiConfig } from '../../../shared/api-types'
 import type { RuntimeAiConfig } from '../../../shared/api-types'
 
@@ -143,8 +144,7 @@ function reducer(state: State, action: Action): State {
 }
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message
-  return String(error ?? '请求失败')
+  return normalizeErrorMessage(error, { fallbackMessage: '请求失败，请重试。' })
 }
 
 function mapServerMessageToView(

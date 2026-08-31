@@ -25,6 +25,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     css: true,
+    // dist 是 tsc 编译产物，其中的 *.test.js 是源测试的副本，不应重复运行
+    exclude: ['**/node_modules/**', '**/dist/**', '**/.git/**'],
   },
 
   optimizeDeps: {

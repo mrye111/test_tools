@@ -5,6 +5,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { saveToLibrary } from './chat-api'
+import { normalizeErrorMessage } from '../../../lib/app-error'
 import { AGENT_TEMPLATES } from './agent-templates'
 import type { SessionFileSummary } from './chat-api'
 
@@ -36,7 +37,7 @@ export function FileCard({ file }: FileCardProps) {
         new CustomEvent('ra-library-count', { detail: { count: result.libraryCount } }),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败')
+      setError(normalizeErrorMessage(err, { fallbackMessage: '保存失败，请重试。' }))
     } finally {
       setSaving(false)
     }

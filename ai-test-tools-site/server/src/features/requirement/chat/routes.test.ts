@@ -171,6 +171,31 @@ describe("registerChatRoutes", () => {
     expect(endEvent.data).toEqual({ ok: true });
   });
 
+  it("POST /chat AI 调用失败：SSE 与落库消息均为归一化友好文案，不含原始错误", async () => {
+    mockedAnalyze.mockRejectedValue(
+      new Error('AI request failed: HTTP 400 {"error":{"code":"InvalidSubscription","message":"Your account (123) does not have a valid CodingPlan subscription, or your subscription has expired.","type":"Bad Request"}}'),
+    );
+
+    const app = await createApp(repo);
+    const { status, events } = await fetchSse(app, "/api/requirement-analysis/chat", {
+      agentTemplate: "mindmap",
+      text: "用户通过手机号登录",
+      ai_config: aiConfig,
+    });
+
+    expect(status).toBe(200);
+    const errorEvent = events.find((e) => e.event === "error");
+    expect(errorEvent?.data).toEqual({ message: "模型服务订阅无效或已过期，请到供应商控制台检查订阅或续费状态后重试。" });
+
+    // 落库的 assistant 消息同样为友好文案（落库即友好，读路径零负担）
+    const sessions = await repo.listSessions();
+    const messages = await repo.listMessages(sessions[0].id);
+    const errorMessage = messages.find((m) => m.status === "error");
+    expect(errorMessage?.content).toBe("模型服务订阅无效或已过期，请到供应商控制台检查订阅或续费状态后重试。");
+    expect(errorMessage?.content).not.toContain("InvalidSubscription");
+    expect(errorMessage?.content).not.toContain("HTTP 400");
+  });
+
   it("POST /chat 无 sessionId 但 text 超长返回 400", async () => {
     const app = await createApp(repo);
     const { status, json } = await fetchJson(app, "/api/requirement-analysis/chat", {

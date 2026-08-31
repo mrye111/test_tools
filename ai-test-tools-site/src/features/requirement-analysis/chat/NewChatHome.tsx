@@ -5,6 +5,7 @@ import { ChatComposer } from './ChatComposer'
 import { AgentTemplateChips } from './AgentTemplateChips'
 import { TemplateCenterModal } from '../TemplateCenterModal'
 import { AGENT_TEMPLATES, type AgentTemplate } from './agent-templates'
+import { normalizeErrorMessage } from '../../../lib/app-error'
 
 interface ExampleItem {
   title: string
@@ -61,7 +62,7 @@ export function NewChatHome() {
         setSubmitError('会话创建异常，请重试')
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : '发送失败，请重试'
+      const message = normalizeErrorMessage(error, { fallbackMessage: '发送失败，请重试。' })
       setSubmitError(message)
     }
   }, [text, streaming, send, template, navigate])

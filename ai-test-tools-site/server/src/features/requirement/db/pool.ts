@@ -1,4 +1,4 @@
-import { createPool, type Pool } from "mysql2/promise";
+import { createPool, createConnection, type Pool } from "mysql2/promise";
 import { loadDbConfig, loadDotEnv, type DbConfig } from "./config.js";
 
 export interface ChatDbHandle {
@@ -6,11 +6,15 @@ export interface ChatDbHandle {
   mode: "mysql" | "memory";
 }
 
+/** 数据库名仅允许安全字符，防止配置值注入 DDL。 */
+function assertSafeDatabaseName(name: string): string {
+  if (!/^[a-zA-Z0-9_]+$/.test(name)) {
+    throw new Error(`非法数据库名: ${name}`);
+  }
+  return name;
+}
+
 const SCHEMA_STATEMENTS = [
-  `CREATE DATABASE IF NOT EXISTS ai_test_tools
-   CHARACTER SET utf8mb4
-   COLLATE utf8mb4_unicode_ci`,
-  `USE ai_test_tools`,
   `CREATE TABLE IF NOT EXISTS ra_sessions (
     id VARCHAR(36) PRIMARY KEY,
     title VARCHAR(200) NOT NULL,
@@ -66,8 +70,27 @@ export async function initSchema(pool: Pool): Promise<void> {
   }
 }
 
+/** 引导连接：不带 database 连接，确保目标库存在（池连接指定了库名，库不存在时 SELECT 1 会直接失败）。 */
+async function ensureDatabaseExists(config: DbConfig): Promise<void> {
+  const database = assertSafeDatabaseName(config.database);
+  const connection = await createConnection({
+    host: config.host,
+    port: config.port,
+    user: config.user,
+    password: config.password,
+  });
+  try {
+    await connection.query(
+      `CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    );
+  } finally {
+    await connection.end();
+  }
+}
+
 export async function createChatPool(config: DbConfig): Promise<Pool | null> {
   try {
+    await ensureDatabaseExists(config);
     const pool = createPool({
       host: config.host,
       port: config.port,

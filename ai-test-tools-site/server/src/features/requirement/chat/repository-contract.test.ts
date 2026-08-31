@@ -524,6 +524,8 @@ describe("MemoryChatRepository contract", () => {
 });
 
 if (process.env.TEST_MYSQL === "1") {
+  // 真库测试一律指向独立测试库，避免清空开发库数据
+  process.env.MYSQL_DATABASE = process.env.MYSQL_DATABASE || "ai_test_tools_test";
   describe("MysqlChatRepository 契约", async () => {
     const { resolveChatDb } = await import("../db/pool.js");
     const handle = await resolveChatDb();

@@ -2,6 +2,8 @@ import type { AiRequestConfig } from "../../testcase/types.js";
 import { analyzeRequirementText, type RequirementAnalysisEvent } from "../ai.js";
 import { generateBoardChartDraft } from "../board-ai.js";
 import { parseAiRequestConfig } from "../../testcase/ai.js";
+import { normalizeErrorMessage } from "../../../error-message.js";
+import { logger } from "../../../logger.js";
 import type {
   AgentTemplate,
   ChatRepository,
@@ -244,9 +246,13 @@ export async function runChatTurn(opts: RunChatTurnOptions): Promise<RunChatTurn
       file: sessionFile,
     };
   } catch (error) {
+    // 错误消息落库即友好：原始错误只进服务端日志/trace，不进库、不进 UI
     const summary = isAbortError(error)
       ? "请求已取消。"
-      : `处理失败：${summarizeError(error)}`;
+      : normalizeErrorMessage(error, { fallbackMessage: "请求处理失败，请重试。" });
+    if (!isAbortError(error)) {
+      logger.warn({ err: summarizeError(error), sessionId: session.id }, "对话轮次失败");
+    }
     const assistantMessage = await repo.createMessage({
       sessionId: session.id,
       role: "assistant" as MessageRole,
@@ -255,7 +261,7 @@ export async function runChatTurn(opts: RunChatTurnOptions): Promise<RunChatTurn
       status: "error" as MessageStatus,
     });
 
-    emit("error", { message: summarizeError(error) });
+    emit("error", { message: summary });
     emit("message", {
       id: assistantMessage.id,
       role: assistantMessage.role,
