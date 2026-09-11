@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
@@ -21,6 +21,7 @@ import { REQUIREMENT_HANDOFF_KEY } from '../lib/requirement-analysis-api'
 import type { RequirementAnalysisResult, RequirementNode } from '../lib/requirement-analysis-api'
 import { AnalysisBoard } from '../features/requirement-analysis/AnalysisBoard'
 import { useBoardPersistence } from '../features/requirement-analysis/board/useBoardPersistence'
+import { useGraphHistory } from '../features/requirement-analysis/board/rf/useGraphHistory'
 import { deserializeRfBoard, serializeRfBoard } from '../features/requirement-analysis/board/rf/rf-persistence'
 import {
   buildMindmapRefNode,
@@ -54,6 +55,13 @@ export function AnalysisBoardPage() {
   const [graph, setGraph] = useState<BoardGraph | null>(null)
   const [viewport, setViewport] = useState<BoardViewport | undefined>(undefined)
   const [boardError, setBoardError] = useState<string | null>(null)
+  const history = useGraphHistory()
+  const { reset: resetHistory } = history
+  // 图镜像 ref：record/undo 需要同步读取最新图，避开 setState 异步
+  const graphRef = useRef<BoardGraph | null>(null)
+  useEffect(() => {
+    graphRef.current = graph
+  }, [graph])
 
   const fileTitle = file?.title ?? ''
 
@@ -64,6 +72,7 @@ export function AnalysisBoardPage() {
     loader
       .then((data) => {
         if (cancelled) return
+        resetHistory()
         setFile(data)
         const fileKind = data.kind ?? 'mindmap'
         const payload = isRecord(data.payload) ? data.payload : {}
@@ -92,7 +101,7 @@ export function AnalysisBoardPage() {
     return () => {
       cancelled = true
     }
-  }, [id, fromLibrary])
+  }, [id, fromLibrary, resetHistory])
 
   const result = useMemo<RequirementAnalysisResult | null>(() => {
     if (!file) return null
@@ -112,9 +121,28 @@ export function AnalysisBoardPage() {
     }
   }, [file])
 
-  const handleGraphChange = useCallback((next: BoardGraph) => {
-    setGraph(next)
-  }, [])
+  const handleGraphChange = useCallback(
+    (next: BoardGraph, meta?: { history?: 'commit' | 'transient' | 'silent' }) => {
+      const prev = graphRef.current
+      if (prev) history.record(prev, meta?.history ?? 'commit')
+      setGraph(next)
+    },
+    [history],
+  )
+
+  const handleUndo = useCallback(() => {
+    const current = graphRef.current
+    if (!current) return
+    const snapshot = history.undo(current)
+    if (snapshot) setGraph(snapshot)
+  }, [history])
+
+  const handleRedo = useCallback(() => {
+    const current = graphRef.current
+    if (!current) return
+    const snapshot = history.redo(current)
+    if (snapshot) setGraph(snapshot)
+  }, [history])
 
   const handleViewportChange = useCallback((vp: BoardViewport) => {
     setViewport(vp)
@@ -180,62 +208,62 @@ export function AnalysisBoardPage() {
     [id, fromLibrary],
   )
 
-  /** 画板内 toolbar 动作：推导判定表 / 重新生成正交表（derive 逻辑不动，输入从 RF 图重建）。 */
+  /** 画板内 toolbar 动作：推导判定表 / 重新生成正交表（derive 逻辑不动，输入从 RF 图重建；变更入历史栈）。 */
   const handleDerive = useCallback(
     (action: 'derive-decision-table' | 'regenerate-array', elementId: string) => {
-      setGraph((prev) => {
-        if (!prev) return prev
-        if (countElements(prev) >= BOARD_LIMITS.MAX_ELEMENTS) {
-          setBoardError('白板图元数量已达上限（50）')
-          return prev
-        }
+      const prev = graphRef.current
+      if (!prev) return
+      if (countElements(prev) >= BOARD_LIMITS.MAX_ELEMENTS) {
+        setBoardError('白板图元数量已达上限（50）')
+        return
+      }
 
-        if (action === 'derive-decision-table') {
-          const ce = reconstructCauseEffectElement(prev, elementId)
-          if (!ce) return prev
-          const derived = deriveDecisionTable(ce)
-          if ('error' in derived) {
-            setBoardError(derived.error ?? '推导判定表失败')
-            return prev
-          }
-          if (derived.rules.length === 0 || (derived.conditions.length === 0 && derived.actions.length === 0)) {
-            setBoardError('因果图没有可推导的内容')
-            return prev
-          }
-          const placed = elementToRf({ ...derived, id: crypto.randomUUID(), x: ce.x + ce.w + 40, y: ce.y })
-          return { nodes: [...prev.nodes, ...placed.nodes], edges: [...prev.edges, ...placed.edges] }
+      if (action === 'derive-decision-table') {
+        const ce = reconstructCauseEffectElement(prev, elementId)
+        if (!ce) return
+        const derived = deriveDecisionTable(ce)
+        if ('error' in derived) {
+          setBoardError(derived.error ?? '推导判定表失败')
+          return
         }
+        if (derived.rules.length === 0 || (derived.conditions.length === 0 && derived.actions.length === 0)) {
+          setBoardError('因果图没有可推导的内容')
+          return
+        }
+        const placed = elementToRf({ ...derived, id: crypto.randomUUID(), x: ce.x + ce.w + 40, y: ce.y })
+        handleGraphChange({ nodes: [...prev.nodes, ...placed.nodes], edges: [...prev.edges, ...placed.edges] })
+        return
+      }
 
-        // regenerate-array：判定表 → 正交表
-        const dtNode = prev.nodes.find((n) => n.id === elementId)
-        const dt = dtNode ? nodeToDecisionTableElement(dtNode) : null
-        if (!dt) return prev
-        const factors = dt.conditions.map((name) => ({ name, levels: ['是', '否'] }))
-        if (factors.length === 0) {
-          setBoardError('判定表没有条件，无法生成正交表')
-          return prev
-        }
-        const selected = selectOrthogonalArray(factors)
-        if ('error' in selected) {
-          setBoardError(selected.error)
-          return prev
-        }
-        const placed = elementToRf({
-          id: crypto.randomUUID(),
-          kind: 'orthogonal',
-          x: dt.x + 440,
-          y: dt.y,
-          w: 400,
-          h: 240,
-          sourceNodeId: dt.sourceNodeId,
-          factors,
-          arrayName: selected.name,
-          rows: selected.rows,
-        })
-        return { nodes: [...prev.nodes, ...placed.nodes], edges: [...prev.edges, ...placed.edges] }
+      // regenerate-array：判定表 → 正交表
+      const dtNode = prev.nodes.find((n) => n.id === elementId)
+      const dt = dtNode ? nodeToDecisionTableElement(dtNode) : null
+      if (!dt) return
+      const factors = dt.conditions.map((name) => ({ name, levels: ['是', '否'] }))
+      if (factors.length === 0) {
+        setBoardError('判定表没有条件，无法生成正交表')
+        return
+      }
+      const selected = selectOrthogonalArray(factors)
+      if ('error' in selected) {
+        setBoardError(selected.error)
+        return
+      }
+      const placed = elementToRf({
+        id: crypto.randomUUID(),
+        kind: 'orthogonal',
+        x: dt.x + 440,
+        y: dt.y,
+        w: 400,
+        h: 240,
+        sourceNodeId: dt.sourceNodeId,
+        factors,
+        arrayName: selected.name,
+        rows: selected.rows,
       })
+      handleGraphChange({ nodes: [...prev.nodes, ...placed.nodes], edges: [...prev.edges, ...placed.edges] })
     },
-    [],
+    [handleGraphChange],
   )
 
   /** 用例接力：从 RF 图收集判定表/正交表骨架，拼接 sourceText 后写入 localStorage。 */
@@ -303,6 +331,10 @@ export function AnalysisBoardPage() {
       onBack={handleBack}
       onGenerateChart={fromLibrary ? undefined : handleGenerateChart}
       onDerive={handleDerive}
+      canUndo={history.canUndo}
+      canRedo={history.canRedo}
+      onUndo={handleUndo}
+      onRedo={handleRedo}
       libraryBadge={fromLibrary}
     />
   )

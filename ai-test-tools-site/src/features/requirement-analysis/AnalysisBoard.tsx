@@ -14,6 +14,8 @@ import {
   Share2,
   Table2,
   Trash2,
+  Undo2,
+  Redo2,
   X,
   ZoomIn,
   ZoomOut,
@@ -58,6 +60,11 @@ export type AnalysisBoardProps = {
   onGenerateChart?: (chartKind: BoardChartKind, nodeId: string) => Promise<unknown>
   /** 画板内 toolbar 动作：derive-decision-table / regenerate-array。 */
   onDerive?: (action: 'derive-decision-table' | 'regenerate-array', elementId: string) => void
+  /** 撤销/重做（快照栈） */
+  canUndo?: boolean
+  canRedo?: boolean
+  onUndo?: () => void
+  onRedo?: () => void
 }
 
 const EXPORT_OPTIONS: Array<{ value: ExportKind; label: string }> = [
@@ -117,6 +124,10 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
     onBack,
     onGenerateChart,
     onDerive,
+    canUndo = false,
+    canRedo = false,
+    onUndo,
+    onRedo,
     libraryBadge,
   } = props
 
@@ -495,6 +506,30 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
           })}
           {railExpanded ? railTool : <Tooltip content="插入模板" placement="right">{railTool}</Tooltip>}
           <div className="analysis-board-rail-spacer" />
+          <Tooltip content="撤销（Ctrl+Z）" placement="right">
+            <button
+              type="button"
+              className="analysis-board-rail-btn"
+              aria-label="撤销"
+              disabled={!canUndo}
+              onClick={onUndo}
+            >
+              <Undo2 className="h-4 w-4" />
+              {railExpanded && <span>撤销</span>}
+            </button>
+          </Tooltip>
+          <Tooltip content="重做（Ctrl+Shift+Z）" placement="right">
+            <button
+              type="button"
+              className="analysis-board-rail-btn"
+              aria-label="重做"
+              disabled={!canRedo}
+              onClick={onRedo}
+            >
+              <Redo2 className="h-4 w-4" />
+              {railExpanded && <span>重做</span>}
+            </button>
+          </Tooltip>
           <Tooltip content={railExpanded ? '收缩工具栏' : '展开工具栏'} placement="right">
             <button
               type="button"
@@ -522,6 +557,8 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
             onDeletePending={handleDeletePending}
             onSelectionChange={setSelection}
             onZoomChange={handleZoomScaleChange}
+            onUndo={onUndo}
+            onRedo={onRedo}
           />
 
           {/* 选中工具栏：derive 动作 + 复制/删除 */}

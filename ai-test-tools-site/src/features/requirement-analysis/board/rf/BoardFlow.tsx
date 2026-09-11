@@ -33,9 +33,14 @@ export interface BoardFlowHandle {
   fit(): void
 }
 
+export interface GraphChangeMeta {
+  /** 历史级别：commit 入栈（默认）；transient 拖拽中间态；silent 选择/测量 */
+  history?: 'commit' | 'transient' | 'silent'
+}
+
 export interface BoardFlowProps {
   graph: BoardGraph
-  onGraphChange: (graph: BoardGraph) => void
+  onGraphChange: (graph: BoardGraph, meta?: GraphChangeMeta) => void
   viewport?: BoardViewport
   onViewportChange?: (viewport: BoardViewport) => void
   tree: RequirementNode
@@ -44,6 +49,8 @@ export interface BoardFlowProps {
   onDeletePending?: (nodeId: string) => void
   onSelectionChange?: (elementIds: ReadonlySet<string>) => void
   onZoomChange?: (ratio: number) => void
+  onUndo?: () => void
+  onRedo?: () => void
 }
 
 const nodeTypes = {
@@ -89,17 +96,27 @@ function BoardFlowInner(props: BoardFlowProps & { onInitViewport?: (vp: BoardVie
 
   const [spacePressed, setSpacePressed] = useState(false)
   const pasteCountRef = useRef(0)
+  const { onUndo, onRedo } = props
 
+  // 变更分类：选择/测量静默；拖拽中间态 transient（dragStop 时 dragging=false 落为 commit）
   const onNodesChange = useCallback(
     (changes: NodeChange<BoardNode>[]) => {
-      onGraphChange({ nodes: applyNodeChanges(changes, graph.nodes), edges: graph.edges })
+      let history: 'commit' | 'transient' | 'silent' = 'commit'
+      const onlyMeta = changes.every((c) => c.type === 'select' || c.type === 'dimensions')
+      if (onlyMeta) {
+        history = 'silent'
+      } else if (changes.every((c) => c.type === 'position' && c.dragging)) {
+        history = 'transient'
+      }
+      onGraphChange({ nodes: applyNodeChanges(changes, graph.nodes), edges: graph.edges }, { history })
     },
     [graph, onGraphChange],
   )
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange<BoardEdge>[]) => {
-      onGraphChange({ nodes: graph.nodes, edges: applyEdgeChanges(changes, graph.edges) })
+      const history = changes.every((c) => c.type === 'select') ? 'silent' : 'commit'
+      onGraphChange({ nodes: graph.nodes, edges: applyEdgeChanges(changes, graph.edges) }, { history })
     },
     [graph, onGraphChange],
   )
@@ -140,6 +157,19 @@ function BoardFlowInner(props: BoardFlowProps & { onInitViewport?: (vp: BoardVie
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
       const isMod = e.ctrlKey || e.metaKey
       if (!isMod) return
+
+      // 撤销/重做（地图 #13 快照栈）
+      if (e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) onRedo?.()
+        else onUndo?.()
+        return
+      }
+      if (e.key.toLowerCase() === 'y') {
+        e.preventDefault()
+        onRedo?.()
+        return
+      }
 
       if (e.key.toLowerCase() === 'c') {
         const selected = graph.nodes.filter((n) => n.selected)
@@ -202,7 +232,7 @@ function BoardFlowInner(props: BoardFlowProps & { onInitViewport?: (vp: BoardVie
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [graph, onGraphChange])
+  }, [graph, onGraphChange, onUndo, onRedo])
 
   const contextValue = useMemo(
     () => ({ tree, onSelectMindmapNode, onRetryPending, onDeletePending }),
