@@ -87,36 +87,6 @@ const DataFactoryStage = memo(function DataFactoryStage() {
   )
 })
 
-/** 需求分析：中心节点搏动，连线生长、分支节点弹出 */
-const RequirementStage = memo(function RequirementStage() {
-  const satellites = [
-    { left: '18%', top: '24%', angle: '-136deg' },
-    { left: '82%', top: '24%', angle: '-44deg' },
-    { left: '20%', top: '80%', angle: '134deg' },
-    { left: '80%', top: '80%', angle: '46deg' },
-  ]
-  return (
-    <div className="ts-map">
-      {satellites.map((s, i) => (
-        <span
-          key={`link-${i}`}
-          className="ts-link"
-          style={{ ['--r' as string]: s.angle, animationDelay: `${0.15 + i * 0.18}s` }}
-        />
-      ))}
-      {satellites.map((s, i) => (
-        <span
-          key={`node-${i}`}
-          className="ts-node"
-          style={{ left: s.left, top: s.top, animationDelay: `${0.35 + i * 0.18}s` }}
-        />
-      ))}
-      <span className="ts-pulse" />
-      <span className="ts-node ts-node--center" />
-    </div>
-  )
-})
-
 const TOKENS = ['{', '"url"', ':', '"https://…"', '}']
 
 /** 开发工具：JSON 令牌级联落入终端，光标常闪 */
@@ -153,8 +123,6 @@ export function ToolStage({ id }: { id: string }) {
       return <ReportStage />
     case 'data-factory':
       return <DataFactoryStage />
-    case 'requirement-analysis':
-      return <RequirementStage />
     default:
       return <DevToolsStage />
   }

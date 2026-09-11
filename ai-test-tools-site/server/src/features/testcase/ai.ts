@@ -82,22 +82,30 @@ function resolveTemperature(config: AiRequestConfig, requested: number | undefin
   return isKimiCodingModel ? 1 : requested;
 }
 
-function normalizeOpenAiCompatibleUrl(input: string): string {
+function ensureOpenAiBaseVersion(input: string): string {
   const trimmed = input.trim().replace(/\/+$/, "");
   if (!trimmed) return "";
-  if (/\/chat\/completions$/i.test(trimmed)) return trimmed;
-  if (/\/responses$/i.test(trimmed)) return trimmed;
-  return trimmed;
+  const withoutProtocol = trimmed.includes("://") ? trimmed.split("://")[1] : trimmed;
+  const originOnly = withoutProtocol ? !withoutProtocol.includes("/") : false;
+  return originOnly ? `${trimmed}/v1` : trimmed;
 }
 
-function normalizeOpenAiChatUrl(input: string): string {
+function normalizeOpenAiCompatibleUrl(input: string): string {
+  const base = ensureOpenAiBaseVersion(input);
+  if (!base) return "";
+  if (/\/chat\/completions$/i.test(base)) return base;
+  if (/\/responses$/i.test(base)) return base;
+  return base;
+}
+
+export function normalizeOpenAiChatUrl(input: string): string {
   const trimmed = normalizeOpenAiCompatibleUrl(input);
   if (!trimmed) return "";
   if (/\/chat\/completions$/i.test(trimmed)) return trimmed;
   return `${trimmed}/chat/completions`;
 }
 
-function normalizeOpenAiResponsesUrl(input: string): string {
+export function normalizeOpenAiResponsesUrl(input: string): string {
   const trimmed = normalizeOpenAiCompatibleUrl(input);
   if (!trimmed) return "";
   if (/\/responses$/i.test(trimmed)) return trimmed;
@@ -152,9 +160,9 @@ function positiveInteger(value: unknown): number | undefined {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
 }
 
-function inferApiFormatFromBaseUrl(baseUrl: string): AiApiFormat {
+export function inferApiFormatFromBaseUrl(baseUrl: string): AiApiFormat {
   const normalized = baseUrl.trim().toLowerCase();
-  if (!normalized) return "openai_responses";
+  if (!normalized) return "openai_chat";
 
   if (
     normalized.includes("generativelanguage.googleapis.com")
@@ -175,6 +183,13 @@ function inferApiFormatFromBaseUrl(baseUrl: string): AiApiFormat {
   }
 
   if (
+    normalized.endsWith("/responses")
+    || normalized.includes("/v1/responses")
+  ) {
+    return "openai_responses";
+  }
+
+  if (
     normalized.endsWith("/chat/completions")
     || normalized.includes("/api/coding/v3")
     || normalized.includes("/step_plan")
@@ -184,7 +199,7 @@ function inferApiFormatFromBaseUrl(baseUrl: string): AiApiFormat {
     return "openai_chat";
   }
 
-  return "openai_responses";
+  return "openai_chat";
 }
 
 function providerKindForFormat(apiFormat: AiApiFormat): AiRequestConfig["provider"] {

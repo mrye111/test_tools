@@ -85,9 +85,9 @@ function normalizeOpenAiBaseUrl(baseUrl: string) {
   return trimmed
 }
 
-export function inferApiFormatFromBaseUrl(baseUrl: string): AiApiFormat {
+export function detectSpecificApiFormatFromUrl(baseUrl: string): AiApiFormat | null {
   const normalized = baseUrl.trim().toLowerCase()
-  if (!normalized) return 'openai_responses'
+  if (!normalized) return null
 
   if (
     normalized.includes('generativelanguage.googleapis.com')
@@ -108,6 +108,13 @@ export function inferApiFormatFromBaseUrl(baseUrl: string): AiApiFormat {
   }
 
   if (
+    normalized.endsWith('/responses')
+    || normalized.includes('/v1/responses')
+  ) {
+    return 'openai_responses'
+  }
+
+  if (
     normalized.endsWith('/chat/completions')
     || normalized.includes('/api/coding/v3')
     || normalized.includes('/step_plan')
@@ -117,7 +124,11 @@ export function inferApiFormatFromBaseUrl(baseUrl: string): AiApiFormat {
     return 'openai_chat'
   }
 
-  return 'openai_responses'
+  return null
+}
+
+export function inferApiFormatFromBaseUrl(baseUrl: string): AiApiFormat {
+  return detectSpecificApiFormatFromUrl(baseUrl) ?? 'openai_chat'
 }
 
 export function getDefaultModelForFormat(apiFormat: AiApiFormat) {

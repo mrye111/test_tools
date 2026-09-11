@@ -242,6 +242,7 @@ export async function streamGenerateCsvText(
   const testType = text(data.test_type ?? data.testType, "functional");
   const language = text(data.language, "zh");
   const featureName = text(data.feature_name ?? data.featureName, "未命名需求");
+  const promptPreset = text(data.promptPreset ?? data.prompt_preset, "standard");
   const context = text(data.context);
   const supplementMode = text(data.mode) === "supplement";
   // 超限 Swagger 文档自动按接口分组：分组后每批只携带需求描述 + 本组接口定义，避免整份文档挤爆上下文。
@@ -253,6 +254,7 @@ export async function streamGenerateCsvText(
     testType,
     language,
     image: typeof data.image === "string" ? data.image : undefined,
+    promptPreset,
   });
   const api = isApiRequest(data);
   const maxTokens = resolveGenerationMaxTokens(config);
@@ -300,6 +302,7 @@ ${group.document}
       language,
       image: typeof data.image === "string" ? data.image : undefined,
       batch,
+      promptPreset,
     });
     let batchResult = await streamCsvBatch(config, runtime, messages, maxTokens, api, (partialRows) => {
       batchSnapshots[batchIndex] = partialRows;
@@ -415,6 +418,8 @@ export async function runGenerationJob(jobId: string, store: TestCaseStore): Pro
       error: "",
       ...supplementStats,
     });
+    // 接入 MySQL 时冲刷写穿透队列，确保终态数据已入库再向外报告完成。
+    await store.flushDb();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // 终态落盘本身也可能失败（如磁盘写错误）：仍要保证内存中的任务状态被标记为 failed，让轮询方能感知。
@@ -422,6 +427,7 @@ export async function runGenerationJob(jobId: string, store: TestCaseStore): Pro
       const failedTestSet = store.getTestSet(job.testSetId);
       if (failedTestSet) store.upsertTestSet({ ...failedTestSet, status: "failed", error: message });
       store.updateJob(jobId, { status: "failed", error: message, finishedAt: nowIso() });
+      await store.flushDb();
     } catch (persistError) {
       logger.warn({ jobId, error: persistError instanceof Error ? persistError.message : String(persistError) }, "任务终态写入本地存储失败，已保留内存状态");
     }

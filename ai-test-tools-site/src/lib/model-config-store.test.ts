@@ -30,7 +30,7 @@ describe('model-config-store', () => {
     expect(state.models[0].name).toBe('旧模型')
     expect(state.models[0].model).toBe('legacy-model')
     expect(state.models[0].modelOptions).toEqual(['legacy-model'])
-    expect(state.models[0].apiFormat).toBe('openai_responses')
+    expect(state.models[0].apiFormat).toBe('openai_chat')
     expect(state.activeModelId).toBe(state.models[0].id)
 
     const savedState = JSON.parse(window.localStorage.getItem('nexuskit_model_configs') ?? '{}')
@@ -66,7 +66,7 @@ describe('model-config-store', () => {
     expect(state.models[0].id).toBe('legacy-provider')
     expect(state.models[0].model).toBe('gpt-5.5')
     expect(state.models[0].modelOptions).toEqual(['gpt-5.5', 'claude-sonnet-4-6'])
-    expect(state.models[0].apiFormat).toBe('openai_responses')
+    expect(state.models[0].apiFormat).toBe('openai_chat')
   })
 
   it('新增多条统一供应商后可以切换当前供应商', () => {

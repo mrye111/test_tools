@@ -26,7 +26,7 @@ const PRESETS: UniversalProviderPreset[] = [
     providerType: 'custom',
     defaultModel: 'gpt-5.5',
     defaultBaseUrl: '',
-    apiFormat: 'openai_responses',
+    apiFormat: 'openai_chat',
     icon: 'custom',
     iconColor: '#64748B',
     description: '手动填写请求地址、模型、API Key，系统按 API 格式自动适配。',

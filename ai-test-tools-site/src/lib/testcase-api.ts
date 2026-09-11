@@ -19,19 +19,30 @@ export interface TestCaseProject {
   testCaseCount: number
 }
 
+export type TestCaseExecutionStatus = 'untested' | 'passed' | 'failed' | 'blocked'
+
+export interface TestCaseExecutionItem {
+  status: TestCaseExecutionStatus
+  bugId?: string
+  note?: string
+  updatedAt?: string
+}
+
 export interface TestCaseSet {
   id: string
   projectId: string
   name: string
   featureName: string
-  testType: 'functional' | 'api'
+  testType: 'functional' | 'api' | 'security'
   language: 'zh' | 'en'
-  context: string
+  promptPreset?: 'standard' | 'google_qa'
+  context: string;
   status: 'queued' | 'running' | 'completed' | 'failed'
   generationJobId?: string
   error?: string
   header: string[]
   rows: string[][]
+  executionStatus?: Record<string, TestCaseExecutionItem>
   createdAt: string
   updatedAt?: string
 }
@@ -78,6 +89,10 @@ export async function deleteTestCaseProject(projectId: string) {
 export async function listTestCaseSets(projectId: string) {
   const query = new URLSearchParams({ project_id: projectId })
   return readData<TestCaseSet[]>(await fetch(buildUrl(`/api/test-sets?${query}`)), '获取用例集失败')
+}
+
+export async function getTestCaseSet(testSetId: string) {
+  return readData<TestCaseSet>(await fetch(buildUrl(`/api/test-sets/${encodeURIComponent(testSetId)}`)), '获取测试用例集失败')
 }
 
 export async function deleteTestCaseSet(projectId: string, testSetId: string) {
@@ -167,8 +182,9 @@ export async function createGenerateJob(args: {
   mode: 'create' | 'regenerate_all' | 'supplement' | 'regenerate_selected'
   featureName: string
   context: string
-  testType: 'functional' | 'api'
+  testType: 'functional' | 'api' | 'security'
   language: 'zh' | 'en'
+  promptPreset?: 'standard' | 'google_qa'
   aiConfig: UniversalProvider
   rows?: string[][]
   selectedIndices?: number[]
@@ -185,12 +201,13 @@ export async function createGenerateJob(args: {
       context: args.context,
       testType: args.testType,
       language: args.language,
+      promptPreset: args.promptPreset,
       rows: args.rows,
       selectedIndices: args.selectedIndices,
       testSetId: args.testSetId,
       projectId: args.projectId,
       testSetName: args.testSetName,
-      ai_config: args.aiConfig,
+      ai_config: toAiConfig(args.aiConfig),
     }),
   })
 
@@ -199,6 +216,15 @@ export async function createGenerateJob(args: {
     throw new Error(data.error ?? `创建生成任务失败：${response.status}`)
   }
   return data.data
+}
+
+export async function updateTestCaseExecution(testSetId: string, executionStatus: Record<string, TestCaseExecutionItem>) {
+  const response = await fetch(buildUrl(`/api/test-sets/${encodeURIComponent(testSetId)}/execution`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ executionStatus }),
+  })
+  return readData<TestCaseSet>(response, '更新用例执行状态失败')
 }
 
 export async function getGenerateJob(jobId: string) {

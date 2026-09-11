@@ -3,7 +3,6 @@ import {
   FileText,
   BarChart3,
   Database,
-  FileSearch,
   Code2,
   type LucideIcon,
 } from 'lucide-react'
@@ -49,14 +48,6 @@ export const tools: Tool[] = [
     tag: '数据处理',
     icon: Database,
     href: '/data-factory',
-  },
-  {
-    id: 'requirement-analysis',
-    title: '需求分析',
-    description: '上传需求文档，AI 分析生成需求脑图与风险结论',
-    tag: '需求洞察',
-    icon: FileSearch,
-    href: '/requirement-analysis',
   },
   {
     id: 'dev-tools',

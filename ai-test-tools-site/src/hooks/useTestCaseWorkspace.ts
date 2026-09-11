@@ -9,22 +9,26 @@ import {
   exportTestCaseExcelAll,
   exportTestCaseXmind,
   exportTestCaseXmindAll,
+  getTestCaseSet,
   listTestCaseProjects,
   listTestCaseSets,
   loadStoredModelConfig,
+  updateTestCaseExecution,
   updateTestCaseProject,
   upsertTestCase,
   waitForGenerateJob,
+  type TestCaseExecutionItem,
   type TestCaseProject,
   type TestCaseSet,
 } from '../lib/testcase-api'
-import type { Language, TestType } from './testcase-constants'
+import type { Language, PromptPreset, TestType } from './testcase-constants'
 
 export interface CreateTestSetInput {
   name: string
   context: string
   testType: TestType
   language: Language
+  promptPreset?: PromptPreset
 }
 
 export function useTestCaseWorkspace() {
@@ -41,20 +45,49 @@ export function useTestCaseWorkspace() {
   const [exporting, setExporting] = useState<string | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
   const [supplementNotice, setSupplementNotice] = useState<string | null>(null)
+  const [standaloneSet, setStandaloneSet] = useState<TestCaseSet | null>(null)
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
   )
   const previewSet = useMemo(
-    () => testSets.find((testSet) => testSet.id === previewSetId) ?? null,
-    [testSets, previewSetId],
+    () => testSets.find((testSet) => testSet.id === previewSetId) ?? standaloneSet ?? null,
+    [testSets, previewSetId, standaloneSet],
   )
   const hasBusySets = testSets.some((testSet) => testSet.status === 'queued' || testSet.status === 'running')
 
   const applyTestSet = useCallback((nextSet: TestCaseSet) => {
     setTestSets((current) => current.map((item) => item.id === nextSet.id ? nextSet : item))
+    setStandaloneSet((current) => current?.id === nextSet.id ? nextSet : current)
   }, [])
+
+  useEffect(() => {
+    if (!previewSetId) {
+      setStandaloneSet(null)
+      return
+    }
+    const found = testSets.find((s) => s.id === previewSetId)
+    if (found) {
+      setStandaloneSet(found)
+      if (!selectedProjectId) setSelectedProjectId(found.projectId)
+      return
+    }
+    let cancelled = false
+    void getTestCaseSet(previewSetId)
+      .then((data) => {
+        if (cancelled) return
+        setStandaloneSet(data)
+        if (!selectedProjectId) setSelectedProjectId(data.projectId)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setPageError(err instanceof Error ? err.message : '获取用例集失败')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [previewSetId, testSets, selectedProjectId])
 
   const refreshProjects = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true)
@@ -167,6 +200,7 @@ export function useTestCaseWorkspace() {
         context: input.context.trim(),
         testType: input.testType,
         language: input.language,
+        promptPreset: input.promptPreset,
         aiConfig,
       })
       await refreshTestSets(selectedProject.id)
@@ -320,6 +354,18 @@ export function useTestCaseWorkspace() {
     }
   }
 
+  async function updateExecution(testSet: TestCaseSet, executionStatus: Record<string, TestCaseExecutionItem>) {
+    setPageError(null)
+    try {
+      const updated = await updateTestCaseExecution(testSet.id, executionStatus)
+      applyTestSet(updated)
+      return true
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : '更新执行状态失败')
+      return false
+    }
+  }
+
   return {
     projects,
     selectedProject,
@@ -328,6 +374,7 @@ export function useTestCaseWorkspace() {
     testSets,
     selectedSetIds,
     previewSet,
+    previewSetId,
     setPreviewSetId,
     loading,
     loadingSets,
@@ -346,6 +393,7 @@ export function useTestCaseWorkspace() {
     supplementTestSet,
     addTestCase,
     removeTestCase,
+    updateExecution,
     toggleSetSelection,
     toggleAllCompleted,
     exportSingle,

@@ -5,10 +5,9 @@ import { existsSync } from "node:fs";
 import { basename, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { registerTestCaseRoutes } from "./features/testcase/routes.js";
+import { bootstrapTestCaseStore } from "./features/testcase/migrate.js";
+import { sharedTestCaseStore } from "./features/testcase/shared-store.js";
 import { registerDataFactoryRoutes } from "./features/datafactory/routes.js";
-import { registerRequirementRoutes } from "./features/requirement/routes.js";
-import { registerChatRoutes } from "./features/requirement/chat/routes.js";
-import { bootstrapChat } from "./features/requirement/chat/migrate.js";
 import { bootstrapReports } from "./features/report/migrate.js";
 import { registerReportRoutes } from "./features/report/routes.js";
 import { registerLogRoutes } from "./log-routes.js";
@@ -65,13 +64,11 @@ export async function createMcpExpressApp(runtime = new JmeterMcpRuntime()): Pro
     res.json([...runtime.tools.values()].map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema })));
   });
 
+  await bootstrapTestCaseStore(sharedTestCaseStore);
   registerTestCaseRoutes(app);
   registerDataFactoryRoutes(app);
-  const chatRepo = await bootstrapChat();
-  registerChatRoutes(app, chatRepo);
   const reportRepo = await bootstrapReports();
   registerReportRoutes(app, reportRepo);
-  registerRequirementRoutes(app);
   registerLogRoutes(app);
 
   app.get("/ai/config", (_req, res) => {

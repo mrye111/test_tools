@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { healCsvRow, renumberCaseRows } from "./csv.js";
+import type { PersistTable, TestCasePersistenceAdapter } from "./mysql-persistence.js";
 import type { GenerateJobRecord, ProjectRecord, TestCaseRecord, TestCaseStoreData, TestSetRecord } from "./types.js";
 import { nowIso } from "./utils.js";
 import { withSpanSync } from "../../middleware/trace.js";
@@ -79,12 +80,27 @@ function cloneEntity<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function hasAnyRecords(data: TestCaseStoreData): boolean {
+  return data.projects.length > 0 || data.testSets.length > 0 || data.testCases.length > 0 || data.generationJobs.length > 0;
+}
+
+/** 取快照中最新的业务时间戳（用例集与任务的 updatedAt/createdAt），用于文件与 DB 的新鲜度比较。 */
+function maxRecordTimestamp(data: TestCaseStoreData): string {
+  const stamps: string[] = [];
+  for (const item of data.testSets) stamps.push(item.updatedAt ?? item.createdAt);
+  for (const item of data.generationJobs) stamps.push(item.updatedAt ?? item.createdAt);
+  return stamps.reduce((max, stamp) => (stamp > max ? stamp : max), "");
+}
+
 export class TestCaseStore {
   private readonly path: string;
   private readonly writeOptions: WriteTextFileOptions;
   private readonly persistDebounceMs: number;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private data: TestCaseStoreData;
+  private dbAdapter: TestCasePersistenceAdapter | null = null;
+  private readonly dirtyTables = new Set<PersistTable>();
+  private dbWriteChain: Promise<void> = Promise.resolve();
 
   constructor(
     path = resolve(process.cwd(), "server", "data", "testcase-store.json"),
@@ -95,6 +111,44 @@ export class TestCaseStore {
     this.persistDebounceMs = Math.max(0, Math.floor(persistDebounceMs ?? DEFAULT_PERSIST_DEBOUNCE_MS));
     this.writeOptions = writeOptions;
     this.data = this.load();
+  }
+
+  /**
+   * 接入 MySQL 持久化适配器（启动引导时调用，须在路由注册/任务运行前完成）：
+   * - DB 有数据且不旧于本地文件 → 以 DB 为真相替换内存；
+   * - DB 为空或旧于文件 → 以文件为真相并整体迁移写入 DB；
+   * - 之后的每次落盘在写 JSON 文件的同时写穿透到 DB（文件仍作为离线备份锚点）。
+   */
+  async attachDb(adapter: TestCasePersistenceAdapter): Promise<"mysql" | "file"> {
+    const dbData = await adapter.load().catch(() => null);
+    const fileData = this.data;
+    const dbHasData = dbData !== null && hasAnyRecords(dbData);
+    const fileHasData = hasAnyRecords(fileData);
+    const migrateFileToDb = fileHasData && (!dbHasData || maxRecordTimestamp(fileData) > maxRecordTimestamp(dbData!));
+
+    if (migrateFileToDb) {
+      this.dbAdapter = adapter;
+      this.markAllDirty();
+      this.enqueueDbWrite();
+      await this.flushDb();
+      return "mysql";
+    }
+
+    if (dbHasData) {
+      this.data = { ...defaultData(), ...dbData! };
+    }
+    this.dbAdapter = adapter;
+    return "mysql";
+  }
+
+  /** 当前存储模式：mysql（已接入数据库写穿透）或 file（仅 JSON 文件）。 */
+  dbMode(): "mysql" | "file" {
+    return this.dbAdapter ? "mysql" : "file";
+  }
+
+  /** 等待排队的 DB 写穿透全部完成；未接入 DB 或写入已被记录降级时立即返回。 */
+  async flushDb(): Promise<void> {
+    await this.dbWriteChain;
   }
 
   private load(): TestCaseStoreData {
@@ -131,6 +185,31 @@ export class TestCaseStore {
         throw storeError(`写入本地存储失败：${cause.message}`, cause);
       }
     });
+    this.enqueueDbWrite();
+  }
+
+  /** 将脏表集合排队写入 DB；串行化避免并发重写，失败只记录日志（文件仍是权威备份）。 */
+  private enqueueDbWrite(): void {
+    const adapter = this.dbAdapter;
+    if (!adapter) return;
+    const tables = [...this.dirtyTables];
+    this.dirtyTables.clear();
+    if (tables.length === 0) return;
+    const snapshot = cloneEntity(this.data);
+    this.dbWriteChain = this.dbWriteChain
+      .then(() => adapter.save(tables, snapshot))
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn({ tables, error: message }, "写入 MySQL 存储失败，已降级为仅本地文件持久化");
+      });
+  }
+
+  private markDirty(...tables: PersistTable[]): void {
+    for (const table of tables) this.dirtyTables.add(table);
+  }
+
+  private markAllDirty(): void {
+    this.markDirty("projects", "testSets", "testCases", "generationJobs");
   }
 
   /** 后台/合并落盘路径的失败无法抛给调用方，记录日志并保留内存状态，等待下一次写入带上全量数据。 */
@@ -208,6 +287,7 @@ export class TestCaseStore {
     const index = this.data.projects.findIndex((item) => item.id === project.id);
     if (index >= 0) this.data.projects[index] = { ...this.data.projects[index], ...project };
     else this.data.projects.push(project);
+    this.markDirty("projects");
     this.schedulePersist();
     return project;
   }
@@ -218,6 +298,7 @@ export class TestCaseStore {
     this.data.testSets = this.data.testSets.filter((item) => item.projectId !== projectId);
     this.data.testCases = this.data.testCases.filter((item) => !removedSetIds.has(item.testSetId));
     this.data.generationJobs = this.data.generationJobs.filter((item) => item.projectId !== projectId);
+    this.markDirty("projects", "testSets", "testCases", "generationJobs");
     this.schedulePersist();
   }
 
@@ -239,6 +320,7 @@ export class TestCaseStore {
     const next = { ...testSet, updatedAt: nowIso() };
     if (index >= 0) this.data.testSets[index] = { ...this.data.testSets[index], ...next };
     else this.data.testSets.push(next);
+    let projectCreated = false;
     if (!this.projectExists(testSet.projectId)) {
       this.data.projects.push({
         id: testSet.projectId,
@@ -246,7 +328,10 @@ export class TestCaseStore {
         createdAt: nowIso(),
         ownerId: null,
       });
+      projectCreated = true;
     }
+    this.markDirty("testSets");
+    if (projectCreated) this.markDirty("projects");
     this.schedulePersist();
     return next;
   }
@@ -255,6 +340,7 @@ export class TestCaseStore {
     this.data.testSets = this.data.testSets.filter((item) => item.id !== testSetId);
     this.data.testCases = this.data.testCases.filter((item) => item.testSetId !== testSetId);
     this.data.generationJobs = this.data.generationJobs.filter((item) => item.testSetId !== testSetId);
+    this.markDirty("testSets", "testCases", "generationJobs");
     this.schedulePersist();
   }
 
@@ -264,6 +350,7 @@ export class TestCaseStore {
     if (index >= 0) this.data.testCases[index] = { ...this.data.testCases[index], ...next };
     else this.data.testCases.push(next);
     this.syncTestSetCases(testCase.testSetId);
+    this.markDirty("testCases", "testSets");
     this.schedulePersist();
   }
 
@@ -271,6 +358,7 @@ export class TestCaseStore {
     this.data.testCases = this.data.testCases.filter((item) => item.testSetId !== testSetId);
     this.data.testCases.push(...cases);
     this.syncTestSetCases(testSetId);
+    this.markDirty("testCases", "testSets");
     this.schedulePersist();
   }
 
@@ -296,11 +384,13 @@ export class TestCaseStore {
       return item.id !== caseId && item.caseId !== caseId;
     });
     if (target) this.syncTestSetCases(target.testSetId);
+    this.markDirty("testCases", "testSets");
     this.schedulePersist();
   }
 
   createJob(job: GenerateJobRecord): void {
     this.data.generationJobs.push(job);
+    this.markDirty("generationJobs");
     this.schedulePersist();
   }
 
@@ -309,6 +399,7 @@ export class TestCaseStore {
     if (index < 0) return undefined;
     this.data.generationJobs[index] = { ...this.data.generationJobs[index], ...patch, updatedAt: nowIso() };
     const job = this.data.generationJobs[index];
+    this.markDirty("generationJobs");
     // 运行中进度（streamText/部分 resultRows）只驻留内存，不入盘；
     // 终态立即同步落盘，持久化失败会抛 storeError，由任务生命周期兜底标记为失败。
     if (job.status === "completed" || job.status === "failed") {

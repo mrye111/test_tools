@@ -383,8 +383,17 @@ export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props
                           onChange={(event) => {
                             const nextBaseUrl = event.target.value
                             updateDraft('baseUrl', nextBaseUrl)
-                            if (selectedPreset.isCustomTemplate) {
-                              updateDraft('apiFormat', inferApiFormatFromBaseUrl(nextBaseUrl))
+                            if (selectedPreset.isCustomTemplate && nextBaseUrl.trim()) {
+                              const lower = nextBaseUrl.trim().toLowerCase()
+                              if (
+                                lower.includes('generativelanguage.googleapis.com')
+                                || lower.includes('/gemini/v1beta')
+                                || lower.includes('api.anthropic.com')
+                                || lower.includes('/anthropic')
+                                || lower.endsWith('/responses')
+                              ) {
+                                updateDraft('apiFormat', inferApiFormatFromBaseUrl(nextBaseUrl))
+                              }
                             }
                           }}
                           placeholder="https://api.example.com/v1"
@@ -423,13 +432,31 @@ export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props
 
                     <div>
                       <label className="field-label">API 格式</label>
-                      <div className="field-control flex items-center justify-between bg-[oklch(0.985_0.003_264/0.92)] text-sm text-fg">
-                        <span>{formatApiFormatLabel(draft.apiFormat)}</span>
-                        <span className="text-[11px] text-muted">{draft.apiFormat}</span>
-                      </div>
+                      {selectedPreset.isCustomTemplate ? (
+                        <div className="relative">
+                          <select
+                            value={draft.apiFormat}
+                            onChange={(event) => updateDraft('apiFormat', event.target.value as AiApiFormat)}
+                            className="field-control appearance-none pr-10 cursor-pointer"
+                          >
+                            <option value="openai_chat">OpenAI Chat (兼容 /chat/completions)</option>
+                            <option value="openai_responses">OpenAI Responses (预览 /responses)</option>
+                            <option value="gemini_native">Gemini 原生 (/v1beta/models)</option>
+                            <option value="anthropic">Anthropic Messages (/v1/messages)</option>
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted">
+                            <ChevronDown className="h-4 w-4" />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="field-control flex items-center justify-between bg-[oklch(0.985_0.003_264/0.92)] text-sm text-fg">
+                          <span>{formatApiFormatLabel(draft.apiFormat)}</span>
+                          <span className="text-[11px] text-muted">{draft.apiFormat}</span>
+                        </div>
+                      )}
                       <p className="helper-text">
                         {selectedPreset.isCustomTemplate
-                          ? '自定义供应商会根据请求地址自动推断 API 格式。'
+                          ? '可自主指定协议，主流本地代理与第三方中转请选用 OpenAI Chat。'
                           : '预设供应商的 API 格式已按内置模板固定。'}
                       </p>
                     </div>

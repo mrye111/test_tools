@@ -1,4 +1,5 @@
 import {
+  detectSpecificApiFormatFromUrl,
   getDefaultModelForFormat,
   inferApiFormatFromBaseUrl,
   type UniversalProvider,
@@ -102,8 +103,9 @@ export function applyPresetToDraft(
  */
 export function normalizeProviderDraft(draft: UniversalProvider): UniversalProvider {
   const preset = findModelConfigPreset(draft.providerType)
+  const specificFormat = detectSpecificApiFormatFromUrl(draft.baseUrl)
   const apiFormat = preset.isCustomTemplate
-    ? inferApiFormatFromBaseUrl(draft.baseUrl) || draft.apiFormat
+    ? (specificFormat || draft.apiFormat || 'openai_chat')
     : preset.apiFormat
 
   return {

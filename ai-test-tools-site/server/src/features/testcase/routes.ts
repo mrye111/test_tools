@@ -3,11 +3,9 @@ import { callChatCompletion, fetchAvailableModels, parseAiRequestConfig, testAiC
 import { healCsvRow, rowsToCases } from "./csv.js";
 import { buildExcelExport, buildXmindWorkbook, type ExcelExportOptions } from "./exporters.js";
 import { runGenerationJob } from "./generation.js";
-import { TestCaseStore } from "./store.js";
+import { sharedTestCaseStore as store } from "./shared-store.js";
 import type { GenerateJobRecord, JsonObject, TestSetRecord } from "./types.js";
 import { boolValue, isObject, makeId, nowIso, numberList, parseMaybeJsonObject, rowsInput, safeDownloadName, text } from "./utils.js";
-
-const store = new TestCaseStore();
 
 function ok(res: Response, data: JsonObject = {}): void {
   res.json({ success: true, ...data });
@@ -132,11 +130,15 @@ export function registerTestCaseRoutes(app: Express): void {
       featureName: text(data.featureName ?? data.name, "未命名测试集"),
       testType: text(data.testType, "functional"),
       language: text(data.language, "zh"),
+      promptPreset: text(data.promptPreset ?? data.prompt_preset, "standard"),
       context: text(data.context),
       status: text(data.status, "completed"),
       requirement: text(data.requirement),
       header: Array.isArray(data.header) ? data.header.map((item) => text(item)) : [],
       rows: rowsInput(data.rows).map((row) => healCsvRow(Array.isArray(row) ? row.map((cell) => text(cell)) : [])),
+      executionStatus: data.executionStatus && typeof data.executionStatus === "object"
+        ? (data.executionStatus as Record<string, import("./types.js").TestCaseExecutionItem>)
+        : undefined,
       createdAt: text(data.createdAt, now),
       updatedAt: now,
       ownerId: null,
@@ -144,6 +146,29 @@ export function registerTestCaseRoutes(app: Express): void {
     store.upsertTestSet(testSet);
     if (testSet.rows.length) store.replaceTestSetCases(testSet.id, rowsToCases(testSet.id, testSet.rows));
     ok(res, { data: { id: testSet.id } });
+  });
+
+  app.get("/api/test-sets/:testSetId", (req, res) => {
+    const testSet = store.getTestSet(req.params.testSetId);
+    if (!testSet) return fail(res, "测试用例集不存在", 404);
+    ok(res, { data: testSet });
+  });
+
+  app.put("/api/test-sets/:testSetId/execution", (req, res) => {
+    const testSet = store.getTestSet(req.params.testSetId);
+    if (!testSet) return fail(res, "测试用例集不存在", 404);
+    const data = body(req);
+    const executionStatus = data.executionStatus && typeof data.executionStatus === "object"
+      ? (data.executionStatus as Record<string, import("./types.js").TestCaseExecutionItem>)
+      : {};
+    const updated = store.upsertTestSet({
+      ...testSet,
+      executionStatus: {
+        ...(testSet.executionStatus ?? {}),
+        ...executionStatus,
+      },
+    });
+    ok(res, { data: updated });
   });
 
   app.delete("/api/test-sets/:testSetId", (req, res) => {
@@ -251,6 +276,11 @@ export function registerTestCaseRoutes(app: Express): void {
     const selectedIndices = numberList(data.selectedIndices);
     if (mode === "regenerate_selected" && selectedIndices.length === 0) return fail(res, "selectedIndices 不能为空");
     const now = nowIso();
+    const existingTestSet = (mode === "supplement" || mode === "regenerate_all" || mode === "regenerate_selected")
+      ? store.getTestSet(testSetId)
+      : undefined;
+    const promptPreset = text(data.promptPreset ?? data.prompt_preset) || existingTestSet?.promptPreset || "standard";
+
     if (mode === "create") {
       const testSetName = text(data.testSetName ?? data.featureName, "未命名用例集").trim();
       store.upsertTestSet({
@@ -260,6 +290,7 @@ export function registerTestCaseRoutes(app: Express): void {
         featureName: testSetName,
         testType: text(data.testType, "functional"),
         language: text(data.language, "zh"),
+        promptPreset,
         context: text(data.context),
         status: "queued",
         generationJobId: id,
@@ -277,7 +308,7 @@ export function registerTestCaseRoutes(app: Express): void {
       testSetId,
       mode,
       status: "queued",
-      request: data,
+      request: { ...data, promptPreset },
       generatedCount: 0,
       error: "",
       streamText: "",

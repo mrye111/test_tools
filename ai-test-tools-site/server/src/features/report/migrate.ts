@@ -1,6 +1,6 @@
 import type { Pool } from "mysql2/promise";
 import { logger } from "../../logger.js";
-import { resolveSharedChatDb } from "../requirement/db/pool.js";
+import { resolveSharedChatDb } from "../../shared/db/pool.js";
 import { MemoryReportRepository } from "./repository.js";
 import { MysqlReportRepository } from "./mysql-repository.js";
 import type { ReportRepository } from "./types.js";

@@ -222,4 +222,34 @@ describe("测试用例 Store 落盘策略", () => {
     job!.streamText = "被外部篡改";
     expect(store.getJob("job_1")?.streamText).toBe("");
   });
+
+  it("upsertTestSet 能够保存并持久化 executionStatus 字典", () => {
+    const store = createStore();
+    const testSet = makeTestSet();
+    store.upsertTestSet(testSet);
+
+    const updated = store.upsertTestSet({
+      ...testSet,
+      executionStatus: {
+        TC001: {
+          status: "passed",
+          updatedAt: "2026-09-10T10:00:00.000Z",
+        },
+        TC002: {
+          status: "failed",
+          bugId: "BUG-001",
+          note: "万能密码未被拦截，返回200",
+          updatedAt: "2026-09-10T10:05:00.000Z",
+        },
+      },
+    });
+
+    expect(updated.executionStatus?.TC001?.status).toBe("passed");
+    expect(updated.executionStatus?.TC002?.status).toBe("failed");
+    expect(updated.executionStatus?.TC002?.bugId).toBe("BUG-001");
+
+    const fetched = store.getTestSet("set_1");
+    expect(fetched?.executionStatus?.TC001?.status).toBe("passed");
+    expect(fetched?.executionStatus?.TC002?.bugId).toBe("BUG-001");
+  });
 });

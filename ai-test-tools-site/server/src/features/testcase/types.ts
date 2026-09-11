@@ -1,5 +1,12 @@
 export type JsonObject = Record<string, unknown>;
 
+export type TestCaseExecutionItem = {
+  status: "untested" | "passed" | "failed" | "blocked";
+  bugId?: string;
+  note?: string;
+  updatedAt?: string;
+};
+
 export type ProjectRecord = {
   id: string;
   name: string;
@@ -15,6 +22,7 @@ export type TestSetRecord = {
   featureName: string;
   testType: string;
   language: string;
+  promptPreset?: string;
   context: string;
   status: string;
   generationJobId?: string;
@@ -22,6 +30,7 @@ export type TestSetRecord = {
   requirement?: string;
   header: string[];
   rows: string[][];
+  executionStatus?: Record<string, TestCaseExecutionItem>;
   createdAt: string;
   updatedAt?: string;
   ownerId?: number | null;

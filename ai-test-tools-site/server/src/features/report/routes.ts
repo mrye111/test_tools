@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { isObject, text } from "../testcase/utils.js";
 import { reportDbMode } from "./migrate.js";
 import { parseAiRequestConfig } from "../testcase/ai.js";
-import { beginSse, emit, endSse } from "../requirement/chat/sse.js";
+import { beginSse, emit, endSse } from "../../shared/sse.js";
 import { generateReport, reviseReport, ReportGenerateError, type GenerateReportInput } from "./generate.js";
 import { BrowserNotFoundError, renderReportPdf } from "./pdf.js";
 import type { CreateReportInput, ReportRepository, ReportSourceType, ReportType } from "./types.js";

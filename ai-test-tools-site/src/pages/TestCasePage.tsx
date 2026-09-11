@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   AlertCircle,
   ArrowLeft,
   ArrowUpRight,
+  Bug,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Copy,
   Download,
   FileSpreadsheet,
   FolderKanban,
@@ -14,6 +18,8 @@ import {
   Loader2,
   Pencil,
   Plus,
+  RotateCcw,
+  ShieldCheck,
   Sparkles,
   Trash2,
   X,
@@ -25,16 +31,23 @@ import { ModalShell } from '../components/ui/ModalShell'
 import { Tooltip } from '../components/ui/Tooltip'
 import {
   LANGUAGE_OPTIONS,
+  PROMPT_PRESET_OPTIONS,
   TEST_TYPE_OPTIONS,
   type Language,
+  type PromptPreset,
   type TestType,
 } from '../hooks/testcase-constants'
 import { displayCellText, normalizeDisplayHeader } from '../hooks/testcase-helpers'
 import { useGoBack } from '../hooks/useGoBack'
 import { useTestCaseWorkspace } from '../hooks/useTestCaseWorkspace'
 import { normalizeErrorMessage } from '../lib/app-error'
-import { REQUIREMENT_HANDOFF_KEY } from '../lib/requirement-analysis-api'
-import type { TestCaseProject, TestCaseSet } from '../lib/testcase-api'
+import type { TestCaseProject, TestCaseSet, TestCaseExecutionStatus } from '../lib/testcase-api'
+import {
+  buildBugReport,
+  calculateQualityMetrics,
+  generateExecutionTrackingCsv,
+  runQualityCheck,
+} from '../lib/testcase-execution'
 
 const inputCls = 'field-control'
 const labelCls = 'field-label'
@@ -71,6 +84,13 @@ const PRIORITY_OPTIONS = [
   { value: '中', label: '中' },
   { value: '低', label: '低' },
 ]
+const SEVERITY_OPTIONS = [
+  { value: 'P0', label: 'P0 - 阻塞（24h内修复：安全漏洞/核心中断/资损）' },
+  { value: 'P1', label: 'P1 - 严重（主要功能异常，无合理规避方案）' },
+  { value: 'P2', label: 'P2 - 一般（次要功能、边界场景缺陷）' },
+  { value: 'P3', label: 'P3 - 轻微（界面外观、布局错位）' },
+  { value: 'P4', label: 'P4 - 建议（文案错别字、体验优化）' },
+]
 const SWAGGER_CHAR_LIMIT = 80_000
 const SWAGGER_CONTEXT_MARKER = '【Swagger/OpenAPI 文档】'
 const HTTP_METHOD_PATH_PATTERN = /^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+(.+)$/i
@@ -78,6 +98,19 @@ const HTTP_METHOD_PATH_PATTERN = /^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+(.
 function isMethodPathHeader(header: string) {
   const normalized = header.trim().toLowerCase()
   return normalized === '请求方式及路径' || normalized === 'request method & path'
+}
+
+function isPriorityHeader(header: string) {
+  const normalized = header.trim().toLowerCase()
+  return normalized === '优先级' || normalized === 'priority'
+}
+
+function PriorityBadge({ value }: { value: string }) {
+  const v = value.trim()
+  const isHigh = v === '高' || v.toUpperCase().includes('P0') || v.toUpperCase().includes('P1') || v.toUpperCase() === 'HIGH'
+  const isLow = v === '低' || v.toUpperCase().includes('P3') || v.toUpperCase().includes('P4') || v.toUpperCase() === 'LOW'
+  const cls = isHigh ? 'is-high' : isLow ? 'is-low' : 'is-mid'
+  return <span className={`testcase-priority-badge ${cls}`}>{v || '中'}</span>
 }
 
 function MethodPathCell({ value }: { value: string }) {
@@ -155,9 +188,21 @@ function ExportButtons({
 }
 
 export function TestCasePage() {
+  const { setId } = useParams<{ setId?: string }>()
+  const navigate = useNavigate()
   const { showError } = useErrorDialog()
   const goBack = useGoBack()
+  // 详情 → 列表的返回：优先 history pop（保持栈干净，列表页才能正常退回首页）；
+  // 直达详情 URL（无站内上一页）时兜底替换到列表，避免后退跳出应用。
+  const goBackToSetList = useGoBack('/testcase')
   const workspace = useTestCaseWorkspace()
+
+  // 预览状态以路由为唯一真相：进入 /testcase/sets/:setId 时打开详情，回到 /testcase 时收起。
+  // 只跟随 setId 变化（setPreviewSetId 为稳定引用），避免返回时先置空又被旧 URL 复活、需要点两次返回。
+  const setPreviewSetId = workspace.setPreviewSetId
+  useEffect(() => {
+    setPreviewSetId(setId ?? null)
+  }, [setId, setPreviewSetId])
   const [showProjectModal, setShowProjectModal] = useState(false)
   const [editingProject, setEditingProject] = useState<TestCaseProject | null>(null)
   const [deletingProject, setDeletingProject] = useState<TestCaseProject | null>(null)
@@ -169,6 +214,7 @@ export function TestCasePage() {
   const [swaggerText, setSwaggerText] = useState('')
   const [testType, setTestType] = useState<TestType>('functional')
   const [language, setLanguage] = useState<Language>('zh')
+  const [promptPreset, setPromptPreset] = useState<PromptPreset>('standard')
   const [formErrors, setFormErrors] = useState<{ name?: string; context?: string; swagger?: string }>({})
   const [showSupplementModal, setShowSupplementModal] = useState(false)
   const [supplementContext, setSupplementContext] = useState('')
@@ -184,6 +230,14 @@ export function TestCasePage() {
   const [previewPageSize, setPreviewPageSize] = useState(10)
   const [setListPage, setSetListPage] = useState(1)
   const [setListPageSize, setSetListPageSize] = useState(10)
+  const [previewMode, setPreviewMode] = useState<'maintain' | 'execution'>('maintain')
+  const [executionFilter, setExecutionFilter] = useState<'all' | 'untested' | 'passed' | 'failed' | 'blocked'>('all')
+  const [showQualityModal, setShowQualityModal] = useState(false)
+  const [defectModalTarget, setDefectModalTarget] = useState<{ row: string[]; caseId: string } | null>(null)
+  const [defectBugId, setDefectBugId] = useState('')
+  const [defectActual, setDefectActual] = useState('')
+  const [defectSeverity, setDefectSeverity] = useState<'P0' | 'P1' | 'P2' | 'P3' | 'P4'>('P0')
+  const [copyNotice, setCopyNotice] = useState<string | null>(null)
 
   const completedSets = useMemo(
     () => workspace.testSets.filter((item) => item.status === 'completed' && item.rows.length > 0),
@@ -196,54 +250,6 @@ export function TestCasePage() {
     showError(workspace.pageError, { title: '操作失败', fallbackMessage: '当前操作失败，请稍后重试。' })
     workspace.setPageError(null)
   }, [showError, workspace])
-
-  // 需求分析工具的一键接力：读取需求原文，自动打开新建用例集弹窗并预填需求描述。
-  const [requirementHandoff, setRequirementHandoff] = useState<{ requirement: string; name?: string } | null>(null)
-  const handoffProjectPromptedRef = useRef(false)
-
-  useEffect(() => {
-    const raw = localStorage.getItem(REQUIREMENT_HANDOFF_KEY)
-    if (!raw) return
-    localStorage.removeItem(REQUIREMENT_HANDOFF_KEY)
-    let handoff: { requirement: string; name?: string } | null = null
-    try {
-      const parsed = JSON.parse(raw) as { requirement?: unknown; name?: unknown }
-      if (parsed && typeof parsed.requirement === 'string' && parsed.requirement.trim()) {
-        handoff = {
-          requirement: parsed.requirement,
-          name: typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : undefined,
-        }
-      }
-    } catch {
-      if (raw.trim()) handoff = { requirement: raw }
-    }
-    if (!handoff) return
-    // 与外部系统（localStorage）同步：推迟到任务队列，避免在 effect 体内同步 setState
-    queueMicrotask(() => setRequirementHandoff(handoff))
-  }, [])
-
-  useEffect(() => {
-    if (!requirementHandoff || workspace.loading) return
-    const timer = window.setTimeout(() => {
-      if (!workspace.selectedProject) {
-        if (workspace.projects.length > 0) {
-          workspace.setSelectedProjectId(workspace.projects[0].id)
-        } else if (!handoffProjectPromptedRef.current) {
-          // 没有项目时先引导创建项目，创建完成后接力继续
-          handoffProjectPromptedRef.current = true
-          openCreateProjectModal()
-        }
-        return
-      }
-      setTestSetName(requirementHandoff.name ?? '')
-      setContext(requirementHandoff.requirement)
-      setFormErrors({})
-      setShowTestSetModal(true)
-      setRequirementHandoff(null)
-    }, 0)
-    return () => window.clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requirementHandoff, workspace.loading, workspace.projects, workspace.selectedProject])
 
   function openCreateProjectModal() {
     setEditingProject(null)
@@ -289,6 +295,7 @@ export function TestCasePage() {
     setSwaggerText('')
     setTestType('functional')
     setLanguage('zh')
+    setPromptPreset('standard')
     setFormErrors({})
   }
 
@@ -311,7 +318,7 @@ export function TestCasePage() {
     const finalContext = isApi && swagger
       ? `${context.trim()}\n\n${SWAGGER_CONTEXT_MARKER}\n${swagger}`
       : context
-    const created = await workspace.createTestSet({ name: testSetName, context: finalContext, testType, language })
+    const created = await workspace.createTestSet({ name: testSetName, context: finalContext, testType, language, promptPreset })
     if (created) {
       setShowTestSetModal(false)
       resetTestSetForm()
@@ -399,12 +406,676 @@ export function TestCasePage() {
   const previewHeader = normalizeDisplayHeader(workspace.previewSet?.header ?? [])
   const previewBusy = workspace.previewSet?.status === 'queued' || workspace.previewSet?.status === 'running' || workspace.generating
   const previewRows = workspace.previewSet?.rows ?? []
-  const previewPageCount = Math.max(1, Math.ceil(previewRows.length / previewPageSize))
+  const executionStatus = workspace.previewSet?.executionStatus ?? {}
+
+  const qualityMetrics = useMemo(() => {
+    return calculateQualityMetrics(previewRows, executionStatus)
+  }, [previewRows, executionStatus])
+
+  const qualityCheckResult = useMemo(() => {
+    return runQualityCheck(previewRows)
+  }, [previewRows])
+
+  const filteredPreviewRows = useMemo(() => {
+    if (previewMode === 'maintain' || executionFilter === 'all') return previewRows
+    return previewRows.filter((row) => {
+      const caseId = String(row[0] ?? '').trim()
+      const st = executionStatus[caseId]?.status ?? 'untested'
+      return st === executionFilter
+    })
+  }, [previewMode, executionFilter, previewRows, executionStatus])
+
+  const previewPageCount = Math.max(1, Math.ceil(filteredPreviewRows.length / previewPageSize))
   const safePreviewPage = Math.min(previewPage, previewPageCount)
-  const pagedPreviewRows = previewRows.slice((safePreviewPage - 1) * previewPageSize, safePreviewPage * previewPageSize)
+  const pagedPreviewRows = filteredPreviewRows.slice((safePreviewPage - 1) * previewPageSize, safePreviewPage * previewPageSize)
+
+  const handleSetExecution = async (
+    caseId: string,
+    status: TestCaseExecutionStatus,
+    bugId?: string,
+    note?: string,
+  ) => {
+    if (!workspace.previewSet) return
+    const current = { ...(workspace.previewSet.executionStatus ?? {}) }
+    if (status === 'untested') {
+      delete current[caseId]
+    } else {
+      current[caseId] = {
+        status,
+        bugId: bugId ?? current[caseId]?.bugId,
+        note: note ?? current[caseId]?.note,
+        updatedAt: new Date().toISOString(),
+      }
+    }
+    await workspace.updateExecution(workspace.previewSet, current)
+  }
+
+  const handleExportExecutionCsv = () => {
+    if (!workspace.previewSet) return
+    const csv = generateExecutionTrackingCsv(
+      workspace.previewSet.header,
+      workspace.previewSet.rows,
+      workspace.previewSet.executionStatus ?? {},
+    )
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${workspace.previewSet.name || '测试用例'}_执行跟踪表.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const openDefectModal = (row: string[]) => {
+    const caseId = String(row[0] ?? '').trim()
+    const existing = executionStatus[caseId]
+    setDefectModalTarget({ row, caseId })
+    setDefectBugId(existing?.bugId || `BUG-${String(qualityMetrics.failed + 1).padStart(3, '0')}`)
+    setDefectActual(existing?.note || '')
+    const priority = String(row[4] ?? '').trim().toUpperCase()
+    if (priority === '高' || priority.includes('P0') || priority === 'HIGH') setDefectSeverity('P0')
+    else if (priority.includes('P1')) setDefectSeverity('P1')
+    else if (priority === '低' || priority.includes('P3')) setDefectSeverity('P3')
+    else setDefectSeverity('P2')
+  }
+
+  const submitDefectModal = async () => {
+    if (!defectModalTarget) return
+    await handleSetExecution(defectModalTarget.caseId, 'failed', defectBugId.trim(), defectActual.trim())
+    setDefectModalTarget(null)
+  }
+
+  const copyDefectMarkdown = () => {
+    if (!defectModalTarget) return
+    const report = buildBugReport(defectModalTarget.row, defectBugId.trim(), defectActual.trim(), defectSeverity)
+    void navigator.clipboard.writeText(report.markdown)
+    setCopyNotice('已复制缺陷报告 Markdown 到剪贴板')
+    setTimeout(() => setCopyNotice(null), 2500)
+  }
+
   const setListPageCount = Math.max(1, Math.ceil(workspace.testSets.length / setListPageSize))
   const safeSetListPage = Math.min(setListPage, setListPageCount)
   const pagedTestSets = workspace.testSets.slice((safeSetListPage - 1) * setListPageSize, safeSetListPage * setListPageSize)
+
+  if (workspace.previewSet) {
+    return (
+      <div className="page-shell testcase-page-shell testcase-detail-page">
+        <header className="testcase-detail-header">
+          <div className="testcase-detail-heading">
+            <Tooltip content="返回用例集列表">
+              <button
+                type="button"
+                onClick={() => {
+                  workspace.setPreviewSetId(null)
+                  goBackToSetList()
+                }}
+                className="icon-action h-10 w-10 shrink-0 rounded-xl"
+                aria-label="返回用例集列表"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+            </Tooltip>
+            <div className="min-w-0">
+              <nav className="testcase-detail-breadcrumb" aria-label="当前位置">
+                <span>项目管理</span>
+                <ChevronRight className="h-3 w-3" />
+                <span className="truncate">{workspace.selectedProject?.name || '项目'}</span>
+                <ChevronRight className="h-3 w-3" />
+                <span className="truncate">{workspace.previewSet.name}</span>
+                <ChevronRight className="h-3 w-3" />
+                <span className="is-current">测试用例维护</span>
+              </nav>
+              <div className="testcase-detail-title-row">
+                <h1 className="testcase-detail-title">{workspace.previewSet.name}</h1>
+                <span className={`testcase-detail-type-badge ${workspace.previewSet.testType === 'api' ? 'is-api' : workspace.previewSet.testType === 'security' ? 'is-security' : 'is-functional'}`}>
+                  {workspace.previewSet.testType === 'api' ? 'API 接口' : workspace.previewSet.testType === 'security' ? '安全渗透' : '功能测试'}
+                </span>
+              </div>
+              <div className="testcase-detail-meta">
+                <span className="testcase-detail-meta-item"><Layers3 className="h-3 w-3" />共 {workspace.previewSet.rows.length} 条用例</span>
+                <span className="testcase-detail-meta-sep" aria-hidden="true" />
+                <span className="testcase-detail-meta-item"><Clock3 className="h-3 w-3" />生成于 {formatDate(workspace.previewSet.updatedAt)}</span>
+                <span className="testcase-detail-meta-sep" aria-hidden="true" />
+                <span className="testcase-detail-meta-item">{workspace.previewSet.language === 'en' ? 'English' : '中文'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2.5">
+            <div className="testcase-mode-switcher mr-1">
+              <button
+                type="button"
+                className={`testcase-mode-btn ${previewMode === 'maintain' ? 'is-active' : ''}`}
+                onClick={() => { setPreviewMode('maintain'); setPreviewPage(1) }}
+              >
+                <Layers3 className="h-3.5 w-3.5" />
+                用例维护
+              </button>
+              <button
+                type="button"
+                className={`testcase-mode-btn ${previewMode === 'execution' ? 'is-active' : ''}`}
+                onClick={() => { setPreviewMode('execution'); setPreviewPage(1) }}
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-accent" />
+                执行看板 & 质量门禁
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowQualityModal(true)}
+              disabled={previewBusy}
+              className="secondary-action px-3.5 py-2 text-xs"
+            >
+              <ShieldCheck className="h-3.5 w-3.5 text-accent" />
+              规范性体检 ({qualityCheckResult.score}分)
+            </button>
+            {previewMode === 'execution' && (
+              <button
+                type="button"
+                onClick={handleExportExecutionCsv}
+                className="secondary-action px-3.5 py-2 text-xs"
+              >
+                <Download className="h-3.5 w-3.5" />
+                导出执行跟踪 (CSV)
+              </button>
+            )}
+            {previewMode === 'maintain' && (
+              <>
+                <button type="button" onClick={() => setShowSupplementModal(true)} disabled={previewBusy} className="secondary-action px-4 py-2 text-xs disabled:pointer-events-none disabled:opacity-45">
+                  {workspace.generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  补充需求
+                </button>
+                <button type="button" onClick={() => setShowCaseModal(true)} disabled={previewBusy} className="primary-action px-4 py-2 text-xs disabled:pointer-events-none disabled:opacity-45">
+                  <Plus className="h-3.5 w-3.5" />
+                  新增用例
+                </button>
+              </>
+            )}
+            <ExportButtons
+              onExcel={() => void workspace.exportSingle(workspace.previewSet!, 'excel')}
+              onXmind={() => void workspace.exportSingle(workspace.previewSet!, 'xmind')}
+              excelBusy={workspace.exporting === `excel:${workspace.previewSet.id}`}
+              xmindBusy={workspace.exporting === `xmind:${workspace.previewSet.id}`}
+            />
+          </div>
+        </header>
+
+        {previewMode === 'execution' && (
+          <div className="testcase-quality-dashboard">
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold tracking-wider text-muted">发版质量门禁 (Quality Gates)</span>
+                  {qualityMetrics.overallStatus === 'passed' && (
+                    <span className="badge badge-success text-xs font-bold"><CheckCircle2 className="h-3.5 w-3.5" /> 准出就绪 (Pass)</span>
+                  )}
+                  {qualityMetrics.overallStatus === 'blocked' && (
+                    <span className="badge badge-danger text-xs font-bold"><AlertCircle className="h-3.5 w-3.5" /> 门禁阻断 (Blocked)</span>
+                  )}
+                  {qualityMetrics.overallStatus === 'in_progress' && (
+                    <span className="badge badge-accent text-xs font-bold"><Clock3 className="h-3.5 w-3.5" /> 执行中 ({qualityMetrics.executionRate}%)</span>
+                  )}
+                </div>
+
+                <div className="h-3.5 w-px bg-slate-200 hidden sm:block" />
+
+                <div className="flex flex-wrap items-center gap-3.5 text-xs">
+                  <span className="inline-flex items-center gap-1.5" title="门禁标准：100% 完整执行">
+                    <span className="text-muted">执行完成率</span>
+                    <strong className="font-bold text-fg">{qualityMetrics.executionRate}%</strong>
+                    <span className="text-[11px] text-muted">({qualityMetrics.executed} / {qualityMetrics.total} 条)</span>
+                  </span>
+
+                  <span className="inline-flex items-center gap-1.5" title="门禁标准：≥80% 通过率">
+                    <span className="text-muted">用例通过率</span>
+                    <strong className={`font-bold ${qualityMetrics.executed > 0 && qualityMetrics.passRate < 80 ? 'text-danger' : 'text-fg'}`}>
+                      {qualityMetrics.passRate}%
+                    </strong>
+                    <span className="text-[11px] text-muted">({qualityMetrics.passed} 条通过)</span>
+                  </span>
+
+                  <span className="inline-flex items-center gap-1.5" title="门禁标准：0 阻塞缺陷">
+                    <span className="text-muted">阻塞缺陷 (P0/高)</span>
+                    <strong className={`font-bold ${qualityMetrics.blockingBugs > 0 ? 'text-danger' : 'text-fg'}`}>
+                      {qualityMetrics.blockingBugs}
+                    </strong>
+                    <span className="text-[11px] text-muted">个阻塞缺陷</span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                {(['all', 'untested', 'passed', 'failed', 'blocked'] as const).map((filterKey) => {
+                  const count = filterKey === 'all'
+                    ? qualityMetrics.total
+                    : filterKey === 'untested'
+                      ? qualityMetrics.untested
+                      : filterKey === 'passed'
+                        ? qualityMetrics.passed
+                        : filterKey === 'failed'
+                          ? qualityMetrics.failed
+                          : qualityMetrics.blocked
+                  const labelMap = {
+                    all: '全部',
+                    untested: '未执行',
+                    passed: '通过',
+                    failed: '失败',
+                    blocked: '阻塞',
+                  }
+                  return (
+                    <button
+                      key={filterKey}
+                      type="button"
+                      onClick={() => { setExecutionFilter(filterKey); setPreviewPage(1) }}
+                      className={`testcase-filter-pill ${executionFilter === filterKey ? 'is-active' : ''}`}
+                    >
+                      {labelMap[filterKey]} ({count})
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-200/60 flex">
+              <div className="bg-emerald-500 transition-all duration-300" style={{ width: `${qualityMetrics.total > 0 ? (qualityMetrics.passed / qualityMetrics.total) * 100 : 0}%` }} title={`通过: ${qualityMetrics.passed}`} />
+              <div className="bg-red-500 transition-all duration-300" style={{ width: `${qualityMetrics.total > 0 ? (qualityMetrics.failed / qualityMetrics.total) * 100 : 0}%` }} title={`失败: ${qualityMetrics.failed}`} />
+              <div className="bg-amber-400 transition-all duration-300" style={{ width: `${qualityMetrics.total > 0 ? (qualityMetrics.blocked / qualityMetrics.total) * 100 : 0}%` }} title={`阻塞: ${qualityMetrics.blocked}`} />
+            </div>
+          </div>
+        )}
+
+        {workspace.supplementNotice && (
+          <div className="testcase-supplement-notice" role="status">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1">{workspace.supplementNotice}</span>
+            <button type="button" onClick={() => workspace.setSupplementNotice(null)} className="testcase-supplement-notice-close" aria-label="关闭提示"><X className="h-3.5 w-3.5" /></button>
+          </div>
+        )}
+
+        <div className="testcase-detail-table-card" data-mode={previewMode}>
+          <table className="testcase-result-table testcase-detail-table border-collapse text-left text-[12px]">
+            <thead>
+              <tr>
+                {previewHeader.map((cell) => <th key={cell}>{cell}</th>)}
+                {previewMode === 'maintain' ? (
+                  <th className="testcase-maintain-action-col">操作</th>
+                ) : (
+                  <th className="testcase-exec-action-col">执行打标</th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {pagedPreviewRows.map((row, rowIndex) => {
+                const caseId = String(row[0] ?? '').trim()
+                const executionItem = executionStatus[caseId]
+                const execStatus = executionItem?.status ?? 'untested'
+                return (
+                  <tr key={`${row[0] ?? 'case'}-${(safePreviewPage - 1) * previewPageSize + rowIndex}`}>
+                    {previewHeader.map((header, cellIndex) => {
+                      const cellText = displayCellText(row[cellIndex])
+                      return (
+                        <td key={`${rowIndex}-${cellIndex}`} className="testcase-cell whitespace-pre-line">
+                          {isMethodPathHeader(header) ? (
+                            <MethodPathCell value={cellText} />
+                          ) : isPriorityHeader(header) ? (
+                            <PriorityBadge value={cellText} />
+                          ) : (
+                            cellText
+                          )}
+                        </td>
+                      )
+                    })}
+                    {previewMode === 'maintain' ? (
+                      <td className="testcase-maintain-action-cell">
+                        <Tooltip content={`删除用例 ${row[0] ?? ''}`}>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingCase({ testSet: workspace.previewSet!, row })}
+                            disabled={previewBusy}
+                            className="icon-action h-7 w-7 text-danger/75 hover:text-danger disabled:pointer-events-none disabled:opacity-35"
+                            aria-label={`删除用例 ${row[0] ?? rowIndex + 1}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </Tooltip>
+                      </td>
+                    ) : (
+                      <td className="testcase-cell testcase-exec-action-cell">
+                        <div className="testcase-exec-actions-wrap">
+                          <button
+                            type="button"
+                            onClick={() => void handleSetExecution(caseId, 'passed')}
+                            className={`testcase-btn-pass ${execStatus === 'passed' ? 'is-active' : ''}`}
+                            title="标记为通过"
+                          >
+                            <Check className="h-3 w-3" />
+                            通过
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openDefectModal(row)}
+                            className={`testcase-btn-fail ${execStatus === 'failed' ? 'is-active' : ''}`}
+                            title="标记失败并提缺陷单"
+                          >
+                            <Bug className="h-3 w-3" />
+                            失败
+                            {executionItem?.bugId && (
+                              <span className={`ml-0.5 rounded px-1 text-[9px] font-mono font-bold ${execStatus === 'failed' ? 'bg-white/25 text-white' : 'bg-red-100 text-red-800'}`}>
+                                {executionItem.bugId}
+                              </span>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleSetExecution(caseId, 'blocked')}
+                            className={`testcase-btn-block ${execStatus === 'blocked' ? 'is-active' : ''}`}
+                            title="标记为阻塞"
+                          >
+                            <AlertCircle className="h-3 w-3" />
+                            阻塞
+                          </button>
+                          {execStatus !== 'untested' && (
+                            <button
+                              type="button"
+                              onClick={() => void handleSetExecution(caseId, 'untested')}
+                              className="testcase-btn-reset"
+                              title="重置执行状态"
+                              aria-label="重置"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {filteredPreviewRows.length > 0 && (
+          <div className="testcase-preview-pagination">
+            <span className="testcase-page-info">第 {(safePreviewPage - 1) * previewPageSize + 1}-{Math.min(safePreviewPage * previewPageSize, filteredPreviewRows.length)} 条 · 共 {filteredPreviewRows.length} 条</span>
+            <div className="testcase-page-controls">
+              <CustomSelect value={String(previewPageSize)} onChange={(value) => { setPreviewPageSize(Number(value)); setPreviewPage(1) }} options={PAGE_SIZE_OPTIONS} className="testcase-page-size" />
+              {previewPageCount > 1 && (
+                <>
+                  <button type="button" onClick={() => setPreviewPage((page) => Math.max(1, page - 1))} disabled={safePreviewPage === 1} className="icon-action h-8 w-8" aria-label="上一页"><ChevronLeft className="h-3.5 w-3.5" /></button>
+                  {buildPageItems(safePreviewPage, previewPageCount).map((item, index) => (
+                    item === 'ellipsis'
+                      ? <span key={`page-ellipsis-${index}`} className="testcase-page-ellipsis" aria-hidden="true">…</span>
+                      : <button key={item} type="button" onClick={() => setPreviewPage(item)} className={`testcase-page-button${item === safePreviewPage ? ' is-active' : ''}`} aria-label={`第 ${item} 页`} aria-current={item === safePreviewPage ? 'page' : undefined}>{item}</button>
+                  ))}
+                  <button type="button" onClick={() => setPreviewPage((page) => Math.min(previewPageCount, page + 1))} disabled={safePreviewPage === previewPageCount} className="icon-action h-8 w-8" aria-label="下一页"><ChevronRight className="h-3.5 w-3.5" /></button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        <ModalShell open={showSupplementModal && Boolean(workspace.previewSet)} onClose={() => !workspace.generating && setShowSupplementModal(false)} closeOnBackdrop={!workspace.generating} closeOnEscape={!workspace.generating}>
+          {showSupplementModal && workspace.previewSet && (
+            <div className="modal-panel w-full max-w-[640px] rounded-[24px] p-6 max-sm:p-4" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="supplement-testcase-title">
+              <div className="modal-heading-row">
+                <div>
+                  <p className="modal-kicker">{workspace.previewSet.name}</p>
+                  <h2 id="supplement-testcase-title">补充需求</h2>
+                  <span>AI 将参考完整需求和已有 {workspace.previewSet.rows.length} 条用例，只补充缺失的用例，并直接追加到当前用例集。</span>
+                </div>
+                <button type="button" onClick={() => setShowSupplementModal(false)} disabled={workspace.generating} className="icon-action h-9 w-9" aria-label="关闭补充需求窗口"><X className="h-4 w-4" /></button>
+              </div>
+              <div className="mt-6">
+                <label className={labelCls} htmlFor="testcase-supplement-context">本次补充说明</label>
+                <textarea
+                  id="testcase-supplement-context"
+                  value={supplementContext}
+                  onChange={(event) => { setSupplementContext(event.target.value); setSupplementError('') }}
+                  rows={7}
+                  className={`${inputCls} ${supplementError ? 'field-control-error' : ''}`}
+                  placeholder="例如：补充手机号格式边界、重复联系人、无权限查看组织成员、批量导入异常场景。"
+                />
+                {supplementError && <p className="field-error">{supplementError}</p>}
+              </div>
+              <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+                <button type="button" onClick={() => setShowSupplementModal(false)} disabled={workspace.generating} className="secondary-action px-5 py-2.5 text-sm">取消</button>
+                <button type="button" onClick={() => void submitSupplement()} disabled={workspace.generating} className="primary-action px-5 py-2.5 text-sm disabled:opacity-50">
+                  {workspace.generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  {workspace.generating ? '正在补充...' : '开始补充'}
+                </button>
+              </div>
+            </div>
+          )}
+        </ModalShell>
+
+        <ModalShell open={showCaseModal && Boolean(workspace.previewSet)} onClose={() => setShowCaseModal(false)}>
+          {showCaseModal && workspace.previewSet && (
+            <div className="modal-panel max-h-[90vh] w-full max-w-[760px] overflow-auto rounded-[24px] p-6 max-sm:p-4" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="add-testcase-title">
+              <div className="modal-heading-row">
+                <div>
+                  <p className="modal-kicker">{workspace.previewSet.name}</p>
+                  <h2 id="add-testcase-title">新增用例</h2>
+                  <span>手动新增一条用例，保存后会自动重排用例编号并参与导出。</span>
+                </div>
+                <button type="button" onClick={() => setShowCaseModal(false)} className="icon-action h-9 w-9" aria-label="关闭新增用例窗口"><X className="h-4 w-4" /></button>
+              </div>
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className={labelCls} htmlFor="manual-case-module">功能模块</label>
+                  <input id="manual-case-module" value={caseForm.module} onChange={(event) => updateCaseForm('module', event.target.value)} className={`${inputCls} ${caseErrors.module ? 'field-control-error' : ''}`} placeholder="例如：通讯录" />
+                  {caseErrors.module && <p className="field-error">{caseErrors.module}</p>}
+                </div>
+                <div>
+                  <label className={labelCls} htmlFor="manual-case-point">功能测试点</label>
+                  <input id="manual-case-point" value={caseForm.testPoint} onChange={(event) => updateCaseForm('testPoint', event.target.value)} className={`${inputCls} ${caseErrors.testPoint ? 'field-control-error' : ''}`} placeholder="例如：成员搜索" />
+                  {caseErrors.testPoint && <p className="field-error">{caseErrors.testPoint}</p>}
+                </div>
+                <div className="md:col-span-2">
+                  <label className={labelCls} htmlFor="manual-case-title">用例标题</label>
+                  <input id="manual-case-title" value={caseForm.title} onChange={(event) => updateCaseForm('title', event.target.value)} className={`${inputCls} ${caseErrors.title ? 'field-control-error' : ''}`} placeholder="例如：按姓名搜索成员并展示匹配结果" />
+                  {caseErrors.title && <p className="field-error">{caseErrors.title}</p>}
+                </div>
+                <div>
+                  <label className={labelCls}>优先级</label>
+                  <CustomSelect value={caseForm.priority} onChange={(value) => updateCaseForm('priority', value)} options={PRIORITY_OPTIONS} />
+                </div>
+                <div>
+                  <label className={labelCls} htmlFor="manual-case-precondition">前置条件</label>
+                  <input id="manual-case-precondition" value={caseForm.precondition} onChange={(event) => updateCaseForm('precondition', event.target.value)} className={inputCls} placeholder="例如：用户已登录且通讯录有成员" />
+                </div>
+                <div>
+                  <label className={labelCls} htmlFor="manual-case-steps">测试步骤</label>
+                  <textarea id="manual-case-steps" value={caseForm.steps} onChange={(event) => updateCaseForm('steps', event.target.value)} rows={6} className={`${inputCls} ${caseErrors.steps ? 'field-control-error' : ''}`} placeholder={'1. 打开通讯录\n2. 输入姓名关键字\n3. 点击搜索'} />
+                  {caseErrors.steps && <p className="field-error">{caseErrors.steps}</p>}
+                </div>
+                <div>
+                  <label className={labelCls} htmlFor="manual-case-expected">预期结果</label>
+                  <textarea id="manual-case-expected" value={caseForm.expectedResult} onChange={(event) => updateCaseForm('expectedResult', event.target.value)} rows={6} className={`${inputCls} ${caseErrors.expectedResult ? 'field-control-error' : ''}`} placeholder={'1. 通讯录页面正常显示\n2. 搜索条件被正确提交\n3. 列表展示匹配成员'} />
+                  {caseErrors.expectedResult && <p className="field-error">{caseErrors.expectedResult}</p>}
+                </div>
+              </div>
+              <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+                <button type="button" onClick={() => setShowCaseModal(false)} className="secondary-action px-5 py-2.5 text-sm">取消</button>
+                <button type="button" onClick={() => void submitCase()} className="primary-action px-5 py-2.5 text-sm">
+                  <Plus className="h-4 w-4" />
+                  保存用例
+                </button>
+              </div>
+            </div>
+          )}
+        </ModalShell>
+
+        <ModalShell open={showQualityModal} onClose={() => setShowQualityModal(false)}>
+          <div className="modal-panel max-h-[90vh] w-full max-w-[760px] overflow-auto rounded-[24px] p-6 max-sm:p-4" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="quality-check-title">
+            <div className="modal-heading-row">
+              <div>
+                <p className="modal-kicker">Google QA 质量工程体检</p>
+                <h2 id="quality-check-title" className="flex items-center gap-2">
+                  用例规范性与断言健康度检查
+                  <span className={`badge ${qualityCheckResult.score >= 85 ? 'badge-success' : qualityCheckResult.score >= 60 ? 'badge-accent' : 'badge-danger'}`}>
+                    {qualityCheckResult.score} 分
+                  </span>
+                </h2>
+                <span className="text-xs text-muted">{qualityCheckResult.summary}</span>
+              </div>
+              <button type="button" onClick={() => setShowQualityModal(false)} className="icon-action h-9 w-9" aria-label="关闭体检窗口"><X className="h-4 w-4" /></button>
+            </div>
+
+            <div className="mt-5 grid grid-cols-3 gap-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                <span className="text-xs text-muted">模糊断言数</span>
+                <p className={`text-lg font-bold ${qualityCheckResult.vagueAssertionCount > 0 ? 'text-danger' : 'text-success'}`}>
+                  {qualityCheckResult.vagueAssertionCount} 条
+                </p>
+                <span className="text-[10px] text-muted">如“操作成功/显示正常”</span>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                <span className="text-xs text-muted">前置条件缺失</span>
+                <p className={`text-lg font-bold ${qualityCheckResult.missingPreconditionCount > 0 ? 'text-amber-600' : 'text-success'}`}>
+                  {qualityCheckResult.missingPreconditionCount} 条
+                </p>
+                <span className="text-[10px] text-muted">缺少独立已知状态说明</span>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                <span className="text-xs text-muted">非标编号数</span>
+                <p className="text-lg font-bold text-slate-700">
+                  {qualityCheckResult.nonStandardIdCount} 条
+                </p>
+                <span className="text-[10px] text-muted">建议 TC-[分类]-[编号]</span>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted mb-2">
+                检测发现的优化项 ({qualityCheckResult.issues.length})
+              </h4>
+              {qualityCheckResult.issues.length === 0 ? (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 text-center text-xs text-emerald-800">
+                  全部用例均符合工业级 AAA 规范，预期断言明确具体，前置条件完备！
+                </div>
+              ) : (
+                <div className="max-h-[320px] overflow-auto rounded-xl border border-slate-200 divide-y divide-slate-100 bg-white">
+                  {qualityCheckResult.issues.map((issue, idx) => (
+                    <div key={idx} className="p-3 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono font-bold text-slate-700">{issue.caseId}</span>
+                        <span className="truncate text-slate-500 font-medium">{issue.title}</span>
+                      </div>
+                      <p className="mt-1 text-red-600 font-medium">{issue.message}</p>
+                      <p className="mt-0.5 text-slate-500">建议：{issue.suggestion}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button type="button" onClick={() => setShowQualityModal(false)} className="primary-action px-5 py-2 text-xs">我知道了</button>
+            </div>
+          </div>
+        </ModalShell>
+
+        <ModalShell open={Boolean(defectModalTarget)} onClose={() => setDefectModalTarget(null)}>
+          {defectModalTarget && (
+            <div className="modal-panel max-h-[90vh] w-full max-w-[680px] overflow-auto rounded-[24px] p-6 max-sm:p-4" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="defect-modal-title">
+              <div className="modal-heading-row">
+                <div>
+                  <p className="modal-kicker">缺陷闭环流转</p>
+                  <h2 id="defect-modal-title">标记失败并生成标准缺陷单</h2>
+                  <span className="text-xs text-muted">基于 Google QA 标准缺陷结构自动生成复现步骤与严重级别</span>
+                </div>
+                <button type="button" onClick={() => setDefectModalTarget(null)} className="icon-action h-9 w-9" aria-label="关闭缺陷窗口"><X className="h-4 w-4" /></button>
+              </div>
+
+              <div className="mt-5 space-y-4 text-xs">
+                <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
+                  <div>
+                    <label className={labelCls} htmlFor="defect-bug-id">缺陷编号 (Bug ID)</label>
+                    <input
+                      id="defect-bug-id"
+                      value={defectBugId}
+                      onChange={(e) => setDefectBugId(e.target.value)}
+                      className={inputCls}
+                      placeholder="例如：BUG-001"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>严重级别 (SLA)</label>
+                    <CustomSelect
+                      value={defectSeverity}
+                      onChange={(val) => setDefectSeverity(val as 'P0' | 'P1' | 'P2' | 'P3' | 'P4')}
+                      options={SEVERITY_OPTIONS}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className={labelCls}>关联用例</label>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-1">
+                    <div className="font-mono font-bold text-slate-800">{defectModalTarget.caseId} - {defectModalTarget.row[3]}</div>
+                    <div className="text-slate-600"><strong>预期结果：</strong>{defectModalTarget.row[7]}</div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className={labelCls} htmlFor="defect-actual">实际结果与异常现象（建议记录具体表现）</label>
+                  <textarea
+                    id="defect-actual"
+                    rows={3}
+                    value={defectActual}
+                    onChange={(e) => setDefectActual(e.target.value)}
+                    className={inputCls}
+                    placeholder="具体描述复现时出现的实际表现（如：接口响应 500、前端报错崩溃、无任何提示等）"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className={labelCls}>生成的标准缺陷单 Markdown</label>
+                    <button
+                      type="button"
+                      onClick={copyDefectMarkdown}
+                      className="inline-flex items-center gap-1 text-accent hover:underline font-semibold cursor-pointer"
+                    >
+                      <Copy className="h-3 w-3" />
+                      复制 Markdown
+                    </button>
+                  </div>
+                  <pre className="max-h-[160px] overflow-auto rounded-xl border border-slate-200 bg-slate-900 p-3 text-[11px] font-mono text-slate-200 whitespace-pre-wrap">
+                    {buildBugReport(defectModalTarget.row, defectBugId.trim(), defectActual.trim(), defectSeverity).markdown}
+                  </pre>
+                  {copyNotice && <p className="text-[11px] text-emerald-600 font-medium mt-1">{copyNotice}</p>}
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-3">
+                <button type="button" onClick={() => setDefectModalTarget(null)} className="secondary-action px-4 py-2 text-xs">取消</button>
+                <button
+                  type="button"
+                  onClick={() => void submitDefectModal()}
+                  className="primary-action px-5 py-2 text-xs"
+                >
+                  保存并标记为失败
+                </button>
+              </div>
+            </div>
+          )}
+        </ModalShell>
+
+        <ConfirmDialog
+          open={Boolean(deletingCase)}
+          title="删除这条用例？"
+          description={<>将从「<span className="font-semibold text-fg">{deletingCase?.testSet.name}</span>」中删除 <span className="font-semibold text-fg">{deletingCase?.row[0]}</span>，删除后用例编号会自动重排。</>}
+          confirmText="确认删除"
+          onCancel={() => setDeletingCase(null)}
+          onConfirm={() => void confirmDeleteCase()}
+          danger
+        />
+      </div>
+    )
+  }
 
   return (
     <div className={`page-shell testcase-page-shell testcase-workspace${workspace.selectedProject ? ' testcase-shell-fill' : ''}`}>
@@ -614,7 +1285,14 @@ export function TestCasePage() {
                         <td>
                           <button
                             type="button"
-                            onClick={() => { if (canOpen) { setPreviewPage(1); workspace.setSupplementNotice(null); workspace.setPreviewSetId(testSet.id) } }}
+                            onClick={() => {
+                              if (canOpen) {
+                                setPreviewPage(1)
+                                workspace.setSupplementNotice(null)
+                                workspace.setPreviewSetId(testSet.id)
+                                navigate(`/testcase/sets/${encodeURIComponent(testSet.id)}`)
+                              }
+                            }}
                             disabled={!canOpen}
                             className="testset-name-button"
                           >
@@ -735,6 +1413,7 @@ export function TestCasePage() {
                 <input id="testcase-set-name" value={testSetName} onChange={(event) => { setTestSetName(event.target.value); setFormErrors((current) => ({ ...current, name: undefined })) }} className={`${inputCls} ${formErrors.name ? 'field-control-error' : ''}`} placeholder="例如：登录与会话管理" />
                 {formErrors.name && <p className="field-error">{formErrors.name}</p>}
               </div>
+              <div><label className={labelCls}>设计规范</label><CustomSelect value={promptPreset} onChange={(value) => setPromptPreset(value as PromptPreset)} options={PROMPT_PRESET_OPTIONS} /></div>
               <div><label className={labelCls}>测试类型</label><CustomSelect value={testType} onChange={(value) => setTestType(value as TestType)} options={TEST_TYPE_OPTIONS} /></div>
               <div><label className={labelCls}>输出语言</label><CustomSelect value={language} onChange={(value) => setLanguage(value as Language)} options={LANGUAGE_OPTIONS} /></div>
             </div>
@@ -780,199 +1459,6 @@ export function TestCasePage() {
           </div>
         )}
       </ModalShell>
-
-      <ModalShell open={Boolean(workspace.previewSet)} onClose={() => workspace.setPreviewSetId(null)}>
-        {workspace.previewSet && (
-          <div className="modal-panel testcase-preview-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="testcase-preview-title">
-            <div className="testcase-preview-header">
-              <div className="min-w-0">
-                <p className="modal-kicker">测试用例维护</p>
-                <h2 id="testcase-preview-title" className="truncate">{workspace.previewSet.name}</h2>
-                <div className="testcase-preview-meta">
-                  <span className="testcase-meta-chip"><Layers3 className="h-3 w-3" />共 {workspace.previewSet.rows.length} 条用例</span>
-                  <span className="testcase-meta-chip"><Clock3 className="h-3 w-3" />生成于 {formatDate(workspace.previewSet.updatedAt)}</span>
-                </div>
-              </div>
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
-                <button type="button" onClick={() => setShowSupplementModal(true)} disabled={previewBusy} className="secondary-action px-4 py-2 text-xs disabled:pointer-events-none disabled:opacity-45">
-                  {workspace.generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                  补充需求
-                </button>
-                <button type="button" onClick={() => setShowCaseModal(true)} disabled={previewBusy} className="primary-action px-4 py-2 text-xs disabled:pointer-events-none disabled:opacity-45">
-                  <Plus className="h-3.5 w-3.5" />
-                  新增用例
-                </button>
-                <ExportButtons
-                  onExcel={() => void workspace.exportSingle(workspace.previewSet!, 'excel')}
-                  onXmind={() => void workspace.exportSingle(workspace.previewSet!, 'xmind')}
-                  excelBusy={workspace.exporting === `excel:${workspace.previewSet.id}`}
-                  xmindBusy={workspace.exporting === `xmind:${workspace.previewSet.id}`}
-                />
-                <button type="button" onClick={() => workspace.setPreviewSetId(null)} className="icon-action h-9 w-9" aria-label="关闭阅览窗口"><X className="h-4 w-4" /></button>
-              </div>
-            </div>
-            {workspace.supplementNotice && (
-              <div className="testcase-supplement-notice" role="status">
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <span className="min-w-0 flex-1">{workspace.supplementNotice}</span>
-                <button type="button" onClick={() => workspace.setSupplementNotice(null)} className="testcase-supplement-notice-close" aria-label="关闭提示"><X className="h-3.5 w-3.5" /></button>
-              </div>
-            )}
-            <div className="testcase-preview-table-wrap">
-              <table className="testcase-result-table border-collapse text-left text-[12px]">
-                <thead><tr>{previewHeader.map((cell) => <th key={cell}>{cell}</th>)}<th className="testcase-maintain-action-col">操作</th></tr></thead>
-                <tbody>
-                  {pagedPreviewRows.map((row, rowIndex) => (
-                    <tr key={`${row[0] ?? 'case'}-${(safePreviewPage - 1) * previewPageSize + rowIndex}`}>
-                      {previewHeader.map((header, cellIndex) => {
-                        const cellText = displayCellText(row[cellIndex])
-                        return (
-                          <td key={`${rowIndex}-${cellIndex}`} className="testcase-cell">
-                            {isMethodPathHeader(header) ? <MethodPathCell value={cellText} /> : cellText}
-                          </td>
-                        )
-                      })}
-                      <td className="testcase-maintain-action-cell">
-                        <Tooltip content={`删除用例 ${row[0] ?? ''}`}>
-                          <button
-                            type="button"
-                            onClick={() => setDeletingCase({ testSet: workspace.previewSet!, row })}
-                            disabled={previewBusy}
-                            className="icon-action h-8 w-8 text-danger/75 hover:text-danger disabled:pointer-events-none disabled:opacity-35"
-                            aria-label={`删除用例 ${row[0] ?? rowIndex + 1}`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </Tooltip>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {previewRows.length > 0 && (
-              <div className="testcase-preview-pagination">
-                <span className="testcase-page-info">第 {(safePreviewPage - 1) * previewPageSize + 1}-{Math.min(safePreviewPage * previewPageSize, previewRows.length)} 条 · 共 {previewRows.length} 条</span>
-                <div className="testcase-page-controls">
-                  <CustomSelect value={String(previewPageSize)} onChange={(value) => { setPreviewPageSize(Number(value)); setPreviewPage(1) }} options={PAGE_SIZE_OPTIONS} className="testcase-page-size" />
-                  {previewPageCount > 1 && (
-                    <>
-                      <button type="button" onClick={() => setPreviewPage((page) => Math.max(1, page - 1))} disabled={safePreviewPage === 1} className="icon-action h-8 w-8" aria-label="上一页"><ChevronLeft className="h-3.5 w-3.5" /></button>
-                      {buildPageItems(safePreviewPage, previewPageCount).map((item, index) => (
-                        item === 'ellipsis'
-                          ? <span key={`page-ellipsis-${index}`} className="testcase-page-ellipsis" aria-hidden="true">…</span>
-                          : <button key={item} type="button" onClick={() => setPreviewPage(item)} className={`testcase-page-button${item === safePreviewPage ? ' is-active' : ''}`} aria-label={`第 ${item} 页`} aria-current={item === safePreviewPage ? 'page' : undefined}>{item}</button>
-                      ))}
-                      <button type="button" onClick={() => setPreviewPage((page) => Math.min(previewPageCount, page + 1))} disabled={safePreviewPage === previewPageCount} className="icon-action h-8 w-8" aria-label="下一页"><ChevronRight className="h-3.5 w-3.5" /></button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </ModalShell>
-
-      <ModalShell open={showSupplementModal && Boolean(workspace.previewSet)} onClose={() => !workspace.generating && setShowSupplementModal(false)} closeOnBackdrop={!workspace.generating} closeOnEscape={!workspace.generating}>
-        {showSupplementModal && workspace.previewSet && (
-          <div className="modal-panel w-full max-w-[640px] rounded-[28px] p-6 max-sm:p-4" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="supplement-testcase-title">
-            <div className="modal-heading-row">
-              <div>
-                <p className="modal-kicker">{workspace.previewSet.name}</p>
-                <h2 id="supplement-testcase-title">补充需求</h2>
-                <span>AI 将参考完整需求和已有 {workspace.previewSet.rows.length} 条用例，只补充缺失的用例，并直接追加到当前用例集。</span>
-              </div>
-              <button type="button" onClick={() => setShowSupplementModal(false)} disabled={workspace.generating} className="icon-action h-9 w-9" aria-label="关闭补充需求窗口"><X className="h-4 w-4" /></button>
-            </div>
-            <div className="mt-6">
-              <label className={labelCls} htmlFor="testcase-supplement-context">本次补充说明</label>
-              <textarea
-                id="testcase-supplement-context"
-                value={supplementContext}
-                onChange={(event) => { setSupplementContext(event.target.value); setSupplementError('') }}
-                rows={7}
-                className={`${inputCls} ${supplementError ? 'field-control-error' : ''}`}
-                placeholder="例如：补充手机号格式边界、重复联系人、无权限查看组织成员、批量导入异常场景。"
-              />
-              {supplementError && <p className="field-error">{supplementError}</p>}
-            </div>
-            <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
-              <button type="button" onClick={() => setShowSupplementModal(false)} disabled={workspace.generating} className="secondary-action px-5 py-2.5 text-sm">取消</button>
-              <button type="button" onClick={() => void submitSupplement()} disabled={workspace.generating} className="primary-action px-5 py-2.5 text-sm disabled:opacity-50">
-                {workspace.generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {workspace.generating ? '正在补充...' : '开始补充'}
-              </button>
-            </div>
-          </div>
-        )}
-      </ModalShell>
-
-      <ModalShell open={showCaseModal && Boolean(workspace.previewSet)} onClose={() => setShowCaseModal(false)}>
-        {showCaseModal && workspace.previewSet && (
-          <div className="modal-panel max-h-[90vh] w-full max-w-[760px] overflow-auto rounded-[28px] p-6 max-sm:p-4" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="add-testcase-title">
-            <div className="modal-heading-row">
-              <div>
-                <p className="modal-kicker">{workspace.previewSet.name}</p>
-                <h2 id="add-testcase-title">新增用例</h2>
-                <span>手动新增一条用例，保存后会自动重排用例编号并参与导出。</span>
-              </div>
-              <button type="button" onClick={() => setShowCaseModal(false)} className="icon-action h-9 w-9" aria-label="关闭新增用例窗口"><X className="h-4 w-4" /></button>
-            </div>
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              <div>
-                <label className={labelCls} htmlFor="manual-case-module">功能模块</label>
-                <input id="manual-case-module" value={caseForm.module} onChange={(event) => updateCaseForm('module', event.target.value)} className={`${inputCls} ${caseErrors.module ? 'field-control-error' : ''}`} placeholder="例如：通讯录" />
-                {caseErrors.module && <p className="field-error">{caseErrors.module}</p>}
-              </div>
-              <div>
-                <label className={labelCls} htmlFor="manual-case-point">功能测试点</label>
-                <input id="manual-case-point" value={caseForm.testPoint} onChange={(event) => updateCaseForm('testPoint', event.target.value)} className={`${inputCls} ${caseErrors.testPoint ? 'field-control-error' : ''}`} placeholder="例如：成员搜索" />
-                {caseErrors.testPoint && <p className="field-error">{caseErrors.testPoint}</p>}
-              </div>
-              <div className="md:col-span-2">
-                <label className={labelCls} htmlFor="manual-case-title">用例标题</label>
-                <input id="manual-case-title" value={caseForm.title} onChange={(event) => updateCaseForm('title', event.target.value)} className={`${inputCls} ${caseErrors.title ? 'field-control-error' : ''}`} placeholder="例如：按姓名搜索成员并展示匹配结果" />
-                {caseErrors.title && <p className="field-error">{caseErrors.title}</p>}
-              </div>
-              <div>
-                <label className={labelCls}>优先级</label>
-                <CustomSelect value={caseForm.priority} onChange={(value) => updateCaseForm('priority', value)} options={PRIORITY_OPTIONS} />
-              </div>
-              <div>
-                <label className={labelCls} htmlFor="manual-case-precondition">前置条件</label>
-                <input id="manual-case-precondition" value={caseForm.precondition} onChange={(event) => updateCaseForm('precondition', event.target.value)} className={inputCls} placeholder="例如：用户已登录且通讯录有成员" />
-              </div>
-              <div>
-                <label className={labelCls} htmlFor="manual-case-steps">测试步骤</label>
-                <textarea id="manual-case-steps" value={caseForm.steps} onChange={(event) => updateCaseForm('steps', event.target.value)} rows={6} className={`${inputCls} ${caseErrors.steps ? 'field-control-error' : ''}`} placeholder={'1. 打开通讯录\n2. 输入姓名关键字\n3. 点击搜索'} />
-                {caseErrors.steps && <p className="field-error">{caseErrors.steps}</p>}
-              </div>
-              <div>
-                <label className={labelCls} htmlFor="manual-case-expected">预期结果</label>
-                <textarea id="manual-case-expected" value={caseForm.expectedResult} onChange={(event) => updateCaseForm('expectedResult', event.target.value)} rows={6} className={`${inputCls} ${caseErrors.expectedResult ? 'field-control-error' : ''}`} placeholder={'1. 通讯录页面正常显示\n2. 搜索条件被正确提交\n3. 列表展示匹配成员'} />
-                {caseErrors.expectedResult && <p className="field-error">{caseErrors.expectedResult}</p>}
-              </div>
-            </div>
-            <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
-              <button type="button" onClick={() => setShowCaseModal(false)} className="secondary-action px-5 py-2.5 text-sm">取消</button>
-              <button type="button" onClick={() => void submitCase()} className="primary-action px-5 py-2.5 text-sm">
-                <Plus className="h-4 w-4" />
-                保存用例
-              </button>
-            </div>
-          </div>
-        )}
-      </ModalShell>
-
-      <ConfirmDialog
-        open={Boolean(deletingCase)}
-        title="删除这条用例？"
-        description={<>将从「<span className="font-semibold text-fg">{deletingCase?.testSet.name}</span>」中删除 <span className="font-semibold text-fg">{deletingCase?.row[0]}</span>，删除后用例编号会自动重排。</>}
-        confirmText="确认删除"
-        onCancel={() => setDeletingCase(null)}
-        onConfirm={() => void confirmDeleteCase()}
-        danger
-      />
 
       <ConfirmDialog
         open={Boolean(deletingProject)}

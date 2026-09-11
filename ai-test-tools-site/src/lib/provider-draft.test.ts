@@ -32,7 +32,7 @@ describe('createProviderDraft', () => {
     expect(draft.apiKey).toBe('')
     expect(draft.model).toBe('gpt-5.5')
     expect(draft.modelOptions).toEqual(['gpt-5.5'])
-    expect(draft.apiFormat).toBe('openai_responses')
+    expect(draft.apiFormat).toBe('openai_chat')
     expect(draft.icon).toBe('custom')
     expect(draft.notes).toBe('')
   })
@@ -88,7 +88,7 @@ describe('applyPresetToDraft', () => {
     expect(next.providerType).toBe('acme-unknown')
     expect(next.name).toBe('自定义配置')
     expect(next.baseUrl).toBe('')
-    expect(next.apiFormat).toBe('openai_responses')
+    expect(next.apiFormat).toBe('openai_chat')
     expect(next.icon).toBe('custom')
   })
 })
@@ -139,13 +139,22 @@ describe('normalizeProviderDraft', () => {
     expect(saved.apiFormat).toBe('openai_chat')
   })
 
-  it('自定义模板无法识别地址时回退 openai_responses 且推断优先于草稿格式', () => {
+  it('自定义模板优先保留草稿指定的 apiFormat', () => {
     const saved = normalizeProviderDraft(buildDraft({
       baseUrl: 'https://api.example.com/v1',
       apiFormat: 'gemini_native',
     }))
 
-    expect(saved.apiFormat).toBe('openai_responses')
+    expect(saved.apiFormat).toBe('gemini_native')
+  })
+
+  it('自定义模板未指定格式且无法识别地址时回退 openai_chat', () => {
+    const saved = normalizeProviderDraft(buildDraft({
+      baseUrl: 'https://api.example.com/v1',
+      apiFormat: '' as unknown as any,
+    }))
+
+    expect(saved.apiFormat).toBe('openai_chat')
   })
 
   it('留空的链接字段回退到预设值并裁剪文本空白', () => {
