@@ -26,6 +26,7 @@ import {
 import { BoardCanvasContext } from './context'
 import { CeEdgeView, FlowEdgeView } from './edges'
 import { RF_EDGE_TYPES, RF_NODE_TYPES } from './rf-types'
+import { connectNodes } from './rf-graph'
 import './rf-board.css'
 
 export interface BoardFlowHandle {
@@ -51,6 +52,10 @@ export interface BoardFlowProps {
   onZoomChange?: (ratio: number) => void
   onUndo?: () => void
   onRedo?: () => void
+  /** 文本编辑提交（#19） */
+  onUpdateNodeText?: (nodeId: string, text: string) => void
+  /** 因果图边约束切换（#19） */
+  onCycleConstraint?: (edgeId: string) => void
 }
 
 const nodeTypes = {
@@ -96,7 +101,26 @@ function BoardFlowInner(props: BoardFlowProps & { onInitViewport?: (vp: BoardVie
 
   const [spacePressed, setSpacePressed] = useState(false)
   const pasteCountRef = useRef(0)
-  const { onUndo, onRedo } = props
+  const { onUndo, onRedo, onUpdateNodeText, onCycleConstraint } = props
+
+  /** 手动连线（#19）：同种同组校验由 connectNodes 承担，落图为 commit 变更 */
+  const onConnect = useCallback(
+    (connection: { source: string | null; target: string | null }) => {
+      if (!connection.source || !connection.target) return
+      const edge = connectNodes(graph, connection.source, connection.target)
+      if (!edge) return
+      onGraphChange({ nodes: graph.nodes, edges: [...graph.edges, edge] }, { history: 'commit' })
+    },
+    [graph, onGraphChange],
+  )
+
+  const isValidConnection = useCallback(
+    (conn: { source?: string | null; target?: string | null }) => {
+      if (!conn.source || !conn.target) return false
+      return connectNodes(graph, conn.source, conn.target) !== null
+    },
+    [graph],
+  )
 
   // 变更分类：选择/测量静默；拖拽中间态 transient（dragStop 时 dragging=false 落为 commit）
   const onNodesChange = useCallback(
@@ -235,8 +259,8 @@ function BoardFlowInner(props: BoardFlowProps & { onInitViewport?: (vp: BoardVie
   }, [graph, onGraphChange, onUndo, onRedo])
 
   const contextValue = useMemo(
-    () => ({ tree, onSelectMindmapNode, onRetryPending, onDeletePending }),
-    [tree, onSelectMindmapNode, onRetryPending, onDeletePending],
+    () => ({ tree, onSelectMindmapNode, onRetryPending, onDeletePending, onUpdateNodeText, onCycleConstraint }),
+    [tree, onSelectMindmapNode, onRetryPending, onDeletePending, onUpdateNodeText, onCycleConstraint],
   )
 
   const defaultViewport = useMemo<Viewport | undefined>(() => viewport, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -262,7 +286,9 @@ function BoardFlowInner(props: BoardFlowProps & { onInitViewport?: (vp: BoardVie
         selectionOnDrag={!spacePressed}
         panOnDrag={spacePressed ? true : [1, 2]}
         zoomOnScroll
-        nodesConnectable={false}
+        nodesConnectable
+        onConnect={onConnect}
+        isValidConnection={isValidConnection}
         proOptions={{ hideAttribution: true }}
         className="rf-board"
       >

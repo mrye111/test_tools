@@ -215,8 +215,58 @@ export function nodeToOrthogonalElement(node: BoardNode): OrthogonalElement | nu
   }
 }
 
-/** 统计画板图元数（组算一个），供上限检查 */
-export function countElements(graph: BoardGraph): number {
+/** 手动连线（跟随票 #19）：仅允许同种且同组节点相连；返回新边，非法连接返回 null */
+export function connectNodes(graph: BoardGraph, sourceId: string, targetId: string): BoardEdge | null {
+  if (sourceId === targetId) return null
+  const source = graph.nodes.find((n) => n.id === sourceId)
+  const target = graph.nodes.find((n) => n.id === targetId)
+  if (!source || !target) return null
+  const s = source.data
+  const t = target.data
+
+  if (s.kind === 'ce-node' && t.kind === 'ce-node' && s.groupId === t.groupId) {
+    return {
+      id: generateId(),
+      type: RF_EDGE_TYPES.ceEdge,
+      source: sourceId,
+      target: targetId,
+      data: { groupId: s.groupId, constraint: 'identity' },
+    }
+  }
+  if (s.kind === 'flowchart-node' && t.kind === 'flowchart-node' && s.groupId === t.groupId) {
+    return {
+      id: generateId(),
+      type: RF_EDGE_TYPES.flowEdge,
+      source: sourceId,
+      target: targetId,
+      data: { groupId: s.groupId },
+    }
+  }
+  return null
+}
+
+/** 因果图约束循环：identity → and → or → not → identity（点击边标签切换） */
+export function nextConstraint(current: 'and' | 'or' | 'not' | 'identity'): 'and' | 'or' | 'not' | 'identity' {
+  const order = ['identity', 'and', 'or', 'not'] as const
+  return order[(order.indexOf(current) + 1) % order.length]
+}
+
+/** 更新节点文本（CE/流程图子节点）；非文本节点返回原图 */
+export function updateNodeText(graph: BoardGraph, nodeId: string, text: string): BoardGraph {
+  const trimmed = text.trim()
+  if (!trimmed) return graph
+  return {
+    nodes: graph.nodes.map((n) => {
+      if (n.id !== nodeId) return n
+      const d = n.data
+      if (d.kind !== 'ce-node' && d.kind !== 'flowchart-node') return n
+      return { ...n, data: { ...d, text: trimmed } }
+    }),
+    edges: graph.edges,
+  }
+}
+
+/** 统计画板图元数（组算一个），供上限检查 */export function countElements(graph: BoardGraph): number {
   const groups = new Set<string>()
   let singles = 0
   for (const n of graph.nodes) {

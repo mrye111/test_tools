@@ -8,6 +8,10 @@ export interface BoardCanvasContextValue {
   onSelectMindmapNode?: (mindmapNodeId: string, requirementNodeId: string | null) => void
   onRetryPending?: (nodeId: string) => void
   onDeletePending?: (nodeId: string) => void
+  /** 文本编辑提交（#19）：更新 CE/流程图节点文案 */
+  onUpdateNodeText?: (nodeId: string, text: string) => void
+  /** 点击因果图边标签循环切换约束（#19） */
+  onCycleConstraint?: (edgeId: string) => void
 }
 
 export const BoardCanvasContext = createContext<BoardCanvasContextValue>({ tree: null })

@@ -31,6 +31,8 @@ import {
   createPendingNode,
   draftToRfGraph,
   markPendingNodeError,
+  nextConstraint,
+  updateNodeText,
 } from './board/rf/rf-graph'
 import { TemplateCenterModal } from './TemplateCenterModal'
 import type { BoardTemplate } from './templates'
@@ -291,6 +293,31 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
             : n,
         ),
         edges: current.edges,
+      })
+    },
+    [onGraphChange],
+  )
+
+  /** 文本编辑提交（#19）：更新 CE/流程图节点文案 */
+  const handleUpdateNodeText = useCallback(
+    (nodeId: string, text: string) => {
+      const next = updateNodeText(graphRef.current, nodeId, text)
+      if (next !== graphRef.current) onGraphChange(next)
+    },
+    [onGraphChange],
+  )
+
+  /** 因果图边约束切换（#19）：点击边标签循环 identity→and→or→not */
+  const handleCycleConstraint = useCallback(
+    (edgeId: string) => {
+      const current = graphRef.current
+      onGraphChange({
+        nodes: current.nodes,
+        edges: current.edges.map((e) =>
+          e.id === edgeId && e.data?.constraint
+            ? { ...e, data: { ...e.data, constraint: nextConstraint(e.data.constraint) } }
+            : e,
+        ),
       })
     },
     [onGraphChange],
@@ -558,6 +585,8 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
             onZoomChange={handleZoomScaleChange}
             onUndo={onUndo}
             onRedo={onRedo}
+            onUpdateNodeText={handleUpdateNodeText}
+            onCycleConstraint={handleCycleConstraint}
           />
 
           {/* 选中工具栏：derive 动作 + 复制/删除 */}

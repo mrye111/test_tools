@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   countElements,
+  connectNodes,
   draftToRfGraph,
   elementToRf,
   emptyGraph,
   markPendingNodeError,
   createPendingNode,
+  nextConstraint,
   nodeToDecisionTableElement,
   reconstructCauseEffectElement,
+  updateNodeText,
 } from './rf-graph'
 import type { BoardElement } from '../types'
 
@@ -145,5 +148,66 @@ describe('rf-graph 转换与重建', () => {
     expect(el!.rules[0].conditionValues).toEqual(['N'])
     expect(el!.x).toBe(10)
     expect(el!.y).toBe(20)
+  })
+})
+
+describe('连线与文本编辑（#19）', () => {
+  function ceGraph(): ReturnType<typeof elementToRf> {
+    return elementToRf({
+      id: 'ce-1',
+      kind: 'cause-effect',
+      x: 0,
+      y: 0,
+      w: 480,
+      h: 320,
+      sourceNodeId: null,
+      nodes: [
+        { id: 'c1', role: 'cause', text: '原因A', x: 0, y: 0 },
+        { id: 'c2', role: 'cause', text: '原因B', x: 0, y: 80 },
+        { id: 'e1', role: 'effect', text: '结果', x: 260, y: 40 },
+      ],
+      edges: [],
+    })
+  }
+
+  it('connectNodes：同组 CE 节点连线默认 identity 约束', () => {
+    const graph = ceGraph()
+    const edge = connectNodes(graph, 'c1', 'e1')
+    expect(edge).not.toBeNull()
+    expect(edge!.data).toMatchObject({ groupId: 'ce-1', constraint: 'identity' })
+    expect(edge!.type).toBe('ce-edge')
+  })
+
+  it('connectNodes：拒绝自连与跨组/跨类型连接', () => {
+    const graph = ceGraph()
+    const other = elementToRf({
+      id: 'ce-2',
+      kind: 'cause-effect',
+      x: 600,
+      y: 0,
+      w: 480,
+      h: 320,
+      sourceNodeId: null,
+      nodes: [{ id: 'x1', role: 'cause', text: '别的图', x: 0, y: 0 }],
+      edges: [],
+    })
+    graph.nodes.push(...other.nodes)
+    expect(connectNodes(graph, 'c1', 'c1')).toBeNull()
+    expect(connectNodes(graph, 'c1', 'x1')).toBeNull()
+  })
+
+  it('nextConstraint 循环 identity→and→or→not→identity', () => {
+    expect(nextConstraint('identity')).toBe('and')
+    expect(nextConstraint('and')).toBe('or')
+    expect(nextConstraint('or')).toBe('not')
+    expect(nextConstraint('not')).toBe('identity')
+  })
+
+  it('updateNodeText：更新 CE 节点文案，空文本不动图', () => {
+    const graph = ceGraph()
+    const next = updateNodeText(graph, 'c1', '  修改后的原因  ')
+    expect(next.nodes[0].data).toMatchObject({ text: '修改后的原因' })
+    expect(graph.nodes[0].data).toMatchObject({ text: '原因A' }) // 原图不可变
+    expect(updateNodeText(graph, 'c1', '   ')).toBe(graph)
   })
 })

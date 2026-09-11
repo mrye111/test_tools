@@ -1,6 +1,6 @@
 /** RF 自定义节点：5 种图元 + AI 占位/错误节点；视觉沿用画板暗色玻璃质感（rf-board.css） */
 
-import { useContext, useMemo } from 'react'
+import { useContext, useMemo, useState } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import { layoutMindmap } from '../elements/layout'
 import { BoardCanvasContext } from './context'
@@ -19,36 +19,90 @@ const ROLE_LABEL: Record<CeNodeData['role'], string> = {
   effect: '果',
 }
 
-/** 因果图节点：左侧入、右侧出 */
-export function CeNodeView({ data, selected }: NodeProps<Node<CeNodeData>>) {
+/** 双击进入文本编辑的通用行为（#19）：Enter/失焦提交，Esc 取消 */
+function useInlineEdit(nodeId: string, currentText: string) {
+  const { onUpdateNodeText } = useContext(BoardCanvasContext)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(currentText)
+
+  const start = () => {
+    setDraft(currentText)
+    setEditing(true)
+  }
+  const commit = () => {
+    setEditing(false)
+    if (draft.trim() && draft.trim() !== currentText) onUpdateNodeText?.(nodeId, draft)
+  }
+  const cancel = () => setEditing(false)
+
+  return { editing, draft, setDraft, start, commit, cancel }
+}
+
+/** 因果图节点：左侧入、右侧出；双击编辑文案 */
+export function CeNodeView({ id, data, selected }: NodeProps<Node<CeNodeData>>) {
+  const edit = useInlineEdit(id, data.text)
   return (
-    <div className={`rf-ce-node rf-ce-${data.role}${selected ? ' is-selected' : ''}`}>
+    <div className={`rf-ce-node rf-ce-${data.role}${selected ? ' is-selected' : ''}`} onDoubleClick={edit.start}>
       <Handle type="target" position={Position.Left} />
       <span className="rf-ce-role">{ROLE_LABEL[data.role]}</span>
-      <span className="rf-ce-text" title={data.text}>{data.text}</span>
+      {edit.editing ? (
+        <input
+          className="rf-node-edit nodrag"
+          value={edit.draft}
+          autoFocus
+          onChange={(e) => edit.setDraft(e.target.value)}
+          onBlur={edit.commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') edit.commit()
+            if (e.key === 'Escape') edit.cancel()
+          }}
+        />
+      ) : (
+        <span className="rf-ce-text" title={data.text}>{data.text}</span>
+      )}
       <Handle type="source" position={Position.Right} />
     </div>
   )
 }
 
-/** 流程图节点：上入下出；start/end 胶囊、process 矩形、decision 菱形 */
-export function FlowchartNodeView({ data, selected }: NodeProps<Node<FlowchartNodeData>>) {
+/** 流程图节点：上入下出；start/end 胶囊、process 矩形、decision 菱形；双击编辑文案 */
+export function FlowchartNodeView({ id, data, selected }: NodeProps<Node<FlowchartNodeData>>) {
+  const edit = useInlineEdit(id, data.text)
   const cls = `rf-flow-node rf-flow-${data.nodeKind}${selected ? ' is-selected' : ''}`
+
+  const textEl = edit.editing ? (
+    <input
+      className="rf-node-edit nodrag"
+      value={edit.draft}
+      autoFocus
+      onChange={(e) => edit.setDraft(e.target.value)}
+      onBlur={edit.commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') edit.commit()
+        if (e.key === 'Escape') edit.cancel()
+      }}
+    />
+  ) : (
+    <span className="rf-flow-text" title={data.text}>{data.text}</span>
+  )
+
   if (data.nodeKind === 'decision') {
     return (
-      <div className={cls}>
+      <div className={cls} onDoubleClick={edit.start}>
         <Handle type="target" position={Position.Top} />
         <div className="rf-flow-diamond">
-          <span className="rf-flow-diamond-text" title={data.text}>{data.text}</span>
+          <span className="rf-flow-diamond-text" title={data.text}>
+            {edit.editing ? textEl : data.text}
+          </span>
         </div>
         <Handle type="source" position={Position.Bottom} />
       </div>
     )
   }
   return (
-    <div className={cls}>
+    <div className={cls} onDoubleClick={edit.start}>
       <Handle type="target" position={Position.Top} />
-      <span className="rf-flow-text" title={data.text}>{data.text}</span>
+      {textEl}
       <Handle type="source" position={Position.Bottom} />
     </div>
   )

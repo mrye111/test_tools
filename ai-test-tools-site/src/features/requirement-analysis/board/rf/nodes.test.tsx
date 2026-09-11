@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { ReactFlowProvider } from '@xyflow/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { NodeProps, Node } from '@xyflow/react'
@@ -10,6 +10,7 @@ import {
   MindmapRefNodeView,
   OrthogonalNodeView,
 } from './nodes'
+import { CeEdgeLabelButton } from './edges'
 import { BoardCanvasContext } from './context'
 import type {
   CeNodeData,
@@ -124,5 +125,47 @@ describe('RF 自定义节点渲染', () => {
     expect(onRetry).toHaveBeenCalledWith('n1')
     screen.getByRole('button', { name: '删除' }).click()
     expect(onDelete).toHaveBeenCalledWith('n1')
+  })
+})
+
+describe('文本编辑与约束切换（#19）', () => {
+  it('因果图节点双击进入编辑，Enter 提交回调', () => {
+    const onUpdateNodeText = vi.fn()
+    render(
+      <BoardCanvasContext.Provider value={{ tree: null, onUpdateNodeText }}>
+        <ReactFlowProvider>
+          <CeNodeView {...nodeProps<CeNodeData>({ kind: 'ce-node', groupId: 'g1', role: 'cause', text: '原文案', sourceNodeId: null })} />
+        </ReactFlowProvider>
+      </BoardCanvasContext.Provider>,
+    )
+    fireEvent.doubleClick(screen.getByText('原文案'))
+    const input = screen.getByDisplayValue('原文案')
+    fireEvent.change(input, { target: { value: '新文案' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onUpdateNodeText).toHaveBeenCalledWith('n1', '新文案')
+  })
+
+  it('Esc 取消编辑不提交', () => {
+    const onUpdateNodeText = vi.fn()
+    render(
+      <BoardCanvasContext.Provider value={{ tree: null, onUpdateNodeText }}>
+        <ReactFlowProvider>
+          <CeNodeView {...nodeProps<CeNodeData>({ kind: 'ce-node', groupId: 'g1', role: 'cause', text: '原文案', sourceNodeId: null })} />
+        </ReactFlowProvider>
+      </BoardCanvasContext.Provider>,
+    )
+    fireEvent.doubleClick(screen.getByText('原文案'))
+    const input = screen.getByDisplayValue('原文案')
+    fireEvent.change(input, { target: { value: '改了一半' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(onUpdateNodeText).not.toHaveBeenCalled()
+    expect(screen.getByText('原文案')).toBeInTheDocument()
+  })
+
+  it('因果图边约束标签按钮：点击触发切换回调', () => {
+    const onClick = vi.fn()
+    render(<CeEdgeLabelButton constraint="and" onClick={onClick} />)
+    fireEvent.click(screen.getByRole('button', { name: '∧' }))
+    expect(onClick).toHaveBeenCalledTimes(1)
   })
 })
