@@ -8,6 +8,8 @@ import { TestCasePage } from './pages/TestCasePage'
 import { TestReportPage } from './pages/TestReportPage'
 import { ReportViewPage } from './pages/ReportViewPage'
 import { DataFactoryPage } from './pages/DataFactoryPage'
+import { RequirementAnalysisPage } from './pages/RequirementAnalysisPage'
+import { RequirementAnalysisViewPage } from './pages/RequirementAnalysisViewPage'
 import { ErrorDialogProvider } from './components/ui/ErrorDialogProvider'
 
 // 路由切换时回到页面顶部。全局 html 开了 scroll-behavior: smooth，
@@ -35,6 +37,8 @@ export default function App() {
             <Route path="/testreport" element={<TestReportPage />} />
             <Route path="/testreport/reports/:id" element={<ReportViewPage />} />
             <Route path="/data-factory" element={<DataFactoryPage />} />
+            <Route path="/requirement-analysis" element={<RequirementAnalysisPage />} />
+            <Route path="/requirement-analysis/records/:id" element={<RequirementAnalysisViewPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </main>

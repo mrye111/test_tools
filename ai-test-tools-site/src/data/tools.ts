@@ -1,6 +1,7 @@
 import {
   Gauge,
   FileText,
+  FileSearch,
   BarChart3,
   Database,
   Code2,
@@ -48,6 +49,14 @@ export const tools: Tool[] = [
     tag: '数据处理',
     icon: Database,
     href: '/data-factory',
+  },
+  {
+    id: 'requirement-analysis',
+    title: '需求分析',
+    description: 'AI 需求分析：问题日志、可测试化验收准则、测试条件与追溯矩阵',
+    tag: '需求洞察',
+    icon: FileSearch,
+    href: '/requirement-analysis',
   },
   {
     id: 'dev-tools',
