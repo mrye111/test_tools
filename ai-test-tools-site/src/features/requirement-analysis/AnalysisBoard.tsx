@@ -35,8 +35,7 @@ import {
 import { TemplateCenterModal } from './TemplateCenterModal'
 import type { BoardTemplate } from './templates'
 import { BOARD_LIMITS } from './board/types'
-import { BOARD_ZOOM_MAX, BOARD_ZOOM_MIN, formatZoom, stepZoom } from './board/viewport'
-import { emptyBoard } from './board/persistence'
+import { BOARD_ZOOM_MAX, BOARD_ZOOM_MIN, formatZoom, stepZoom } from './board/rf/zoom'
 
 /** 导出格式：文件类由父级处理；PNG 离屏渲染随旧引擎下线（移入二期，见地图 #13 雾里区域）。 */
 type ExportKind = 'xmind' | 'freemind' | 'markdown'
@@ -210,7 +209,7 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
       try {
         const draft = await onGenerateChart(chartKind, selectedNodeId)
         // draftToElement 的落位避让基于旧 Board 模型；本票以空板落位（40,40），#16 迁移时统一改造
-        const generated = draftToRfGraph(draft, chartKind, selectedNodeId, emptyBoard())
+        const generated = draftToRfGraph(draft, chartKind, selectedNodeId)
         const current = graphRef.current
         onGraphChange({
           nodes: [...current.nodes.filter((n) => n.id !== pending.id), ...generated.nodes],
@@ -249,7 +248,7 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
       })
       try {
         const draft = await onGenerateChart(chartKind, sourceNodeId)
-        const generated = draftToRfGraph(draft, chartKind, sourceNodeId, emptyBoard())
+        const generated = draftToRfGraph(draft, chartKind, sourceNodeId)
         const latest = graphRef.current
         onGraphChange({
           nodes: [...latest.nodes.filter((n) => n.id !== nodeId), ...generated.nodes],

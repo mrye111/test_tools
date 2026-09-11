@@ -118,14 +118,13 @@ export function boardToRf(board: Board): BoardGraph {
   return out
 }
 
-/** AI 草稿 → RF 图（经 draftToElement 校验后转换，落位由 draftToElement 负责） */
+/** AI 草稿 → RF 图（经 draftToElement 校验后转换；落位避让已随旧引擎下线，固定空板原点落位） */
 export function draftToRfGraph(
   draft: unknown,
   chartKind: BoardChartKind,
   sourceNodeId: string | null,
-  board: Board,
 ): BoardGraph {
-  return elementToRf(draftToElement(draft, chartKind, sourceNodeId, board))
+  return elementToRf(draftToElement(draft, chartKind, sourceNodeId, { version: 1, elements: [] }))
 }
 
 /** 需求树参考节点（空板自动占位） */

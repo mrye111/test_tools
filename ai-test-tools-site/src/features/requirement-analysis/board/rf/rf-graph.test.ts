@@ -9,7 +9,6 @@ import {
   nodeToDecisionTableElement,
   reconstructCauseEffectElement,
 } from './rf-graph'
-import { emptyBoard } from '../persistence'
 import type { BoardElement } from '../types'
 
 describe('rf-graph 转换与重建', () => {
@@ -74,7 +73,7 @@ describe('rf-graph 转换与重建', () => {
       ],
       edges: [{ id: 'e', from: 'a', to: 'b', constraint: 'identity' }],
     }
-    const graph = draftToRfGraph(draft, 'cause-effect', 'n1', emptyBoard())
+    const graph = draftToRfGraph(draft, 'cause-effect', 'n1')
     expect(graph.nodes).toHaveLength(2)
     expect(graph.edges).toHaveLength(1)
     const groupIds = new Set(graph.nodes.map((n) => (n.data as { groupId: string }).groupId))
@@ -82,7 +81,7 @@ describe('rf-graph 转换与重建', () => {
   })
 
   it('draftToRfGraph：坏草稿抛校验错误', () => {
-    expect(() => draftToRfGraph({ nodes: [] }, 'cause-effect', null, emptyBoard())).toThrow(/AI 草稿校验失败/)
+    expect(() => draftToRfGraph({ nodes: [] }, 'cause-effect', null)).toThrow(/AI 草稿校验失败/)
   })
 
   it('占位节点：创建、错误标记、不参与图元计数之外的流程', () => {
