@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   AlertCircle,
@@ -41,6 +41,8 @@ import { displayCellText, normalizeDisplayHeader } from '../hooks/testcase-helpe
 import { useGoBack } from '../hooks/useGoBack'
 import { useTestCaseWorkspace } from '../hooks/useTestCaseWorkspace'
 import { normalizeErrorMessage } from '../lib/app-error'
+import { REQUIREMENT_CONDITIONS_HANDOFF_KEY, type ConditionsHandoffPayload } from '../features/requirement-analysis-v2/handoff'
+import { linkConditionsToTestset } from '../features/requirement-analysis-v2/analysis-api'
 import type { TestCaseProject, TestCaseSet, TestCaseExecutionStatus } from '../lib/testcase-api'
 import {
   buildBugReport,
@@ -251,6 +253,50 @@ export function TestCasePage() {
     workspace.setPageError(null)
   }, [showError, workspace])
 
+  // 需求分析 v2 的测试条件接力：读取载荷，预填新建用例集弹窗；用例集生成完成后回写条件关联（RTM）
+  const [conditionsHandoff, setConditionsHandoff] = useState<ConditionsHandoffPayload | null>(null)
+  const handoffProjectPromptedRef = useRef(false)
+
+  useEffect(() => {
+    const raw = localStorage.getItem(REQUIREMENT_CONDITIONS_HANDOFF_KEY)
+    if (!raw) return
+    localStorage.removeItem(REQUIREMENT_CONDITIONS_HANDOFF_KEY)
+    let payload: ConditionsHandoffPayload | null = null
+    try {
+      const parsed = JSON.parse(raw) as Partial<ConditionsHandoffPayload>
+      if (parsed && typeof parsed.requirement === 'string' && parsed.requirement.trim() && Array.isArray(parsed.conditions)) {
+        payload = parsed as ConditionsHandoffPayload
+      }
+    } catch {
+      // 坏载荷直接忽略
+    }
+    if (!payload) return
+    // 与外部系统（localStorage）同步：推迟到任务队列，避免在 effect 体内同步 setState
+    queueMicrotask(() => setConditionsHandoff(payload))
+  }, [])
+
+  useEffect(() => {
+    if (!conditionsHandoff || workspace.loading) return
+    const timer = window.setTimeout(() => {
+      if (!workspace.selectedProject) {
+        if (workspace.projects.length > 0) {
+          workspace.setSelectedProjectId(workspace.projects[0].id)
+        } else if (!handoffProjectPromptedRef.current) {
+          // 没有项目时先引导创建项目，创建完成后接力继续
+          handoffProjectPromptedRef.current = true
+          openCreateProjectModal()
+        }
+        return
+      }
+      setTestSetName(conditionsHandoff.name ?? '')
+      setContext(conditionsHandoff.requirement)
+      setFormErrors({})
+      setShowTestSetModal(true)
+    }, 0)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conditionsHandoff, workspace.loading, workspace.projects, workspace.selectedProject])
+
   function openCreateProjectModal() {
     setEditingProject(null)
     setProjectName('')
@@ -318,7 +364,13 @@ export function TestCasePage() {
     const finalContext = isApi && swagger
       ? `${context.trim()}\n\n${SWAGGER_CONTEXT_MARKER}\n${swagger}`
       : context
-    const created = await workspace.createTestSet({ name: testSetName, context: finalContext, testType, language, promptPreset })
+    const created = await workspace.createTestSet({ name: testSetName, context: finalContext, testType, language, promptPreset }, (job) => {
+      // 需求分析接力回写：用例集生成完成后登记 条件↔用例集 关联（RTM）
+      if (conditionsHandoff && job.testSetId) {
+        void linkConditionsToTestset(conditionsHandoff.conditions.map((c) => c.id), job.testSetId).catch(() => undefined)
+        setConditionsHandoff(null)
+      }
+    })
     if (created) {
       setShowTestSetModal(false)
       resetTestSetForm()

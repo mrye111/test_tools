@@ -17,6 +17,7 @@ import {
   updateTestCaseProject,
   upsertTestCase,
   waitForGenerateJob,
+  type GenerateJobData,
   type TestCaseExecutionItem,
   type TestCaseProject,
   type TestCaseSet,
@@ -185,7 +186,8 @@ export function useTestCaseWorkspace() {
     }
   }
 
-  async function createTestSet(input: CreateTestSetInput) {
+  /** onCompleted：生成任务完成回调（需求分析接力回写等），仅 create 模式完成态触发 */
+  async function createTestSet(input: CreateTestSetInput, onCompleted?: (job: GenerateJobData) => void) {
     if (!selectedProject) return false
     setGenerating(true)
     setPageError(null)
@@ -205,6 +207,9 @@ export function useTestCaseWorkspace() {
       })
       await refreshTestSets(selectedProject.id)
       void waitForGenerateJob(created.jobId)
+        .then((job) => {
+          if (job.status === 'completed') onCompleted?.(job)
+        })
         .catch(() => undefined)
         .finally(() => {
           if (!mountedRef.current) return

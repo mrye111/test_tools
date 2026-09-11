@@ -165,7 +165,7 @@ export interface GenerateJobStatusResponse {
   error?: string
 }
 
-type GenerateJobData = NonNullable<GenerateJobStatusResponse['data']>
+export type GenerateJobData = NonNullable<GenerateJobStatusResponse['data']>
 
 export { loadStoredModelConfig }
 
