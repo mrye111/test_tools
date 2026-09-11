@@ -212,29 +212,56 @@ export class MysqlAnalysisRepository implements AnalysisRepository {
     }
     const id = newId("ra2_");
     const time = now();
+
+    // 子资源 id 服务端重新分配（AI/客户端给的 id 只作记录内引用键，不能直接当全局主键——
+    // 两次分析都会产出 r1/r2 导致主键冲突），reqId/criterionId 引用跟随映射。
+    const reqIdMap = new Map<string, string>();
+    const requirements = input.requirements.map((req) => {
+      const newReqId = newId("rreq_");
+      reqIdMap.set(req.id, newReqId);
+      return { ...req, id: newReqId };
+    });
+    const criterionIdMap = new Map<string, string>();
+    const criteria = input.criteria.map((criterion) => {
+      const newCriterionId = newId("rcr_");
+      criterionIdMap.set(criterion.id, newCriterionId);
+      return { ...criterion, id: newCriterionId, reqId: criterion.reqId ? (reqIdMap.get(criterion.reqId) ?? criterion.reqId) : criterion.reqId };
+    });
+    const issues = input.issues.map((issue) => ({
+      ...issue,
+      id: newId("rai_"),
+      reqId: issue.reqId ? (reqIdMap.get(issue.reqId) ?? issue.reqId) : issue.reqId,
+    }));
+    const conditions = input.conditions.map((condition) => ({
+      ...condition,
+      id: newId("rcd_"),
+      reqId: condition.reqId ? (reqIdMap.get(condition.reqId) ?? condition.reqId) : condition.reqId,
+      criterionId: condition.criterionId ? (criterionIdMap.get(condition.criterionId) ?? condition.criterionId) : condition.criterionId,
+    }));
+
     await this.pool.execute(
       "INSERT INTO ra2_records (id, title, source_file_name, source_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
       [id, input.title, input.sourceFileName ?? null, input.sourceText, time, time],
     );
-    for (const req of input.requirements) {
+    for (const req of requirements) {
       await this.pool.execute(
         "INSERT INTO ra2_requirements (id, record_id, parent_id, level, text, sort) VALUES (?, ?, ?, ?, ?, ?)",
-        [req.id, id, req.parentId, req.level, req.text, req.sort],
+        [req.id, id, req.parentId ? (reqIdMap.get(req.parentId) ?? req.parentId) : null, req.level, req.text, req.sort],
       );
     }
-    for (const issue of input.issues) {
+    for (const issue of issues) {
       await this.pool.execute(
         "INSERT INTO ra2_issues (id, record_id, req_id, type, severity, quote, description, suggested_question, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [issue.id, id, issue.reqId, issue.type, issue.severity, issue.quote, issue.description, issue.suggestedQuestion, issue.status, time, time],
       );
     }
-    for (const criterion of input.criteria) {
+    for (const criterion of criteria) {
       await this.pool.execute(
         "INSERT INTO ra2_criteria (id, record_id, req_id, original_text, rewritten_text, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         [criterion.id, id, criterion.reqId, criterion.originalText, criterion.rewrittenText, criterion.status, time, time],
       );
     }
-    for (const condition of input.conditions) {
+    for (const condition of conditions) {
       await this.pool.execute(
         "INSERT INTO ra2_conditions (id, record_id, req_id, criterion_id, text, kind, relay, testset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [condition.id, id, condition.reqId, condition.criterionId, condition.text, condition.kind, condition.relay, condition.testsetId, time, time],

@@ -40,6 +40,15 @@ async function createRecord(): Promise<string> {
   return (body.record as { id: string }).id;
 }
 
+/** 创建并返回完整详情（子资源 id 由服务端重映射，必须从返回值取） */
+async function createDetail(): Promise<{ id: string; issues: Array<{ id: string }>; criteria: Array<{ id: string }>; conditions: Array<{ id: string }> }> {
+  const { body } = await api("/api/requirement-analysis-v2/records", {
+    method: "POST",
+    body: JSON.stringify(makeInput()),
+  });
+  return body.record as { id: string; issues: Array<{ id: string }>; criteria: Array<{ id: string }>; conditions: Array<{ id: string }> };
+}
+
 describe("requirement-v2 路由", () => {
   it("storage-status 返回 memory 模式", async () => {
     const { status, body } = await api("/api/requirement-analysis-v2/storage-status");
@@ -79,15 +88,17 @@ describe("requirement-v2 路由", () => {
   });
 
   it("问题 patch 与非法状态 400", async () => {
-    await createRecord();
-    const patched = await api("/api/requirement-analysis-v2/issues/iss-1", { method: "PATCH", body: JSON.stringify({ status: "resolved" }) });
+    const record = await createDetail();
+    const issueId = record.issues[0].id;
+    const patched = await api(`/api/requirement-analysis-v2/issues/${issueId}`, { method: "PATCH", body: JSON.stringify({ status: "resolved" }) });
     expect((patched.body.issue as { status: string }).status).toBe("resolved");
-    expect((await api("/api/requirement-analysis-v2/issues/iss-1", { method: "PATCH", body: JSON.stringify({ status: "weird" }) })).status).toBe(400);
+    expect((await api(`/api/requirement-analysis-v2/issues/${issueId}`, { method: "PATCH", body: JSON.stringify({ status: "weird" }) })).status).toBe(400);
   });
 
   it("准则驳回闭环：生成不可测问题条目", async () => {
-    const id = await createRecord();
-    const { status, body } = await api("/api/requirement-analysis-v2/criteria/cri-1", { method: "PATCH", body: JSON.stringify({ status: "rejected" }) });
+    const record = await createDetail();
+    const id = record.id;
+    const { status, body } = await api(`/api/requirement-analysis-v2/criteria/${record.criteria[0].id}`, { method: "PATCH", body: JSON.stringify({ status: "rejected" }) });
     expect(status).toBe(200);
     const issue = body.issue as { type: string; status: string };
     expect(issue.type).toBe("untestable");
@@ -98,14 +109,16 @@ describe("requirement-v2 路由", () => {
   });
 
   it("接力与回写：relay → link-testset → RTM 覆盖率", async () => {
-    const id = await createRecord();
+    const record = await createDetail();
+    const id = record.id;
+    const [cond1, cond2] = record.conditions.map((c) => c.id);
 
-    const relay = await api(`/api/requirement-analysis-v2/records/${id}/relay`, { method: "POST", body: JSON.stringify({ conditionIds: ["cond-1", "cond-2"] }) });
+    const relay = await api(`/api/requirement-analysis-v2/records/${id}/relay`, { method: "POST", body: JSON.stringify({ conditionIds: [cond1, cond2] }) });
     expect((relay.body as { marked: number }).marked).toBe(2);
 
     expect((await api(`/api/requirement-analysis-v2/records/${id}/relay`, { method: "POST", body: JSON.stringify({ conditionIds: "bad" }) })).status).toBe(400);
 
-    const link = await api("/api/requirement-analysis-v2/link-testset", { method: "POST", body: JSON.stringify({ conditionIds: ["cond-1"], testsetId: "ts_9" }) });
+    const link = await api("/api/requirement-analysis-v2/link-testset", { method: "POST", body: JSON.stringify({ conditionIds: [cond1], testsetId: "ts_9" }) });
     expect((link.body as { linked: number }).linked).toBe(1);
 
     const rtm = await api(`/api/requirement-analysis-v2/records/${id}/rtm`);

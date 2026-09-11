@@ -77,15 +77,58 @@ export class MemoryAnalysisRepository implements AnalysisRepository {
       updatedAt: time,
     };
     this.records.set(record.id, record);
-    this.requirements.set(record.id, input.requirements.map((r) => ({ ...r, recordId: record.id })));
-    for (const issue of input.issues) {
-      this.issues.set(issue.id, { ...issue, recordId: record.id, createdAt: time, updatedAt: time });
-    }
+
+    // 子资源 id 服务端重新分配（调用方给的 id 只作记录内引用键），reqId/criterionId 引用跟随映射
+    const reqIdMap = new Map<string, string>();
+    this.requirements.set(
+      record.id,
+      input.requirements.map((r) => {
+        const mappedId = newId("rreq_");
+        reqIdMap.set(r.id, mappedId);
+        return {
+          ...r,
+          id: mappedId,
+          parentId: r.parentId ? (reqIdMap.get(r.parentId) ?? r.parentId) : null,
+          recordId: record.id,
+        };
+      }),
+    );
+
+    const criterionIdMap = new Map<string, string>();
     for (const criterion of input.criteria) {
-      this.criteria.set(criterion.id, { ...criterion, recordId: record.id, createdAt: time, updatedAt: time });
+      const mappedId = newId("rcr_");
+      criterionIdMap.set(criterion.id, mappedId);
+      this.criteria.set(mappedId, {
+        ...criterion,
+        id: mappedId,
+        reqId: reqIdMap.get(criterion.reqId) ?? criterion.reqId,
+        recordId: record.id,
+        createdAt: time,
+        updatedAt: time,
+      });
+    }
+    for (const issue of input.issues) {
+      const mappedId = newId("rai_");
+      this.issues.set(mappedId, {
+        ...issue,
+        id: mappedId,
+        reqId: issue.reqId ? (reqIdMap.get(issue.reqId) ?? issue.reqId) : issue.reqId,
+        recordId: record.id,
+        createdAt: time,
+        updatedAt: time,
+      });
     }
     for (const condition of input.conditions) {
-      this.conditions.set(condition.id, { ...condition, recordId: record.id, createdAt: time, updatedAt: time });
+      const mappedId = newId("rcd_");
+      this.conditions.set(mappedId, {
+        ...condition,
+        id: mappedId,
+        reqId: condition.reqId ? (reqIdMap.get(condition.reqId) ?? condition.reqId) : condition.reqId,
+        criterionId: condition.criterionId ? (criterionIdMap.get(condition.criterionId) ?? condition.criterionId) : condition.criterionId,
+        recordId: record.id,
+        createdAt: time,
+        updatedAt: time,
+      });
     }
     return (await this.getRecord(record.id))!;
   }

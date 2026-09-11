@@ -88,9 +88,10 @@ export function runAnalysisContractTests(name: string, factory: () => AnalysisRe
       expect(await repo.countRecords()).toBe(0);
     });
 
-    it("问题状态/严重度 patch", async () => {
+    it("问题状态/严重度 patch（使用服务端分配的真实 id）", async () => {
       const created = await repo.createRecord(makeInput());
-      const patched = await repo.patchIssue("iss-1", { status: "resolved", severity: "low" });
+      const issueId = created.issues[0].id;
+      const patched = await repo.patchIssue(issueId, { status: "resolved", severity: "low" });
       expect(patched.status).toBe("resolved");
       expect(patched.severity).toBe("low");
       const list = await repo.listRecords();
@@ -98,8 +99,9 @@ export function runAnalysisContractTests(name: string, factory: () => AnalysisRe
     });
 
     it("准则 patch（确认/编辑文案）", async () => {
-      await repo.createRecord(makeInput());
-      const patched = await repo.patchCriterion("cri-1", { status: "confirmed", rewrittenText: "改后的准则" });
+      const created = await repo.createRecord(makeInput());
+      const criterionId = created.criteria[0].id;
+      const patched = await repo.patchCriterion(criterionId, { status: "confirmed", rewrittenText: "改后的准则" });
       expect(patched.status).toBe("confirmed");
       expect(patched.rewrittenText).toBe("改后的准则");
     });
@@ -121,13 +123,14 @@ export function runAnalysisContractTests(name: string, factory: () => AnalysisRe
 
     it("接力：none→relayed→generated 与 RTM 覆盖率", async () => {
       const created = await repo.createRecord(makeInput());
+      const [cond1, cond2] = created.conditions.map((c) => c.id);
 
-      const marked = await repo.markConditionsRelayed(created.id, ["cond-1", "cond-2"]);
+      const marked = await repo.markConditionsRelayed(created.id, [cond1, cond2]);
       expect(marked).toBe(2);
       // 重复接力不动（relay 已非 none）
-      expect(await repo.markConditionsRelayed(created.id, ["cond-1"])).toBe(0);
+      expect(await repo.markConditionsRelayed(created.id, [cond1])).toBe(0);
 
-      const linked = await repo.markConditionsGenerated(["cond-1"], "ts_1");
+      const linked = await repo.markConditionsGenerated([cond1], "ts_1");
       expect(linked).toBe(1);
 
       const rtm = await repo.getRtm(created.id);
@@ -137,6 +140,24 @@ export function runAnalysisContractTests(name: string, factory: () => AnalysisRe
       expect(rtm.rows[0].reqText).toBe("账号锁定");
       expect(rtm.rows[0].testsetId).toBe("ts_1");
       expect(rtm.rows[1].testsetId).toBeNull();
+    });
+
+    it("子资源 id 服务端重映射：两次创建同逻辑 id 不冲突，引用跟随（回归：Duplicate entry r1）", async () => {
+      const first = await repo.createRecord(makeInput("第一条"));
+      const second = await repo.createRecord(makeInput("第二条"));
+      // 两条记录的需求条目输入 id 都是 req-root/req-r3，落库后必须不同
+      expect(first.requirements.map((r) => r.id)).not.toEqual(second.requirements.map((r) => r.id));
+      // 引用跟随：第二条记录的问题/准则/条件 reqId 指向它自己的条目
+      const secondReqIds = new Set(second.requirements.map((r) => r.id));
+      expect(secondReqIds.has(second.issues[0].reqId!)).toBe(true);
+      expect(secondReqIds.has(second.criteria[0].reqId)).toBe(true);
+      expect(secondReqIds.has(second.conditions[0].reqId!)).toBe(true);
+      // 层级 parentId 也跟随
+      const child = second.requirements.find((r) => r.text === "账号锁定")!;
+      const root = second.requirements.find((r) => r.text === "登录模块")!;
+      expect(child.parentId).toBe(root.id);
+      // 条件 criterionId 跟随准则映射
+      expect(second.conditions[0].criterionId).toBe(second.criteria[0].id);
     });
 
     it("上限 200 条（内存实现抽样验证边界语义）", async () => {
