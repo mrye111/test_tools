@@ -9,40 +9,25 @@ import {
   type SessionFile,
   type LibraryFile,
 } from '../features/requirement-analysis/chat/chat-api'
-import type { BoardChartKind } from '../lib/requirement-analysis-api'
-import { loadStoredModelConfig } from '../lib/model-config-store'
-import { getPreferredAiConfig } from '../shared/api-types'
 import {
   buildFreeMindXml,
   buildMarkdownOutline,
   downloadTextFile,
 } from '../lib/requirement-export'
-import { REQUIREMENT_HANDOFF_KEY } from '../lib/requirement-analysis-api'
 import type { RequirementAnalysisResult, RequirementNode } from '../lib/requirement-analysis-api'
 import { AnalysisBoard } from '../features/requirement-analysis/AnalysisBoard'
 import { useBoardPersistence } from '../features/requirement-analysis/board/useBoardPersistence'
 import { useGraphHistory } from '../features/requirement-analysis/board/rf/useGraphHistory'
 import { deserializeRfBoard, serializeRfBoard } from '../features/requirement-analysis/board/rf/rf-persistence'
-import {
-  buildMindmapRefNode,
-  draftToRfGraph,
-  elementToRf,
-  emptyGraph,
-  nodeToDecisionTableElement,
-  nodeToOrthogonalElement,
-  reconstructCauseEffectElement,
-} from '../features/requirement-analysis/board/rf/rf-graph'
 import type { BoardGraph, BoardViewport } from '../features/requirement-analysis/board/rf/rf-types'
-import { countElements } from '../features/requirement-analysis/board/rf/rf-graph'
-import { deriveDecisionTable, decisionTableToSkeleton, orthogonalToSkeleton, serializeSkeletons, selectOrthogonalArray } from '../features/requirement-analysis/board/derive'
-import { emptyBoard } from '../features/requirement-analysis/board/persistence'
-import { BOARD_LIMITS } from '../features/requirement-analysis/board/types'
+
+const EMPTY_GRAPH: BoardGraph = { nodes: [], edges: [] }
 
 /**
- * 分析画板页（双来源 + React Flow 引擎，地图 #13）：
+ * 分析画板页（纯白板形态，ADR 0010）：
  * - /requirement-analysis/board/:id?from=library 打开文件库文件
  * - /requirement-analysis/board/:id 默认打开会话文件
- * 画板状态为 RF 图（nodes/edges + viewport），持久化版本 2；旧 version 1 数据读为空画板。
+ * 画板为 React Flow 通用白板，持久化版本 3；旧版本数据读为空画板（不做迁移）。
  */
 export function AnalysisBoardPage() {
   const { id } = useParams<{ id: string }>()
@@ -74,21 +59,15 @@ export function AnalysisBoardPage() {
         if (cancelled) return
         resetHistory()
         setFile(data)
-        const fileKind = data.kind ?? 'mindmap'
         const payload = isRecord(data.payload) ? data.payload : {}
-        const boardRaw = payload.board
-        const treeRaw = payload.tree
-        const draftRaw = payload.draft
-        const parsed = deserializeRfBoard(boardRaw)
+        const parsed = deserializeRfBoard(payload.board)
         if (parsed) {
           setGraph({ nodes: parsed.nodes, edges: parsed.edges })
           setViewport(parsed.viewport)
-        } else if (isTreeNode(treeRaw)) {
-          setGraph({ nodes: [buildMindmapRefNode(treeRaw, 40, 40)], edges: [] })
-        } else if (isRecord(draftRaw) && isChartKind(fileKind)) {
-          setGraph(draftToRfGraph(draftRaw, fileKind, null, emptyBoard()))
         } else {
-          setGraph(emptyGraph())
+          // 旧版本/无画板数据：空白板
+          setGraph(EMPTY_GRAPH)
+          setViewport(undefined)
         }
       })
       .catch((err) => {
@@ -173,7 +152,7 @@ export function AnalysisBoardPage() {
     navigate(fromLibrary ? '/requirement-analysis/library' : '/requirement-analysis')
   }, [navigate, fromLibrary])
 
-  /** 画板文件导出（XMind/FreeMind/Markdown）。 */
+  /** 分析结果文件导出（XMind/FreeMind/Markdown）。 */
   const handleExportFile = useCallback(
     async (kind: 'xmind' | 'freemind' | 'markdown') => {
       if (!result) return
@@ -193,105 +172,6 @@ export function AnalysisBoardPage() {
     },
     [result, fileTitle],
   )
-
-  /** AI 生成图表草稿：文件库来源禁用，会话文件来源可用。 */
-  const handleGenerateChart = useCallback(
-    async (chartKind: BoardChartKind, nodeId: string) => {
-      if (!id) throw new Error('缺少文件 id')
-      if (fromLibrary) throw new Error('请在会话中生成新图表')
-      const { generateBoardChart } = await import('../lib/requirement-analysis-api')
-      const provider = loadStoredModelConfig()
-      const aiConfig = provider ? getPreferredAiConfig(provider) : null
-      if (!aiConfig) throw new Error('请先在模型设置中配置统一供应商，再使用 AI 生成。')
-      return generateBoardChart(id, { nodeId, chartKind }, aiConfig)
-    },
-    [id, fromLibrary],
-  )
-
-  /** 画板内 toolbar 动作：推导判定表 / 重新生成正交表（derive 逻辑不动，输入从 RF 图重建；变更入历史栈）。 */
-  const handleDerive = useCallback(
-    (action: 'derive-decision-table' | 'regenerate-array', elementId: string) => {
-      const prev = graphRef.current
-      if (!prev) return
-      if (countElements(prev) >= BOARD_LIMITS.MAX_ELEMENTS) {
-        setBoardError('白板图元数量已达上限（50）')
-        return
-      }
-
-      if (action === 'derive-decision-table') {
-        const ce = reconstructCauseEffectElement(prev, elementId)
-        if (!ce) return
-        const derived = deriveDecisionTable(ce)
-        if ('error' in derived) {
-          setBoardError(derived.error ?? '推导判定表失败')
-          return
-        }
-        if (derived.rules.length === 0 || (derived.conditions.length === 0 && derived.actions.length === 0)) {
-          setBoardError('因果图没有可推导的内容')
-          return
-        }
-        const placed = elementToRf({ ...derived, id: crypto.randomUUID(), x: ce.x + ce.w + 40, y: ce.y })
-        handleGraphChange({ nodes: [...prev.nodes, ...placed.nodes], edges: [...prev.edges, ...placed.edges] })
-        return
-      }
-
-      // regenerate-array：判定表 → 正交表
-      const dtNode = prev.nodes.find((n) => n.id === elementId)
-      const dt = dtNode ? nodeToDecisionTableElement(dtNode) : null
-      if (!dt) return
-      const factors = dt.conditions.map((name) => ({ name, levels: ['是', '否'] }))
-      if (factors.length === 0) {
-        setBoardError('判定表没有条件，无法生成正交表')
-        return
-      }
-      const selected = selectOrthogonalArray(factors)
-      if ('error' in selected) {
-        setBoardError(selected.error)
-        return
-      }
-      const placed = elementToRf({
-        id: crypto.randomUUID(),
-        kind: 'orthogonal',
-        x: dt.x + 440,
-        y: dt.y,
-        w: 400,
-        h: 240,
-        sourceNodeId: dt.sourceNodeId,
-        factors,
-        arrayName: selected.name,
-        rows: selected.rows,
-      })
-      handleGraphChange({ nodes: [...prev.nodes, ...placed.nodes], edges: [...prev.edges, ...placed.edges] })
-    },
-    [handleGraphChange],
-  )
-
-  /** 用例接力：从 RF 图收集判定表/正交表骨架，拼接 sourceText 后写入 localStorage。 */
-  const handleHandoff = useCallback(() => {
-    if (!result || !graph) return
-    const skeletons = graph.nodes.flatMap((node) => {
-      if (node.data.kind === 'decision-table') {
-        const el = nodeToDecisionTableElement(node)
-        return el ? decisionTableToSkeleton(el) : []
-      }
-      if (node.data.kind === 'orthogonal') {
-        const el = nodeToOrthogonalElement(node)
-        return el ? orthogonalToSkeleton(el) : []
-      }
-      return []
-    })
-    const title = fileTitle || result.title || '需求分析'
-    const requirement =
-      skeletons.length > 0 ? `${result.sourceText}\n\n${serializeSkeletons(title, skeletons)}` : result.sourceText
-    localStorage.setItem(
-      REQUIREMENT_HANDOFF_KEY,
-      JSON.stringify({
-        requirement,
-        name: title,
-      }),
-    )
-    navigate('/testcase')
-  }, [graph, navigate, result, fileTitle])
 
   if (loading) {
     return (
@@ -324,15 +204,10 @@ export function AnalysisBoardPage() {
       onGraphChange={handleGraphChange}
       viewport={viewport}
       onViewportChange={handleViewportChange}
-      onHandoff={handleHandoff}
       onExportFile={handleExportFile}
       onExportError={setBoardError}
       error={mergedError}
       onBack={handleBack}
-      onGenerateChart={fromLibrary ? undefined : handleGenerateChart}
-      onDerive={handleDerive}
-      canUndo={history.canUndo}
-      canRedo={history.canRedo}
       onUndo={handleUndo}
       onRedo={handleRedo}
       libraryBadge={fromLibrary}
@@ -347,10 +222,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isTreeNode(value: unknown): value is RequirementNode {
   if (!isRecord(value)) return false
   return typeof value.id === 'string' && typeof value.title === 'string' && Array.isArray(value.children)
-}
-
-function isChartKind(value: string): value is BoardChartKind {
-  return value === 'cause-effect' || value === 'decision-table' || value === 'orthogonal' || value === 'flowchart'
 }
 
 async function exportRequirementXmind(args: { title: string; tree: RequirementNode; findings: unknown[]; chartType: 'tree' }) {

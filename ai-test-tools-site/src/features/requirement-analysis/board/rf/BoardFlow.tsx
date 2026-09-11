@@ -1,33 +1,24 @@
-/** BoardFlow：React Flow 画布置换件（地图 #13 / 票 #14）。RF 状态即真相，父级受控持有。 */
+/** BoardFlow：纯白板 React Flow 画布（ADR 0010）。全量 RF 原生 UI：Controls / MiniMap / Background / 默认节点与边。 */
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import {
+  addEdge,
   applyEdgeChanges,
   applyNodeChanges,
   Background,
+  BackgroundVariant,
+  Controls,
+  MiniMap,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
+  MarkerType,
+  type Connection,
   type EdgeChange,
   type NodeChange,
-  type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { RequirementNode } from '../../../../lib/requirement-analysis-api'
 import type { BoardEdge, BoardGraph, BoardNode, BoardViewport } from './rf-types'
-import {
-  CeNodeView,
-  ChartPendingNodeView,
-  DecisionTableNodeView,
-  FlowchartNodeView,
-  MindmapRefNodeView,
-  OrthogonalNodeView,
-} from './nodes'
-import { BoardCanvasContext } from './context'
-import { CeEdgeView, FlowEdgeView } from './edges'
-import { RF_EDGE_TYPES, RF_NODE_TYPES } from './rf-types'
-import { connectNodes } from './rf-graph'
-import './rf-board.css'
 
 export interface BoardFlowHandle {
   zoomBy(factor: number): void
@@ -44,35 +35,9 @@ export interface BoardFlowProps {
   onGraphChange: (graph: BoardGraph, meta?: GraphChangeMeta) => void
   viewport?: BoardViewport
   onViewportChange?: (viewport: BoardViewport) => void
-  tree: RequirementNode
-  onSelectMindmapNode?: (mindmapNodeId: string, requirementNodeId: string | null) => void
-  onRetryPending?: (nodeId: string) => void
-  onDeletePending?: (nodeId: string) => void
-  onSelectionChange?: (elementIds: ReadonlySet<string>) => void
   onZoomChange?: (ratio: number) => void
   onUndo?: () => void
   onRedo?: () => void
-  /** 文本编辑提交（#19） */
-  onUpdateNodeText?: (nodeId: string, text: string) => void
-  /** 因果图边约束切换（#19） */
-  onCycleConstraint?: (edgeId: string) => void
-  /** 判定表/正交表内容更新（#20） */
-  onUpdateDecisionTable?: (nodeId: string, data: Extract<BoardNode['data'], { kind: 'decision-table' }>) => void
-  onUpdateOrthogonal?: (nodeId: string, data: Extract<BoardNode['data'], { kind: 'orthogonal' }>) => void
-}
-
-const nodeTypes = {
-  [RF_NODE_TYPES.ceNode]: CeNodeView,
-  [RF_NODE_TYPES.flowchartNode]: FlowchartNodeView,
-  [RF_NODE_TYPES.decisionTable]: DecisionTableNodeView,
-  [RF_NODE_TYPES.orthogonal]: OrthogonalNodeView,
-  [RF_NODE_TYPES.mindmapRef]: MindmapRefNodeView,
-  [RF_NODE_TYPES.chartPending]: ChartPendingNodeView,
-}
-
-const edgeTypes = {
-  [RF_EDGE_TYPES.ceEdge]: CeEdgeView,
-  [RF_EDGE_TYPES.flowEdge]: FlowEdgeView,
 }
 
 function generateId(): string {
@@ -82,50 +47,11 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-/** 节点的"图元身份"：组节点归 groupId，单节点归自身 id */
-function elementKeyOf(node: BoardNode): string {
-  const d = node.data
-  return d.kind === 'ce-node' || d.kind === 'flowchart-node' ? d.groupId : node.id
-}
+function BoardFlowInner({ graph, onGraphChange, viewport, onViewportChange, onZoomChange, onUndo, onRedo }: BoardFlowProps) {
+  const rf = useReactFlow()
+  /** 双击编辑中的节点 id（简单内联输入覆盖在节点上） */
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
 
-function BoardFlowInner(props: BoardFlowProps & { onInitViewport?: (vp: BoardViewport | undefined) => void }) {
-  const {
-    graph,
-    onGraphChange,
-    viewport,
-    onViewportChange,
-    tree,
-    onSelectMindmapNode,
-    onRetryPending,
-    onDeletePending,
-    onSelectionChange,
-    onZoomChange,
-  } = props
-
-  const [spacePressed, setSpacePressed] = useState(false)
-  const pasteCountRef = useRef(0)
-  const { onUndo, onRedo, onUpdateNodeText, onCycleConstraint, onUpdateDecisionTable, onUpdateOrthogonal } = props
-
-  /** 手动连线（#19）：同种同组校验由 connectNodes 承担，落图为 commit 变更 */
-  const onConnect = useCallback(
-    (connection: { source: string | null; target: string | null }) => {
-      if (!connection.source || !connection.target) return
-      const edge = connectNodes(graph, connection.source, connection.target)
-      if (!edge) return
-      onGraphChange({ nodes: graph.nodes, edges: [...graph.edges, edge] }, { history: 'commit' })
-    },
-    [graph, onGraphChange],
-  )
-
-  const isValidConnection = useCallback(
-    (conn: { source?: string | null; target?: string | null }) => {
-      if (!conn.source || !conn.target) return false
-      return connectNodes(graph, conn.source, conn.target) !== null
-    },
-    [graph],
-  )
-
-  // 变更分类：选择/测量静默；拖拽中间态 transient（dragStop 时 dragging=false 落为 commit）
   const onNodesChange = useCallback(
     (changes: NodeChange<BoardNode>[]) => {
       let history: 'commit' | 'transient' | 'silent' = 'commit'
@@ -148,156 +74,119 @@ function BoardFlowInner(props: BoardFlowProps & { onInitViewport?: (vp: BoardVie
     [graph, onGraphChange],
   )
 
-  // 选中变化：折算为图元 id 集合上报（工具栏 derive 动作用）
-  const handleSelectionChange = useCallback(
-    ({ nodes: selectedNodes }: { nodes: BoardNode[] }) => {
-      onSelectionChange?.(new Set(selectedNodes.map(elementKeyOf)))
+  /** 手动连线：默认边 + 箭头 */
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      const edge: BoardEdge = {
+        ...connection,
+        id: generateId(),
+        source: connection.source,
+        target: connection.target,
+        markerEnd: { type: MarkerType.ArrowClosed },
+      }
+      onGraphChange({ nodes: graph.nodes, edges: addEdge(edge, graph.edges) }, { history: 'commit' })
     },
-    [onSelectionChange],
+    [graph, onGraphChange],
   )
 
-  // 空格按住平移
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (e.key === ' ' && !e.repeat) {
-        const target = e.target as HTMLElement | null
-        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
-        e.preventDefault()
-        setSpacePressed(true)
+  /** 双击空白：新增默认节点 */
+  const onDoubleClick = useCallback(
+    (event: React.MouseEvent) => {
+      const position = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+      const node: BoardNode = {
+        id: generateId(),
+        position,
+        data: { label: '新节点' },
       }
-    }
-    const up = (e: KeyboardEvent) => {
-      if (e.key === ' ') setSpacePressed(false)
-    }
-    window.addEventListener('keydown', down)
-    window.addEventListener('keyup', up)
-    return () => {
-      window.removeEventListener('keydown', down)
-      window.removeEventListener('keyup', up)
-    }
+      onGraphChange({ nodes: [...graph.nodes, node], edges: graph.edges }, { history: 'commit' })
+    },
+    [graph, onGraphChange, rf],
+  )
+
+  /** 双击节点：进入文本编辑 */
+  const onNodeDoubleClick = useCallback((_: React.MouseEvent, node: BoardNode) => {
+    setEditingNodeId(node.id)
   }, [])
 
-  // 复制/粘贴（内部剪贴板；粘贴重新分配 id 与 groupId，偏移 24px 递增）
+  const commitNodeText = useCallback(
+    (nodeId: string, text: string) => {
+      const trimmed = text.trim()
+      setEditingNodeId(null)
+      if (!trimmed) return
+      onGraphChange(
+        {
+          nodes: graph.nodes.map((n) => (n.id === nodeId ? { ...n, data: { label: trimmed } } : n)),
+          edges: graph.edges,
+        },
+        { history: 'commit' },
+      )
+    },
+    [graph, onGraphChange],
+  )
+
+  // 撤销/重做快捷键
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
       const isMod = e.ctrlKey || e.metaKey
       if (!isMod) return
-
-      // 撤销/重做（地图 #13 快照栈）
       if (e.key.toLowerCase() === 'z') {
         e.preventDefault()
         if (e.shiftKey) onRedo?.()
         else onUndo?.()
-        return
-      }
-      if (e.key.toLowerCase() === 'y') {
+      } else if (e.key.toLowerCase() === 'y') {
         e.preventDefault()
         onRedo?.()
-        return
-      }
-
-      if (e.key.toLowerCase() === 'c') {
-        const selected = graph.nodes.filter((n) => n.selected)
-        if (selected.length === 0) return
-        e.preventDefault()
-        const selectedIds = new Set(selected.map((n) => n.id))
-        const selectedGroups = new Set(selected.map(elementKeyOf))
-        const internalEdges = graph.edges.filter(
-          (edge) => selectedIds.has(edge.source) && selectedIds.has(edge.target),
-        )
-        ;(window as unknown as Record<string, unknown>).__rfBoardClipboard = {
-          nodes: selected,
-          edges: internalEdges,
-          groupCount: selectedGroups.size,
-        }
-        pasteCountRef.current = 0
-        return
-      }
-
-      if (e.key.toLowerCase() === 'v') {
-        const clipboard = (window as unknown as Record<string, unknown>).__rfBoardClipboard as
-          | { nodes: BoardNode[]; edges: BoardEdge[] }
-          | undefined
-        if (!clipboard?.nodes?.length) return
-        e.preventDefault()
-        pasteCountRef.current += 1
-        const offset = pasteCountRef.current * 24
-        const idMap = new Map<string, string>()
-        const groupMap = new Map<string, string>()
-        const pastedNodes: BoardNode[] = clipboard.nodes.map((n) => {
-          const newId = generateId()
-          idMap.set(n.id, newId)
-          const d = n.data
-          let data = d
-          if (d.kind === 'ce-node' || d.kind === 'flowchart-node') {
-            const newGroup = groupMap.get(d.groupId) ?? generateId()
-            groupMap.set(d.groupId, newGroup)
-            data = { ...d, groupId: newGroup }
-          }
-          return {
-            ...n,
-            id: newId,
-            position: { x: n.position.x + offset, y: n.position.y + offset },
-            data,
-            selected: false,
-          }
-        })
-        const pastedEdges: BoardEdge[] = clipboard.edges.map((edge) => ({
-          ...edge,
-          id: generateId(),
-          source: idMap.get(edge.source) ?? edge.source,
-          target: idMap.get(edge.target) ?? edge.target,
-          selected: false,
-        }))
-        onGraphChange({
-          nodes: [...graph.nodes, ...pastedNodes],
-          edges: [...graph.edges, ...pastedEdges],
-        })
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [graph, onGraphChange, onUndo, onRedo])
+  }, [onUndo, onRedo])
 
-  const contextValue = useMemo(
-    () => ({ tree, onSelectMindmapNode, onRetryPending, onDeletePending, onUpdateNodeText, onCycleConstraint, onUpdateDecisionTable, onUpdateOrthogonal }),
-    [tree, onSelectMindmapNode, onRetryPending, onDeletePending, onUpdateNodeText, onCycleConstraint, onUpdateDecisionTable, onUpdateOrthogonal],
-  )
-
-  const defaultViewport = useMemo<Viewport | undefined>(() => viewport, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const editingNode = editingNodeId ? graph.nodes.find((n) => n.id === editingNodeId) : null
+  const editingPos = editingNode ? rf.flowToScreenPosition(editingNode.position) : null
 
   return (
-    <BoardCanvasContext.Provider value={contextValue}>
+    <>
       <ReactFlow
         nodes={graph.nodes}
         edges={graph.edges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onSelectionChange={handleSelectionChange}
+        onConnect={onConnect}
+        onDoubleClick={onDoubleClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         onMove={(_, vp) => onZoomChange?.(vp.zoom)}
         onMoveEnd={(_, vp) => onViewportChange?.({ x: vp.x, y: vp.y, zoom: vp.zoom })}
-        defaultViewport={defaultViewport}
-        fitView={!defaultViewport}
+        defaultViewport={viewport}
+        fitView={!viewport}
         fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-        minZoom={0.2}
-        maxZoom={2.5}
+        minZoom={0.1}
+        maxZoom={8}
         deleteKeyCode={['Delete', 'Backspace']}
-        selectionOnDrag={!spacePressed}
-        panOnDrag={spacePressed ? true : [1, 2]}
-        zoomOnScroll
-        nodesConnectable
-        onConnect={onConnect}
-        isValidConnection={isValidConnection}
-        proOptions={{ hideAttribution: true }}
-        className="rf-board"
+        zoomOnDoubleClick={false}
+        className="rf-board-plain"
       >
-        <Background gap={24} size={1} className="rf-board-bg" />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} />
+        <Controls showInteractive={false} />
+        <MiniMap pannable zoomable />
       </ReactFlow>
-    </BoardCanvasContext.Provider>
+      {editingNode && editingPos && (
+        <input
+          className="rf-plain-editor"
+          style={{ left: editingPos.x, top: editingPos.y }}
+          defaultValue={editingNode.data.label}
+          autoFocus
+          aria-label="编辑节点文本"
+          onBlur={(e) => commitNodeText(editingNode.id, e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitNodeText(editingNode.id, (e.target as HTMLInputElement).value)
+            if (e.key === 'Escape') setEditingNodeId(null)
+          }}
+        />
+      )}
+    </>
   )
 }
 

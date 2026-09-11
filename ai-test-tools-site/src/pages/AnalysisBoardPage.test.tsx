@@ -55,7 +55,7 @@ const sessionFile = {
     tree: { id: 'root', title: '登录需求', children: [{ id: 'n1', title: '账号密码登录', children: [] }] },
     findings: [{ id: 'f1', type: 'risk', title: '缺少锁定策略', detail: '暴力破解风险', nodeId: 'n1' }],
     sourceText: '原始需求文本',
-    board: { version: 2, nodes: [], edges: [] },
+    board: { version: 3, nodes: [], edges: [] },
   },
   savedToLibrary: false,
   createdAt: new Date(),
@@ -123,69 +123,6 @@ describe('AnalysisBoardPage 分析画板页（React Flow）', () => {
     expect(stub.getLibraryFile).toHaveBeenCalledWith('lf-1')
     expect(stub.getSessionFile).not.toHaveBeenCalled()
     expect(stub.boardProps.current?.libraryBadge).toBe(true)
-  })
-
-  it('board 为空时自动放入需求树参考图元', async () => {
-    stub.getSessionFile.mockResolvedValue({
-      ...sessionFile,
-      payload: { ...sessionFile.payload, board: undefined },
-    })
-    renderPage()
-
-    await waitFor(() => {
-      expect(screen.getByTestId('analysis-board-stub')).toBeInTheDocument()
-    })
-
-    const graph = stub.boardProps.current?.graph as BoardGraph
-    expect(graph.nodes[0].data.kind).toBe('mindmap-ref')
-  })
-
-  it('旧 version 1 画板数据不迁移，回退为空画板初始化路径', async () => {
-    stub.getSessionFile.mockResolvedValue({
-      ...sessionFile,
-      payload: { ...sessionFile.payload, board: { version: 1, elements: [] } },
-    })
-    renderPage()
-
-    await waitFor(() => {
-      expect(screen.getByTestId('analysis-board-stub')).toBeInTheDocument()
-    })
-
-    const graph = stub.boardProps.current?.graph as BoardGraph
-    // 有 tree 时回退为需求树参考节点
-    expect(graph.nodes[0].data.kind).toBe('mindmap-ref')
-  })
-
-  it('draft 类 payload 经 draftToRfGraph 生成单个图元节点', async () => {
-    const draft = {
-      conditions: ['cond-1'],
-      actions: ['action-1'],
-      rules: [{ conditionValues: ['Y'], actionValues: [true] }],
-    }
-    stub.getSessionFile.mockResolvedValue({
-      ...sessionFile,
-      kind: 'decision-table' as const,
-      payload: { draft },
-    })
-    renderPage()
-
-    await waitFor(() => {
-      expect(screen.getByTestId('analysis-board-stub')).toBeInTheDocument()
-    })
-
-    const graph = stub.boardProps.current?.graph as BoardGraph
-    expect(graph.nodes.length).toBe(1)
-    expect(graph.nodes[0].data.kind).toBe('decision-table')
-  })
-
-  it('from=library 时 onGenerateChart 未提供，禁用 AI 生成', async () => {
-    renderPage('lf-1', true)
-
-    await waitFor(() => {
-      expect(screen.getByTestId('analysis-board-stub')).toBeInTheDocument()
-    })
-
-    expect(stub.boardProps.current?.onGenerateChart).toBeUndefined()
   })
 
   it('graph 变化时调用 updateSessionFileBoard（RF 序列化格式）', async () => {
