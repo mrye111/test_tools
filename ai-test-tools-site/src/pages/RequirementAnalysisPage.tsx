@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, FileText, Loader2, Pencil, Sparkles, Trash2, Upload } from 'lucide-react'
 import { Tooltip } from '../components/ui/Tooltip'
@@ -31,59 +31,6 @@ function formatRelativeTime(iso: string): string {
 
 const FILE_ACCEPT = '.md,.txt,.docx,.xlsx,.xls,.csv,.pdf'
 
-/** 需求文档上传区（对齐报告页 FileDropZone 的虚线玻璃质感，上传即解析为文本） */
-function DocDropZone({ fileName, parsing, onFile }: { fileName: string | null; parsing: boolean; onFile: (f: File) => void }) {
-  const [dragOver, setDragOver] = useState(false)
-
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setDragOver(false)
-    const f = e.dataTransfer.files[0]
-    if (f) onFile(f)
-  }
-
-  return (
-    <div
-      onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={handleDrop}
-      className="relative flex min-h-[150px] flex-col items-center justify-center gap-2 rounded-[22px] border border-dashed px-5 py-6 text-center transition-all duration-200"
-      style={{
-        borderColor: dragOver || fileName ? 'oklch(0.58 0.17 262 / 0.4)' : 'oklch(0.88 0.01 264)',
-        background: dragOver || fileName
-          ? 'linear-gradient(180deg, oklch(1 0 0 / 0.86), oklch(0.58 0.17 262 / 0.05))'
-          : 'oklch(0.995 0.002 264 / 0.72)',
-      }}
-    >
-      <input
-        type="file"
-        accept={FILE_ACCEPT}
-        aria-label="上传需求文档"
-        onChange={(e) => {
-          const f = e.target.files?.[0]
-          e.target.value = ''
-          if (f) onFile(f)
-        }}
-        className="absolute inset-0 cursor-pointer opacity-0"
-      />
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/90 shadow-[0_12px_32px_-20px_oklch(0.2_0.03_262/0.25)] text-accent">
-        {parsing ? <Loader2 className="h-5 w-5 animate-spin" /> : fileName ? <FileText className="h-5 w-5" /> : <Upload className="h-5 w-5" />}
-      </div>
-      {fileName ? (
-        <>
-          <div className="max-w-[240px] truncate text-[13px] font-semibold text-fg">{fileName}</div>
-          <div className="text-[11px] text-muted">已解析为文本，可直接编辑下方内容</div>
-        </>
-      ) : (
-        <>
-          <div className="text-[13px] font-medium text-fg">{parsing ? '正在解析文档…' : '拖拽或点击上传需求文档'}</div>
-          <div className="text-[11px] text-muted">支持 {FILE_ACCEPT.split(',').join(' / ')}，不超过 10MB</div>
-        </>
-      )}
-    </div>
-  )
-}
-
 /** 需求分析 v2 列表页：头部与输入区对齐报告页模式（page-header + surface-panel + field-control） */
 export function RequirementAnalysisPage() {
   const navigate = useNavigate()
@@ -107,6 +54,7 @@ export function RequirementAnalysisPage() {
   const [pendingDelete, setPendingDelete] = useState<AnalysisRecordSummary | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renamingTitle, setRenamingTitle] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const pageSize = 10
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
@@ -234,27 +182,57 @@ export function RequirementAnalysisPage() {
 
       {/* 新建分析 */}
       <div className="surface-panel motion-card stagger-1 rounded-[26px] p-6 max-sm:p-4">
-        <div className="relative z-[1] space-y-5">
-          <div className="grid gap-5 md:grid-cols-2">
-            <div>
-              <label className="field-label">需求文档</label>
-              <DocDropZone fileName={fileName} parsing={parsing} onFile={(f) => void handleFile(f)} />
-            </div>
-            <div>
-              <label className="field-label">或直接粘贴文本</label>
-              <textarea
-                value={sourceText}
-                onChange={(event) => {
-                  setSourceText(event.target.value)
-                  setFieldError('')
-                }}
-                rows={6}
-                disabled={analyzing}
-                placeholder={'粘贴需求文本，例如：\n1. 用户可通过手机号+密码登录\n2. 连续输错密码 5 次锁定账号 30 分钟\n3. 登录失败时给出明确提示…'}
-                className="field-control w-full min-h-[150px] rounded-[22px] px-4 py-3 text-sm leading-6"
-              />
-            </div>
+        <div className="relative z-[1] space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="field-label !mb-0">需求文本</label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={FILE_ACCEPT}
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                e.target.value = ''
+                if (f) void handleFile(f)
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={parsing || analyzing}
+              className="secondary-action px-3 py-1.5 text-xs disabled:opacity-50"
+            >
+              {parsing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+              上传需求文档
+            </button>
+            <span className="text-xs text-muted">{FILE_ACCEPT.split(',').join(' / ')}，不超过 10MB</span>
+            {fileName && (
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-[oklch(0.58_0.17_262/0.4)] bg-[oklch(0.58_0.17_262/0.05)] px-2.5 py-1 text-xs text-fg">
+                <FileText className="h-3.5 w-3.5 text-accent" />
+                {fileName}
+                <button
+                  type="button"
+                  aria-label="移除文件"
+                  className="text-muted hover:text-danger"
+                  onClick={() => { setFileName(null); setSourceText(''); setParseWarnings([]) }}
+                >
+                  ×
+                </button>
+              </span>
+            )}
           </div>
+
+          <textarea
+            value={sourceText}
+            onChange={(event) => {
+              setSourceText(event.target.value)
+              setFieldError('')
+            }}
+            rows={14}
+            disabled={analyzing}
+            placeholder={'粘贴需求文本，例如：\n1. 用户可通过手机号+密码登录\n2. 连续输错密码 5 次锁定账号 30 分钟\n3. 登录失败时给出明确提示…'}
+            className="field-control w-full rounded-[22px] px-4 py-3 text-sm leading-6"
+          />
 
           {parseWarnings.map((warning, index) => (
             <p key={index} className="flex items-center gap-1.5 text-xs text-[oklch(0.55_0.12_70)]" role="note">
