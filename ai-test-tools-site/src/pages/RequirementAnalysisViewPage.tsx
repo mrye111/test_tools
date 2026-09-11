@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Download, Loader2, Share2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Share2 } from 'lucide-react'
+import { Tooltip } from '../components/ui/Tooltip'
 import { useErrorDialog } from '../components/ui/ErrorDialogProvider'
 import {
   getAnalysisRecord,
@@ -216,16 +217,27 @@ export function RequirementAnalysisViewPage() {
 
   return (
     <div className="page-shell ra2-view">
-      <header className="ra2-view-capsule">
-        <button type="button" className="ra2-capsule-btn" aria-label="返回列表" onClick={() => navigate('/requirement-analysis')}>
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <span className="ra2-capsule-title" title={record.title}>{record.title}</span>
-        {record.sourceFileName && <span className="ra2-capsule-file">📄 {record.sourceFileName}</span>}
-        <button type="button" className="ra2-capsule-btn" aria-label="导出（二期）" disabled title="导出功能二期提供">
-          <Download className="h-4 w-4" />
-        </button>
-      </header>
+      <div className="page-header">
+        <div className="flex items-center gap-3">
+          <Tooltip content="返回列表">
+            <button
+              type="button"
+              onClick={() => navigate('/requirement-analysis')}
+              className="icon-action h-10 w-10 rounded-xl"
+              aria-label="返回列表"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          </Tooltip>
+          <div>
+            <h1 className="page-title">{record.title}</h1>
+            <p className="page-subtitle">
+              {record.sourceFileName ? `${record.sourceFileName} · ` : ''}
+              问题 {record.issues.length} · 准则 {record.criteria.length} · 条件 {record.conditions.length}
+            </p>
+          </div>
+        </div>
+      </div>
 
       <div className="ra2-view-layout">
         <nav className="ra2-zone-nav" aria-label="分区导航">
