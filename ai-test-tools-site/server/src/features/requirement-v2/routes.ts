@@ -1,7 +1,12 @@
 import { randomUUID } from "crypto";
 import type { Express, Request, Response } from "express";
+import express from "express";
 import { logger } from "../../logger.js";
+import { beginSse, emit, endSse } from "../../shared/sse.js";
+import { parseAiRequestConfig } from "../testcase/ai.js";
 import { analysisDbMode } from "./migrate.js";
+import { analyzeRequirement, AnalysisGenerateError } from "./analyze.js";
+import { DocumentParseError, MAX_FILE_BYTES, parseRequirementDocument } from "./parsers.js";
 import type {
   AnalysisRepository,
   ConditionKind,
@@ -252,6 +257,66 @@ export function registerRequirementV2Routes(app: Express, repo: AnalysisReposito
       res.json({ success: true, rtm: await repo.getRtm(req.params.id) });
     } catch (err) {
       handleError(res, err, "获取追溯矩阵");
+    }
+  });
+
+  /** 文档解析：raw body + ?filename=，返回纯文本与 warning（不落库）。 */
+  app.post(
+    "/api/requirement-analysis-v2/parse-document",
+    express.raw({ type: () => true, limit: MAX_FILE_BYTES }),
+    async (req, res) => {
+      try {
+        const filename = typeof req.query.filename === "string" ? req.query.filename : "";
+        if (!filename) return fail(res, 400, "缺少 filename 查询参数");
+        const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? "");
+        if (buffer.length === 0) return fail(res, 400, "文件内容为空");
+        const parsed = await parseRequirementDocument(filename, buffer);
+        res.json({ success: true, text: parsed.text, warnings: parsed.warnings, truncated: parsed.truncated });
+      } catch (err) {
+        if (err instanceof DocumentParseError) return fail(res, 400, err.message);
+        handleError(res, err, "解析文档");
+      }
+    },
+  );
+
+  /** AI 分析（SSE）：分析 → 校验（修复重试一次）→ 完成才落库。 */
+  app.post("/api/requirement-analysis-v2/analyze", async (req, res) => {
+    const b = body(req);
+    const sourceText = asString(b.sourceText)?.trim();
+    if (!sourceText) {
+      fail(res, 400, "sourceText 不能为空");
+      return;
+    }
+    let config;
+    try {
+      config = parseAiRequestConfig(b);
+    } catch (err) {
+      fail(res, 400, err instanceof Error ? err.message : "AI 配置无效");
+      return;
+    }
+
+    beginSse(res);
+    try {
+      await analyzeRequirement(
+        config,
+        repo,
+        { sourceText, titleHint: asString(b.title) ?? undefined, sourceFileName: asString(b.sourceFileName) },
+        (event) => {
+          if (event.type === "done") {
+            emit(res, "done", { record: event.record });
+          } else if (event.type === "error") {
+            emit(res, "error", { message: event.message });
+          } else {
+            emit(res, "progress", { stage: event.stage, message: event.message });
+          }
+        },
+      );
+      endSse(res, true);
+    } catch (err) {
+      const message = err instanceof AnalysisGenerateError || err instanceof Error ? err.message : "分析失败";
+      logger.error({ err }, "[requirement-v2] 分析失败");
+      emit(res, "error", { message });
+      endSse(res, false);
     }
   });
 }
