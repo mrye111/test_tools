@@ -2,7 +2,8 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnalysisBoardPage } from './AnalysisBoardPage'
-import { serializeBoard } from '../features/requirement-analysis/board/persistence'
+import { serializeRfBoard } from '../features/requirement-analysis/board/rf/rf-persistence'
+import type { BoardGraph } from '../features/requirement-analysis/board/rf/rf-types'
 
 const stub = vi.hoisted(() => ({
   boardProps: { current: null as Record<string, unknown> | null },
@@ -54,7 +55,7 @@ const sessionFile = {
     tree: { id: 'root', title: '登录需求', children: [{ id: 'n1', title: '账号密码登录', children: [] }] },
     findings: [{ id: 'f1', type: 'risk', title: '缺少锁定策略', detail: '暴力破解风险', nodeId: 'n1' }],
     sourceText: '原始需求文本',
-    board: { version: 1, elements: [] },
+    board: { version: 2, nodes: [], edges: [] },
   },
   savedToLibrary: false,
   createdAt: new Date(),
@@ -98,7 +99,7 @@ beforeEach(() => {
   stub.updateLibraryFileBoard.mockResolvedValue(libraryFile)
 })
 
-describe('AnalysisBoardPage 分析画板页', () => {
+describe('AnalysisBoardPage 分析画板页（React Flow）', () => {
   it('默认按会话文件来源加载并渲染画板', async () => {
     renderPage()
 
@@ -135,11 +136,27 @@ describe('AnalysisBoardPage 分析画板页', () => {
       expect(screen.getByTestId('analysis-board-stub')).toBeInTheDocument()
     })
 
-    const board = stub.boardProps.current?.board as { elements: Array<{ kind: string }> }
-    expect(board.elements[0].kind).toBe('mindmap-ref')
+    const graph = stub.boardProps.current?.graph as BoardGraph
+    expect(graph.nodes[0].data.kind).toBe('mindmap-ref')
   })
 
-  it('draft 类 payload 经 draftToElement 生成单个图元', async () => {
+  it('旧 version 1 画板数据不迁移，回退为空画板初始化路径', async () => {
+    stub.getSessionFile.mockResolvedValue({
+      ...sessionFile,
+      payload: { ...sessionFile.payload, board: { version: 1, elements: [] } },
+    })
+    renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('analysis-board-stub')).toBeInTheDocument()
+    })
+
+    const graph = stub.boardProps.current?.graph as BoardGraph
+    // 有 tree 时回退为需求树参考节点
+    expect(graph.nodes[0].data.kind).toBe('mindmap-ref')
+  })
+
+  it('draft 类 payload 经 draftToRfGraph 生成单个图元节点', async () => {
     const draft = {
       conditions: ['cond-1'],
       actions: ['action-1'],
@@ -156,9 +173,9 @@ describe('AnalysisBoardPage 分析画板页', () => {
       expect(screen.getByTestId('analysis-board-stub')).toBeInTheDocument()
     })
 
-    const board = stub.boardProps.current?.board as { elements: Array<{ kind: string }> }
-    expect(board.elements.length).toBe(1)
-    expect(board.elements[0].kind).toBe('decision-table')
+    const graph = stub.boardProps.current?.graph as BoardGraph
+    expect(graph.nodes.length).toBe(1)
+    expect(graph.nodes[0].data.kind).toBe('decision-table')
   })
 
   it('from=library 时 onGenerateChart 未提供，禁用 AI 生成', async () => {
@@ -171,39 +188,39 @@ describe('AnalysisBoardPage 分析画板页', () => {
     expect(stub.boardProps.current?.onGenerateChart).toBeUndefined()
   })
 
-  it('board 变化时调用 updateSessionFileBoard', async () => {
+  it('graph 变化时调用 updateSessionFileBoard（RF 序列化格式）', async () => {
     renderPage()
 
     await waitFor(() => {
       expect(screen.getByTestId('analysis-board-stub')).toBeInTheDocument()
     })
 
-    const onBoardChange = stub.boardProps.current?.onBoardChange as (board: unknown) => void
-    const nextBoard = { version: 1, elements: [] }
+    const onGraphChange = stub.boardProps.current?.onGraphChange as (graph: BoardGraph) => void
+    const nextGraph: BoardGraph = { nodes: [], edges: [] }
     await act(async () => {
-      onBoardChange(nextBoard)
+      onGraphChange(nextGraph)
     })
 
     await waitFor(() => {
-      expect(stub.updateSessionFileBoard).toHaveBeenCalledWith('sf-1', expect.objectContaining({ board: serializeBoard(nextBoard) }))
+      expect(stub.updateSessionFileBoard).toHaveBeenCalledWith('sf-1', expect.objectContaining({ board: serializeRfBoard(nextGraph, undefined) }))
     }, { timeout: 3000 })
   })
 
-  it('from=library 时 board 变化调用 updateLibraryFileBoard', async () => {
+  it('from=library 时 graph 变化调用 updateLibraryFileBoard', async () => {
     renderPage('lf-1', true)
 
     await waitFor(() => {
       expect(screen.getByTestId('analysis-board-stub')).toBeInTheDocument()
     })
 
-    const onBoardChange = stub.boardProps.current?.onBoardChange as (board: unknown) => void
-    const nextBoard = { version: 1, elements: [] }
+    const onGraphChange = stub.boardProps.current?.onGraphChange as (graph: BoardGraph) => void
+    const nextGraph: BoardGraph = { nodes: [], edges: [] }
     await act(async () => {
-      onBoardChange(nextBoard)
+      onGraphChange(nextGraph)
     })
 
     await waitFor(() => {
-      expect(stub.updateLibraryFileBoard).toHaveBeenCalledWith('lf-1', expect.objectContaining({ board: serializeBoard(nextBoard) }))
+      expect(stub.updateLibraryFileBoard).toHaveBeenCalledWith('lf-1', expect.objectContaining({ board: serializeRfBoard(nextGraph, undefined) }))
     }, { timeout: 3000 })
   })
 
@@ -215,9 +232,9 @@ describe('AnalysisBoardPage 分析画板页', () => {
       expect(screen.getByTestId('analysis-board-stub')).toBeInTheDocument()
     })
 
-    const onBoardChange = stub.boardProps.current?.onBoardChange as (board: unknown) => void
+    const onGraphChange = stub.boardProps.current?.onGraphChange as (graph: BoardGraph) => void
     await act(async () => {
-      onBoardChange({ version: 1, elements: [] })
+      onGraphChange({ nodes: [], edges: [] })
     })
 
     await waitFor(() => {

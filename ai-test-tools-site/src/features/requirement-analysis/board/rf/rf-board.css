@@ -1,0 +1,383 @@
+/* RF 画板：暗色玻璃质感，沿用 BOARD_COLORS 语义色 */
+
+.rf-board {
+  --rf-accent: #3b82f6;
+  --rf-danger: #ef4444;
+  --rf-line: rgba(148, 163, 184, 0.6);
+  --rf-text: #e2e8f0;
+  --rf-text-muted: #94a3b8;
+}
+
+.rf-board .react-flow__background {
+  color: rgba(148, 163, 184, 0.15);
+}
+
+/* ── 因果图节点 ─────────────────────────────── */
+.rf-ce-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 160px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1.5px solid var(--rf-accent);
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(8px);
+  color: var(--rf-text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.rf-ce-node.rf-ce-effect {
+  border-color: var(--rf-danger);
+}
+
+.rf-ce-node.rf-ce-intermediate {
+  border-color: #94a3b8;
+}
+
+.rf-ce-node.is-selected {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.45);
+}
+
+.rf-ce-role {
+  flex: none;
+  font-size: 10px;
+  color: var(--rf-text-muted);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.rf-ce-text {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-all;
+}
+
+/* ── 流程图节点 ─────────────────────────────── */
+.rf-flow-node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 120px;
+  max-width: 180px;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--rf-text);
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.rf-flow-node.rf-flow-start {
+  border-radius: 999px;
+  border: 1.5px solid #22c55e;
+}
+
+.rf-flow-node.rf-flow-end {
+  border-radius: 999px;
+  border: 1.5px solid var(--rf-danger);
+}
+
+.rf-flow-node.rf-flow-process {
+  border-radius: 8px;
+  border: 1.5px solid var(--rf-accent);
+}
+
+.rf-flow-node.rf-flow-decision {
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+  padding: 0;
+}
+
+.rf-flow-diamond {
+  width: 110px;
+  height: 110px;
+  transform: rotate(45deg);
+  border: 1.5px solid #f97316;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rf-flow-diamond-text {
+  transform: rotate(-45deg);
+  max-width: 90px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  word-break: break-all;
+  text-align: center;
+}
+
+.rf-flow-text {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-all;
+}
+
+.rf-flow-node.is-selected {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.45);
+}
+
+/* ── 表格节点（判定表/正交表） ─────────────────── */
+.rf-table-node {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(10px);
+  color: var(--rf-text);
+  font-size: 12px;
+}
+
+.rf-table-node.is-selected {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.45);
+}
+
+.rf-table-title {
+  font-size: 11px;
+  color: var(--rf-text-muted);
+  margin-bottom: 6px;
+  letter-spacing: 0.02em;
+}
+
+.rf-table {
+  border-collapse: collapse;
+}
+
+.rf-table th,
+.rf-table td {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 4px 8px;
+  text-align: center;
+  font-weight: normal;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rf-table thead th {
+  color: var(--rf-text-muted);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.rf-table-rowhead {
+  text-align: left;
+  background: rgba(148, 163, 184, 0.06);
+}
+
+.rf-dt-y {
+  color: #4ade80;
+}
+
+.rf-dt-n {
+  color: #f87171;
+}
+
+.rf-dt-dash {
+  color: var(--rf-text-muted);
+}
+
+.rf-table-action-row .rf-table-rowhead {
+  color: #93c5fd;
+}
+
+/* ── 需求树参考节点 ──────────────────────────── */
+.rf-mindmap-node {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(10px);
+  color: var(--rf-text);
+}
+
+.rf-mindmap-node.is-selected {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.45);
+}
+
+.rf-mindmap-svg {
+  display: block;
+}
+
+.rf-mindmap-edge {
+  stroke: rgba(148, 163, 184, 0.45);
+  stroke-width: 1.2;
+}
+
+.rf-mindmap-item {
+  cursor: pointer;
+}
+
+.rf-mindmap-rect {
+  fill: rgba(30, 41, 59, 0.9);
+  stroke: rgba(148, 163, 184, 0.5);
+  stroke-width: 1;
+}
+
+.rf-mindmap-item:hover .rf-mindmap-rect {
+  stroke: var(--rf-accent);
+}
+
+.rf-mindmap-item.is-active .rf-mindmap-rect {
+  fill: rgba(59, 130, 246, 0.25);
+  stroke: var(--rf-accent);
+  stroke-width: 1.6;
+}
+
+.rf-mindmap-text {
+  fill: var(--rf-text);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+/* ── AI 占位/错误节点 ────────────────────────── */
+.rf-pending-node {
+  width: 260px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(8px);
+  color: var(--rf-text-muted);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.rf-pending-node.is-loading {
+  animation: rf-pending-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes rf-pending-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+.rf-pending-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(148, 163, 184, 0.3);
+  border-top-color: var(--rf-accent);
+  animation: rf-pending-spin 0.9s linear infinite;
+}
+
+@keyframes rf-pending-spin {
+  to { transform: rotate(360deg); }
+}
+
+.rf-pending-node.is-error {
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #fca5a5;
+}
+
+.rf-pending-error-text {
+  margin: 0;
+}
+
+.rf-pending-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.rf-pending-actions button {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(30, 41, 59, 0.8);
+  color: var(--rf-text);
+  cursor: pointer;
+}
+
+.rf-pending-actions button:hover {
+  border-color: var(--rf-accent);
+}
+
+/* ── 边与标签 ───────────────────────────────── */
+.rf-ce-edge,
+.rf-flow-edge {
+  stroke: var(--rf-line);
+  stroke-width: 1.6;
+}
+
+.rf-ce-edge.is-selected,
+.rf-flow-edge.is-selected {
+  stroke: var(--rf-accent);
+}
+
+.rf-edge-label {
+  position: absolute;
+  pointer-events: all;
+  font-size: 11px;
+  color: var(--rf-text-muted);
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+
+/* ── 选中工具栏（derive 动作 + 复制/删除） ─────── */
+.analysis-board-flow-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(10px);
+  z-index: 10;
+}
+
+.analysis-board-flow-toolbar button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(30, 41, 59, 0.8);
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.analysis-board-flow-toolbar button:hover {
+  border-color: #3b82f6;
+}
+
+/* RF 手柄弱化 */
+.rf-board .react-flow__handle {
+  width: 8px;
+  height: 8px;
+  background: var(--rf-text-muted);
+  border: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.rf-board .react-flow__node:hover .react-flow__handle {
+  opacity: 0.8;
+}

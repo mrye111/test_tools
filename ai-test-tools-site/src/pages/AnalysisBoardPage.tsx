@@ -21,17 +21,27 @@ import { REQUIREMENT_HANDOFF_KEY } from '../lib/requirement-analysis-api'
 import type { RequirementAnalysisResult, RequirementNode } from '../lib/requirement-analysis-api'
 import { AnalysisBoard } from '../features/requirement-analysis/AnalysisBoard'
 import { useBoardPersistence } from '../features/requirement-analysis/board/useBoardPersistence'
-import { deserializeBoard, emptyBoard, serializeBoard } from '../features/requirement-analysis/board/persistence'
-import { buildMindmapRefElement, draftToElement } from '../features/requirement-analysis/board/ai'
+import { deserializeRfBoard, serializeRfBoard } from '../features/requirement-analysis/board/rf/rf-persistence'
+import {
+  buildMindmapRefNode,
+  draftToRfGraph,
+  elementToRf,
+  emptyGraph,
+  nodeToDecisionTableElement,
+  nodeToOrthogonalElement,
+  reconstructCauseEffectElement,
+} from '../features/requirement-analysis/board/rf/rf-graph'
+import type { BoardGraph, BoardViewport } from '../features/requirement-analysis/board/rf/rf-types'
+import { countElements } from '../features/requirement-analysis/board/rf/rf-graph'
 import { deriveDecisionTable, decisionTableToSkeleton, orthogonalToSkeleton, serializeSkeletons, selectOrthogonalArray } from '../features/requirement-analysis/board/derive'
-import type { Board, BoardElement } from '../features/requirement-analysis/board/types'
+import { emptyBoard } from '../features/requirement-analysis/board/persistence'
 import { BOARD_LIMITS } from '../features/requirement-analysis/board/types'
 
 /**
- * 分析画板页（双来源改造）：
+ * 分析画板页（双来源 + React Flow 引擎，地图 #13）：
  * - /requirement-analysis/board/:id?from=library 打开文件库文件
  * - /requirement-analysis/board/:id 默认打开会话文件
- * 两种来源分别加载、持久化；title 用文件 title，id 用文件 id。
+ * 画板状态为 RF 图（nodes/edges + viewport），持久化版本 2；旧 version 1 数据读为空画板。
  */
 export function AnalysisBoardPage() {
   const { id } = useParams<{ id: string }>()
@@ -41,7 +51,8 @@ export function AnalysisBoardPage() {
   const [file, setFile] = useState<SessionFile | LibraryFile | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [board, setBoard] = useState<Board | null>(null)
+  const [graph, setGraph] = useState<BoardGraph | null>(null)
+  const [viewport, setViewport] = useState<BoardViewport | undefined>(undefined)
   const [boardError, setBoardError] = useState<string | null>(null)
 
   const fileTitle = file?.title ?? ''
@@ -59,22 +70,16 @@ export function AnalysisBoardPage() {
         const boardRaw = payload.board
         const treeRaw = payload.tree
         const draftRaw = payload.draft
-        const parsed = deserializeBoard(boardRaw)
+        const parsed = deserializeRfBoard(boardRaw)
         if (parsed) {
-          setBoard(parsed)
+          setGraph({ nodes: parsed.nodes, edges: parsed.edges })
+          setViewport(parsed.viewport)
         } else if (isTreeNode(treeRaw)) {
-          const initial = {
-            ...emptyBoard(),
-            elements: [buildMindmapRefElement(treeRaw, 40, 40)],
-          }
-          setBoard(initial)
+          setGraph({ nodes: [buildMindmapRefNode(treeRaw, 40, 40)], edges: [] })
         } else if (isRecord(draftRaw) && isChartKind(fileKind)) {
-          const element = draftToElement(draftRaw, fileKind as BoardChartKind, null, emptyBoard())
-          const initial = { ...emptyBoard(), elements: [element] }
-          setBoard(initial)
+          setGraph(draftToRfGraph(draftRaw, fileKind, null, emptyBoard()))
         } else {
-          const initial = emptyBoard()
-          setBoard(initial)
+          setGraph(emptyGraph())
         }
       })
       .catch((err) => {
@@ -107,24 +112,33 @@ export function AnalysisBoardPage() {
     }
   }, [file])
 
-  const handleBoardChange = useCallback((next: Board) => {
-    setBoard(next)
+  const handleGraphChange = useCallback((next: BoardGraph) => {
+    setGraph(next)
   }, [])
 
+  const handleViewportChange = useCallback((vp: BoardViewport) => {
+    setViewport(vp)
+  }, [])
+
+  // moveEnd 才更新 viewport，频率低；与 graph 一起参与防抖保存
+  const serialized = useMemo(
+    () => (graph ? serializeRfBoard(graph, viewport) : null),
+    [graph, viewport],
+  )
+
   const saveFn = useCallback(
-    async (board: Board) => {
+    async (snapshot: string) => {
       if (!id) return
-      const serialized = serializeBoard(board)
       if (fromLibrary) {
-        await updateLibraryFileBoard(id, { board: serialized })
+        await updateLibraryFileBoard(id, { board: snapshot })
       } else {
-        await updateSessionFileBoard(id, { board: serialized })
+        await updateSessionFileBoard(id, { board: snapshot })
       }
     },
     [id, fromLibrary],
   )
 
-  const { saveError } = useBoardPersistence(saveFn, board ?? emptyBoard())
+  const { saveError } = useBoardPersistence(saveFn, serialized ?? '')
   const mergedError = boardError || saveError
 
   const handleBack = useCallback(() => {
@@ -142,7 +156,7 @@ export function AnalysisBoardPage() {
           await exportRequirementXmind({ title, tree: result.tree, findings: result.findings, chartType: 'tree' })
         } else if (kind === 'freemind') {
           downloadTextFile(buildFreeMindXml(result), `${title}.mm`, 'text/xml')
-        } else if (kind === 'markdown') {
+        } else {
           downloadTextFile(buildMarkdownOutline(result), `${title}.md`, 'text/markdown')
         }
       } catch (err) {
@@ -152,7 +166,7 @@ export function AnalysisBoardPage() {
     [result, fileTitle],
   )
 
-  /** AI 生成图表草稿：双来源下禁用，保留会话文件来源时才可用。 */
+  /** AI 生成图表草稿：文件库来源禁用，会话文件来源可用。 */
   const handleGenerateChart = useCallback(
     async (chartKind: BoardChartKind, nodeId: string) => {
       if (!id) throw new Error('缺少文件 id')
@@ -166,90 +180,78 @@ export function AnalysisBoardPage() {
     [id, fromLibrary],
   )
 
-  /** 画板内 toolbar 动作：推导判定表、重新生成正交表。 */
+  /** 画板内 toolbar 动作：推导判定表 / 重新生成正交表（derive 逻辑不动，输入从 RF 图重建）。 */
   const handleDerive = useCallback(
-    async (action: 'derive-decision-table' | 'regenerate-array' | 'edit-factor', elementId: string) => {
-      if (!result) return
-      setBoardError(null)
-      try {
-        if (action === 'regenerate-array') {
-          setBoard((prev) => {
-            if (!prev) return prev
-            const element = prev.elements.find((e) => e.id === elementId)
-            if (!element || element.kind !== 'decision-table') return prev
-            if (prev.elements.length >= BOARD_LIMITS.MAX_ELEMENTS) {
-              setBoardError('白板图元数量已达上限（50）')
-              return prev
-            }
-            const factors = element.conditions.map((name) => ({ name, levels: ['是', '否'] }))
-            if (factors.length === 0) {
-              setBoardError('判定表没有条件，无法生成正交表')
-              return prev
-            }
-            const selected = selectOrthogonalArray(factors)
-            if ('error' in selected) {
-              setBoardError(selected.error)
-              return prev
-            }
-            const placed: BoardElement = {
-              id: crypto.randomUUID(),
-              kind: 'orthogonal',
-              x: element.x + element.w + 40,
-              y: element.y,
-              w: 400,
-              h: 240,
-              sourceNodeId: element.sourceNodeId,
-              factors,
-              arrayName: selected.name,
-              rows: selected.rows,
-            }
-            return { ...prev, elements: [...prev.elements, placed] }
-          })
-        } else {
-          setBoard((prev) => {
-            if (!prev) return prev
-            const element = prev.elements.find((e) => e.id === elementId)
-            if (!element) return prev
-
-            if (prev.elements.length >= BOARD_LIMITS.MAX_ELEMENTS) {
-              setBoardError('白板图元数量已达上限（50）')
-              return prev
-            }
-
-            if (action === 'derive-decision-table' && element.kind === 'cause-effect') {
-              const derived = deriveDecisionTable(element)
-              if ('error' in derived) {
-                setBoardError(derived.error ?? '推导判定表失败')
-                return prev
-              }
-              if (derived.rules.length === 0 || (derived.conditions.length === 0 && derived.actions.length === 0)) {
-                setBoardError('因果图没有可推导的内容')
-                return prev
-              }
-              const placed: BoardElement = { ...derived, id: crypto.randomUUID(), x: element.x + element.w + 40, y: element.y }
-              return { ...prev, elements: [...prev.elements, placed] }
-            }
-
-            return prev
-          })
+    (action: 'derive-decision-table' | 'regenerate-array', elementId: string) => {
+      setGraph((prev) => {
+        if (!prev) return prev
+        if (countElements(prev) >= BOARD_LIMITS.MAX_ELEMENTS) {
+          setBoardError('白板图元数量已达上限（50）')
+          return prev
         }
-      } catch (err) {
-        setBoardError(err instanceof Error ? err.message : '推导失败，请稍后重试。')
-      }
+
+        if (action === 'derive-decision-table') {
+          const ce = reconstructCauseEffectElement(prev, elementId)
+          if (!ce) return prev
+          const derived = deriveDecisionTable(ce)
+          if ('error' in derived) {
+            setBoardError(derived.error ?? '推导判定表失败')
+            return prev
+          }
+          if (derived.rules.length === 0 || (derived.conditions.length === 0 && derived.actions.length === 0)) {
+            setBoardError('因果图没有可推导的内容')
+            return prev
+          }
+          const placed = elementToRf({ ...derived, id: crypto.randomUUID(), x: ce.x + ce.w + 40, y: ce.y })
+          return { nodes: [...prev.nodes, ...placed.nodes], edges: [...prev.edges, ...placed.edges] }
+        }
+
+        // regenerate-array：判定表 → 正交表
+        const dtNode = prev.nodes.find((n) => n.id === elementId)
+        const dt = dtNode ? nodeToDecisionTableElement(dtNode) : null
+        if (!dt) return prev
+        const factors = dt.conditions.map((name) => ({ name, levels: ['是', '否'] }))
+        if (factors.length === 0) {
+          setBoardError('判定表没有条件，无法生成正交表')
+          return prev
+        }
+        const selected = selectOrthogonalArray(factors)
+        if ('error' in selected) {
+          setBoardError(selected.error)
+          return prev
+        }
+        const placed = elementToRf({
+          id: crypto.randomUUID(),
+          kind: 'orthogonal',
+          x: dt.x + 440,
+          y: dt.y,
+          w: 400,
+          h: 240,
+          sourceNodeId: dt.sourceNodeId,
+          factors,
+          arrayName: selected.name,
+          rows: selected.rows,
+        })
+        return { nodes: [...prev.nodes, ...placed.nodes], edges: [...prev.edges, ...placed.edges] }
+      })
     },
-    [result],
+    [],
   )
 
-  /** 用例接力：收集判定表/正交表骨架，拼接 sourceText 后写入 localStorage。 */
+  /** 用例接力：从 RF 图收集判定表/正交表骨架，拼接 sourceText 后写入 localStorage。 */
   const handleHandoff = useCallback(() => {
-    if (!result) return
-    const skeletons = board?.elements
-      ? board.elements.flatMap((el) => {
-          if (el.kind === 'decision-table') return decisionTableToSkeleton(el)
-          if (el.kind === 'orthogonal') return orthogonalToSkeleton(el)
-          return []
-        })
-      : []
+    if (!result || !graph) return
+    const skeletons = graph.nodes.flatMap((node) => {
+      if (node.data.kind === 'decision-table') {
+        const el = nodeToDecisionTableElement(node)
+        return el ? decisionTableToSkeleton(el) : []
+      }
+      if (node.data.kind === 'orthogonal') {
+        const el = nodeToOrthogonalElement(node)
+        return el ? orthogonalToSkeleton(el) : []
+      }
+      return []
+    })
     const title = fileTitle || result.title || '需求分析'
     const requirement =
       skeletons.length > 0 ? `${result.sourceText}\n\n${serializeSkeletons(title, skeletons)}` : result.sourceText
@@ -261,7 +263,7 @@ export function AnalysisBoardPage() {
       }),
     )
     navigate('/testcase')
-  }, [board, navigate, result, fileTitle])
+  }, [graph, navigate, result, fileTitle])
 
   if (loading) {
     return (
@@ -272,7 +274,7 @@ export function AnalysisBoardPage() {
     )
   }
 
-  if (loadError || !result || !board) {
+  if (loadError || !result || !graph) {
     return (
       <div className="page-shell flex min-h-[60vh] flex-col items-center justify-center gap-4">
         <p className="text-danger" role="alert">
@@ -290,8 +292,10 @@ export function AnalysisBoardPage() {
       recordName={fileTitle}
       recordId={id ?? ''}
       result={result}
-      board={board}
-      onBoardChange={handleBoardChange}
+      graph={graph}
+      onGraphChange={handleGraphChange}
+      viewport={viewport}
+      onViewportChange={handleViewportChange}
       onHandoff={handleHandoff}
       onExportFile={handleExportFile}
       onExportError={setBoardError}

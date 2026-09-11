@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
   Binary,
+  Copy,
   Download,
   Expand,
   GitGraph,
@@ -12,36 +13,42 @@ import {
   PanelLeftOpen,
   Share2,
   Table2,
+  Trash2,
   X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
-import type { RequirementAnalysisResult, RequirementNode, BoardChartKind } from '../../lib/requirement-analysis-api'
-import { downloadDataUrl } from '../../lib/requirement-export'
+import type { RequirementAnalysisResult, BoardChartKind } from '../../lib/requirement-analysis-api'
 import { MenuButton } from '../../components/ui/MenuButton'
 import { Tooltip } from '../../components/ui/Tooltip'
-import { BoardCanvas, type BoardCanvasHandle } from './board/BoardCanvas'
-import { BoardStore } from './board/board-store'
-import type { Board, BoardElement, MindmapRefElement } from './board/types'
-import { BOARD_LIMITS } from './board/types'
-import { removeElements, updateElement, addElement } from './board/commands'
+import { BoardFlow, type BoardFlowHandle } from './board/rf/BoardFlow'
+import type { BoardGraph, BoardViewport } from './board/rf/rf-types'
+import {
+  buildMindmapRefNode,
+  countElements,
+  createPendingNode,
+  draftToRfGraph,
+  markPendingNodeError,
+} from './board/rf/rf-graph'
 import { TemplateCenterModal } from './TemplateCenterModal'
 import type { BoardTemplate } from './templates'
+import { BOARD_LIMITS } from './board/types'
 import { BOARD_ZOOM_MAX, BOARD_ZOOM_MIN, formatZoom, stepZoom } from './board/viewport'
-import { renderBoard } from './board/renderer'
-import { draftToElement, buildMindmapRefElement } from './board/ai'
+import { emptyBoard } from './board/persistence'
 
-/** 导出格式：文件类由父级处理，PNG 由本组件离屏渲染。 */
-type ExportKind = 'xmind' | 'freemind' | 'markdown' | 'png'
+/** 导出格式：文件类由父级处理；PNG 离屏渲染随旧引擎下线（移入二期，见地图 #13 雾里区域）。 */
+type ExportKind = 'xmind' | 'freemind' | 'markdown'
 
 export type AnalysisBoardProps = {
   recordName: string
   recordId: string
   result: RequirementAnalysisResult
-  board: Board
-  onBoardChange: (board: Board) => void
+  graph: BoardGraph
+  onGraphChange: (graph: BoardGraph) => void
+  viewport?: BoardViewport
+  onViewportChange?: (viewport: BoardViewport) => void
   onHandoff: () => void
-  onExportFile: (kind: Exclude<ExportKind, 'png'>) => Promise<void>
+  onExportFile: (kind: ExportKind) => Promise<void>
   onExportError: (message: string) => void
   error: string | null
   onBack: () => void
@@ -49,12 +56,11 @@ export type AnalysisBoardProps = {
   libraryBadge?: boolean
   /** 插入图表时请求 AI 生成草稿（由 AnalysisBoardPage 提供并调用 generateBoardChart）。 */
   onGenerateChart?: (chartKind: BoardChartKind, nodeId: string) => Promise<unknown>
-  /** 画板内 toolbar 动作：derive-decision-table / regenerate-array / edit-factor。 */
-  onDerive?: (action: 'derive-decision-table' | 'regenerate-array' | 'edit-factor', elementId: string) => void
+  /** 画板内 toolbar 动作：derive-decision-table / regenerate-array。 */
+  onDerive?: (action: 'derive-decision-table' | 'regenerate-array', elementId: string) => void
 }
 
 const EXPORT_OPTIONS: Array<{ value: ExportKind; label: string }> = [
-  { value: 'png', label: '图片 (PNG)' },
   { value: 'xmind', label: 'XMind' },
   { value: 'freemind', label: 'FreeMind' },
   { value: 'markdown', label: 'Markdown' },
@@ -71,42 +77,7 @@ const RAIL_TOOLS: Array<{ key: ToolKey; icon: typeof MousePointer2; label: strin
   { key: 'orthogonal', icon: Binary, label: '正交表', insert: 'orthogonal' },
 ]
 
-function generateId(): string {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID()
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
-
-/** 创建指定图表的占位图元（灰色闪烁骨架，未入命令栈，不触发持久化）。 */
-function createPendingElement(kind: BoardChartKind, sourceNodeId: string): BoardElement {
-  const base = { id: generateId(), x: 40, y: 40, w: 320, h: 200, sourceNodeId, pending: true }
-  if (kind === 'cause-effect') {
-    return { ...base, kind: 'cause-effect', nodes: [], edges: [] }
-  }
-  if (kind === 'decision-table') {
-    return { ...base, kind: 'decision-table', conditions: [], actions: [], rules: [] }
-  }
-  return { ...base, kind: 'orthogonal', factors: [], arrayName: '', rows: [] }
-}
-
-/** 将图元标记为错误态。 */
-function markAsError(element: BoardElement, message: string): BoardElement {
-  return { ...element, pending: undefined, error: message }
-}
-
-/** 判断图元是否为占位图元。 */
-function isPendingElement(element: BoardElement): boolean {
-  return element.pending === true
-}
-
-/** 判断图元是否为错误图元。 */
-function isErrorElement(element: BoardElement): boolean {
-  return element.error !== undefined
-}
-
-/** 查找需求节点。 */
-function findNodeById(node: RequirementNode, id: string): RequirementNode | null {
+function findNodeById(node: RequirementAnalysisResult['tree'], id: string): RequirementAnalysisResult['tree'] | null {
   if (node.id === id) return node
   for (const child of node.children) {
     const found = findNodeById(child, id)
@@ -115,12 +86,39 @@ function findNodeById(node: RequirementNode, id: string): RequirementNode | null
   return null
 }
 
+/** 选中集合里的首个指定 kind 图元 id（CE 组归 groupId，单节点归自身） */
+function firstSelectedOfKind(graph: BoardGraph, selection: ReadonlySet<string>, kind: 'cause-effect' | 'decision-table' | 'orthogonal'): string | null {
+  for (const node of graph.nodes) {
+    const d = node.data
+    if (kind === 'cause-effect' && d.kind === 'ce-node' && selection.has(d.groupId)) return d.groupId
+    if (kind === 'decision-table' && d.kind === 'decision-table' && selection.has(node.id)) return node.id
+    if (kind === 'orthogonal' && d.kind === 'orthogonal' && selection.has(node.id)) return node.id
+  }
+  return null
+}
+
 /**
  * 分析画板：测试设计白板入口。
- * 中央为 BoardCanvas，控件全部悬浮：左上胶囊、右上生成用例、左侧可收缩工具栏、右下缩放条。
+ * 中央为 BoardFlow（React Flow），控件全部悬浮：左上胶囊、右上生成用例、左侧可收缩工具栏、右下缩放条。
  */
 export function AnalysisBoard(props: AnalysisBoardProps) {
-  const { result, board, onBoardChange, recordName, recordId, onHandoff, onExportFile, onExportError, error, onBack, onGenerateChart, onDerive, libraryBadge } = props
+  const {
+    result,
+    graph,
+    onGraphChange,
+    viewport,
+    onViewportChange,
+    recordName,
+    recordId,
+    onHandoff,
+    onExportFile,
+    onExportError,
+    error,
+    onBack,
+    onGenerateChart,
+    onDerive,
+    libraryBadge,
+  } = props
 
   const [railExpanded, setRailExpanded] = useState(false)
   const [templateCenterOpen, setTemplateCenterOpen] = useState(false)
@@ -129,29 +127,18 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const [activeTool, setActiveTool] = useState<ToolKey>('select')
   const [generating, setGenerating] = useState<BoardChartKind | null>(null)
-  const canvasRef = useRef<BoardCanvasHandle | null>(null)
+  const [selection, setSelection] = useState<ReadonlySet<string>>(new Set())
+  const flowRef = useRef<BoardFlowHandle | null>(null)
 
-  // 内部 store：每个实例对应一份 board，命令执行时通过 onBoardChange 同步给父级持久化。
-  // 同时订阅 store 变更以触发本组件重绘（占位/错误卡片、插入按钮禁用态等）。
-  const [renderedBoard, setRenderedBoard] = useState(board)
-  const [store] = useState(() => new BoardStore(board))
-
-  const selectedNodeId = (renderedBoard.elements.find((el) => el.kind === 'mindmap-ref') as MindmapRefElement | undefined)?.selectedNodeId ?? null
-
+  // AI 异步回写期间 graph 可能已被用户改动，经 ref 取最新图
+  const graphRef = useRef(graph)
   useEffect(() => {
-    const unsubscribe = store.subscribe(() => setRenderedBoard(store.getBoard()))
-    return unsubscribe
-  }, [store])
+    graphRef.current = graph
+  }, [graph])
 
-  useEffect(() => {
-    store.setOnChange(onBoardChange)
-  }, [store, onBoardChange])
-
-  useEffect(() => {
-    if (store.getBoard() !== board) {
-      store.replaceBoard(board)
-    }
-  }, [store, board])
+  const selectedNodeId =
+    (graph.nodes.find((n) => n.data.kind === 'mindmap-ref')?.data as { selectedNodeId: string | null } | undefined)
+      ?.selectedNodeId ?? null
 
   // ESC 退出画板；模板中心打开时由弹窗自己处理 ESC。
   useEffect(() => {
@@ -167,7 +154,7 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
   }, [])
 
   const handleStepZoom = (direction: 'in' | 'out') => {
-    const handle = canvasRef.current
+    const handle = flowRef.current
     if (!handle) return
     if (direction === 'in' && zoomRatio >= BOARD_ZOOM_MAX) return
     if (direction === 'out' && zoomRatio <= BOARD_ZOOM_MIN) return
@@ -176,46 +163,15 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
     handle.zoomBy(next / zoomRatio)
   }
 
-  const handleFit = useCallback(async () => {
-    await canvasRef.current?.fit()
+  const handleFit = useCallback(() => {
+    flowRef.current?.fit()
   }, [])
-
-  /** 离屏渲染白板全部图元，按包围盒 fit 后导出 PNG。 */
-  const exportPng = useCallback((): string | null => {
-    const elements = store.getBoard().elements
-    if (elements.length === 0) return null
-    let minX = Infinity
-    let minY = Infinity
-    let maxX = -Infinity
-    let maxY = -Infinity
-    for (const el of elements) {
-      minX = Math.min(minX, el.x)
-      minY = Math.min(minY, el.y)
-      maxX = Math.max(maxX, el.x + el.w)
-      maxY = Math.max(maxY, el.y + el.h)
-    }
-    const padding = 40
-    const width = Math.max(1, Math.round(maxX - minX + padding * 2))
-    const height = Math.max(1, Math.round(maxY - minY + padding * 2))
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const viewport = { x: minX - padding, y: minY - padding, zoom: 1 }
-    renderBoard(canvas, store.getBoard(), viewport, new Set(), { tree: result.tree })
-    return canvas.toDataURL('image/png')
-  }, [result.tree, store])
 
   const handleExport = async (kind: ExportKind) => {
     if (exporting) return
     setExporting(kind)
     try {
-      if (kind === 'png') {
-        const dataUrl = exportPng()
-        if (!dataUrl) throw new Error('当前画板为空，无法导出 PNG。')
-        downloadDataUrl(dataUrl, `${recordName || result.title || '需求分析'}.png`)
-      } else {
-        await onExportFile(kind)
-      }
+      await onExportFile(kind)
     } catch (err) {
       onExportError(err instanceof Error ? err.message : '导出失败，请稍后重试。')
     } finally {
@@ -225,106 +181,186 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
 
   const showWarningBanner = !bannerDismissed && result.warnings.length > 0
 
-  /** 左栏插入图表：先占位，再 AI 生成，成功替换并触发持久化，失败变错误卡片。 */
-  const handleInsertChart = useCallback(async (chartKind: BoardChartKind) => {
-    if (!selectedNodeId) return
-    if (generating) return
-    if (!onGenerateChart) return
-    const sourceNode = findNodeById(result.tree, selectedNodeId)
-    if (!sourceNode) return
-    if (store.getBoard().elements.length >= BOARD_LIMITS.MAX_ELEMENTS) {
-      onExportError('画板图元数量已达上限')
-      return
-    }
-    setGenerating(chartKind)
-    const pending = createPendingElement(chartKind, selectedNodeId)
-    store.replaceBoard({
-      ...store.getBoard(),
-      elements: [...store.getBoard().elements, pending],
+  /** 左栏插入图表：先占位节点，再 AI 生成，成功替换为真实图元，失败变错误节点。 */
+  const handleInsertChart = useCallback(
+    async (chartKind: BoardChartKind) => {
+      if (!selectedNodeId) return
+      if (generating) return
+      if (!onGenerateChart) return
+      const sourceNode = findNodeById(result.tree, selectedNodeId)
+      if (!sourceNode) return
+      if (countElements(graph) >= BOARD_LIMITS.MAX_ELEMENTS) {
+        onExportError('画板图元数量已达上限')
+        return
+      }
+      setGenerating(chartKind)
+      const pending = createPendingNode(chartKind, selectedNodeId)
+      onGraphChange({ nodes: [...graph.nodes, pending], edges: graph.edges })
+      try {
+        const draft = await onGenerateChart(chartKind, selectedNodeId)
+        // draftToElement 的落位避让基于旧 Board 模型；本票以空板落位（40,40），#16 迁移时统一改造
+        const generated = draftToRfGraph(draft, chartKind, selectedNodeId, emptyBoard())
+        const current = graphRef.current
+        onGraphChange({
+          nodes: [...current.nodes.filter((n) => n.id !== pending.id), ...generated.nodes],
+          edges: [...current.edges, ...generated.edges],
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '生成失败，请稍后重试'
+        const current = graphRef.current
+        onGraphChange({
+          nodes: current.nodes.map((n) => (n.id === pending.id ? markPendingNodeError(n, message) : n)),
+          edges: current.edges,
+        })
+      } finally {
+        setGenerating(null)
+      }
+    },
+    [selectedNodeId, generating, result.tree, onExportError, onGenerateChart, graph, onGraphChange],
+  )
+
+  /** 重试错误节点。 */
+  const handleRetryPending = useCallback(
+    async (nodeId: string) => {
+      const node = graphRef.current.nodes.find((n) => n.id === nodeId)
+      if (!node || node.data.kind !== 'chart-pending') return
+      const { chartKind, sourceNodeId } = node.data
+      if (!sourceNodeId || !onGenerateChart) return
+      setGenerating(chartKind)
+      const current = graphRef.current
+      onGraphChange({
+        nodes: current.nodes.map((n) =>
+          n.id === nodeId && n.data.kind === 'chart-pending'
+            ? { ...n, data: { ...n.data, error: undefined } }
+            : n,
+        ),
+        edges: current.edges,
+      })
+      try {
+        const draft = await onGenerateChart(chartKind, sourceNodeId)
+        const generated = draftToRfGraph(draft, chartKind, sourceNodeId, emptyBoard())
+        const latest = graphRef.current
+        onGraphChange({
+          nodes: [...latest.nodes.filter((n) => n.id !== nodeId), ...generated.nodes],
+          edges: [...latest.edges, ...generated.edges],
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '生成失败，请稍后重试'
+        const latest = graphRef.current
+        onGraphChange({
+          nodes: latest.nodes.map((n) => (n.id === nodeId ? markPendingNodeError(n, message) : n)),
+          edges: latest.edges,
+        })
+      } finally {
+        setGenerating(null)
+      }
+    },
+    [onGenerateChart, onGraphChange],
+  )
+
+  /** 删除占位/错误节点。 */
+  const handleDeletePending = useCallback(
+    (nodeId: string) => {
+      const current = graphRef.current
+      onGraphChange({
+        nodes: current.nodes.filter((n) => n.id !== nodeId),
+        edges: current.edges,
+      })
+    },
+    [onGraphChange],
+  )
+
+  /** mindmap 子节点点选：写回节点 data.selectedNodeId */
+  const handleSelectMindmapNode = useCallback(
+    (mindmapNodeId: string, requirementNodeId: string | null) => {
+      const current = graphRef.current
+      onGraphChange({
+        nodes: current.nodes.map((n) =>
+          n.id === mindmapNodeId && n.data.kind === 'mindmap-ref'
+            ? { ...n, data: { ...n.data, selectedNodeId: requirementNodeId } }
+            : n,
+        ),
+        edges: current.edges,
+      })
+    },
+    [onGraphChange],
+  )
+
+  /** 选中集删除（工具栏按钮；键盘删除由 RF deleteKeyCode 处理） */
+  const handleDeleteSelection = useCallback(() => {
+    if (selection.size === 0) return
+    const current = graphRef.current
+    const removedIds = new Set(
+      current.nodes
+        .filter((n) => {
+          const d = n.data
+          const key = d.kind === 'ce-node' || d.kind === 'flowchart-node' ? d.groupId : n.id
+          return selection.has(key)
+        })
+        .map((n) => n.id),
+    )
+    onGraphChange({
+      nodes: current.nodes.filter((n) => !removedIds.has(n.id)),
+      edges: current.edges.filter((e) => !removedIds.has(e.source) && !removedIds.has(e.target)),
     })
-    try {
-      const draft = await onGenerateChart(chartKind, selectedNodeId)
-      const element = draftToElement(draft, chartKind, selectedNodeId, store.getBoard())
-      const nextElements = store.getBoard().elements.map((el) => (el.id === pending.id ? element : el))
-      const nextBoard = { ...store.getBoard(), elements: nextElements }
-      store.replaceBoard(nextBoard)
-      onBoardChange(nextBoard)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '生成失败，请稍后重试'
-      const nextElements = store.getBoard().elements.map((el) =>
-        el.id === pending.id ? markAsError(el, message) : el
-      )
-      const nextBoard = { ...store.getBoard(), elements: nextElements }
-      store.replaceBoard(nextBoard)
-      // 错误态也触发持久化，让用户刷新后仍能看到错误卡片。
-      onBoardChange(nextBoard)
-    } finally {
-      setGenerating(null)
+    setSelection(new Set())
+  }, [selection, onGraphChange])
+
+  /** 复制选中（粘贴由 BoardFlow 的 Ctrl+V 监听完成） */
+  const handleCopySelection = useCallback(() => {
+    const current = graphRef.current
+    const selected = current.nodes.filter((n) => {
+      const d = n.data
+      const key = d.kind === 'ce-node' || d.kind === 'flowchart-node' ? d.groupId : n.id
+      return selection.has(key)
+    })
+    if (selected.length === 0) return
+    const selectedIds = new Set(selected.map((n) => n.id))
+    ;(window as unknown as Record<string, unknown>).__rfBoardClipboard = {
+      nodes: selected,
+      edges: current.edges.filter((e) => selectedIds.has(e.source) && selectedIds.has(e.target)),
     }
-  }, [selectedNodeId, generating, result.tree, onExportError, onGenerateChart, onBoardChange, store])
+  }, [selection])
 
-  /** 重试错误图元。 */
-  const handleRetryError = useCallback(async (elementId: string) => {
-    const el = store.getBoard().elements.find((e) => e.id === elementId)
-    if (!el || !isErrorElement(el)) return
-    const chartKind = el.kind as BoardChartKind
-    const sourceNodeId = el.sourceNodeId
-    if (!sourceNodeId || !onGenerateChart) return
-    setGenerating(chartKind)
-    try {
-      const draft = await onGenerateChart(chartKind, sourceNodeId)
-      const element = draftToElement(draft, chartKind, sourceNodeId, store.getBoard())
-      const nextElements = store.getBoard().elements.map((e) => (e.id === elementId ? { ...element, id: elementId } : e))
-      const nextBoard = { ...store.getBoard(), elements: nextElements }
-      store.replaceBoard(nextBoard)
-      onBoardChange(nextBoard)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '生成失败，请稍后重试'
-      store.execute(updateElement(elementId, (e) => markAsError(e, message)))
-    } finally {
-      setGenerating(null)
-    }
-  }, [onGenerateChart, onBoardChange, store])
+  /** 画板内 toolbar 动作：推导判定表 / 重新生成正交表。 */
+  const handleToolbarDerive = useCallback(
+    (action: 'derive-decision-table' | 'regenerate-array') => {
+      if (!onDerive) return
+      if (action === 'derive-decision-table') {
+        const groupId = firstSelectedOfKind(graph, selection, 'cause-effect')
+        if (groupId) onDerive('derive-decision-table', groupId)
+      } else {
+        const dtId = firstSelectedOfKind(graph, selection, 'decision-table')
+        if (dtId) onDerive('regenerate-array', dtId)
+      }
+    },
+  [graph, selection, onDerive],
+  )
 
-  /** 删除错误/占位图元。 */
-  const handleDeleteError = useCallback((elementId: string) => {
-    store.execute(removeElements([elementId]))
-  }, [store])
+  /** 模板中心使用模板：测试设计图表复用 handleInsertChart，思维导图直接插入参考节点。 */
+  const handleUseTemplate = useCallback(
+    async (template: BoardTemplate) => {
+      const chartKind = template.chartKind
+      if (!chartKind) return
 
-  /** 画板内 toolbar 动作：推导判定表、重新生成正交表、编辑因子。 */
-  const handleCanvasAction = useCallback((action: 'derive-decision-table' | 'regenerate-array' | 'edit-factor', selection: ReadonlySet<string>) => {
-    if (!onDerive) return
-    const selected = store.getBoard().elements.filter((e) => selection.has(e.id))
-    if (action === 'derive-decision-table') {
-      const ce = selected.find((e) => e.kind === 'cause-effect')
-      if (ce) onDerive('derive-decision-table', ce.id)
-    } else if (action === 'regenerate-array') {
-      const dt = selected.find((e) => e.kind === 'decision-table')
-      if (dt) onDerive('regenerate-array', dt.id)
-    } else if (action === 'edit-factor') {
-      const ortho = selected.find((e) => e.kind === 'orthogonal')
-      if (ortho) onDerive('edit-factor', ortho.id)
-    }
-  }, [onDerive, store])
+      if (countElements(graph) >= BOARD_LIMITS.MAX_ELEMENTS) {
+        onExportError('画板图元数量已达上限')
+        return
+      }
 
-  /** 模板中心使用模板：测试设计图表复用 handleInsertChart，思维导图直接插入参考图元。 */
-  const handleUseTemplate = useCallback(async (template: BoardTemplate) => {
-    const chartKind = template.chartKind
-    if (!chartKind) return
+      if (chartKind === 'mindmap') {
+        const node = buildMindmapRefNode(result.tree, 40, 40)
+        onGraphChange({ nodes: [...graph.nodes, node], edges: graph.edges })
+        return
+      }
 
-    if (store.getBoard().elements.length >= BOARD_LIMITS.MAX_ELEMENTS) {
-      onExportError('画板图元数量已达上限')
-      return
-    }
+      await handleInsertChart(chartKind)
+    },
+    [result.tree, graph, handleInsertChart, onExportError, onGraphChange],
+  )
 
-    if (chartKind === 'mindmap') {
-      const el = buildMindmapRefElement(result.tree, 40, 40)
-      store.execute(addElement(el))
-      return
-    }
-
-    await handleInsertChart(chartKind)
-  }, [result.tree, store, handleInsertChart, onExportError])
+  const hasCeSelected = firstSelectedOfKind(graph, selection, 'cause-effect') !== null
+  const hasDtSelected = firstSelectedOfKind(graph, selection, 'decision-table') !== null
 
   const railTool = (
     <button
@@ -419,7 +455,11 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
             const Icon = tool.icon
             const isInsert = tool.insert !== undefined
             const disabled = isInsert && (!selectedNodeId || generating !== null || !onGenerateChart)
-            const tooltipContent = !onGenerateChart ? '请在会话中生成新图表' : disabled ? '先在需求树中选择一个节点' : tool.label
+            const tooltipContent = !onGenerateChart
+              ? '请在会话中生成新图表'
+              : disabled
+                ? '先在需求树中选择一个节点'
+                : tool.label
             const button = (
               <button
                 key={tool.key}
@@ -470,13 +510,45 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
         </div>
 
         <div className="analysis-board-stage">
-          <BoardCanvas
-            ref={canvasRef}
-            store={store}
+          <BoardFlow
+            ref={flowRef}
+            graph={graph}
+            onGraphChange={onGraphChange}
+            viewport={viewport}
+            onViewportChange={onViewportChange}
             tree={result.tree}
+            onSelectMindmapNode={handleSelectMindmapNode}
+            onRetryPending={handleRetryPending}
+            onDeletePending={handleDeletePending}
+            onSelectionChange={setSelection}
             onZoomChange={handleZoomScaleChange}
-            onAction={handleCanvasAction}
           />
+
+          {/* 选中工具栏：derive 动作 + 复制/删除 */}
+          {selection.size > 0 && (
+            <div className="analysis-board-flow-toolbar" role="toolbar" aria-label="选中操作">
+              {hasCeSelected && onDerive && (
+                <button type="button" onClick={() => handleToolbarDerive('derive-decision-table')}>
+                  推导判定表
+                </button>
+              )}
+              {hasDtSelected && onDerive && (
+                <button type="button" onClick={() => handleToolbarDerive('regenerate-array')}>
+                  生成正交表
+                </button>
+              )}
+              <Tooltip content="复制（Ctrl+C / Ctrl+V 粘贴）">
+                <button type="button" aria-label="复制选中" onClick={handleCopySelection}>
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              </Tooltip>
+              <Tooltip content="删除选中">
+                <button type="button" aria-label="删除选中" onClick={handleDeleteSelection}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </Tooltip>
+            </div>
+          )}
 
           <div className="analysis-board-zoom" role="group" aria-label="缩放控制">
             <button
@@ -504,33 +576,11 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
               type="button"
               className="analysis-board-zoom-btn"
               aria-label="适应屏幕"
-              onClick={() => void handleFit()}
+              onClick={handleFit}
             >
               <Expand className="h-3.5 w-3.5" />
             </button>
           </div>
-
-          {/* 占位/错误卡片浮动提示 */}
-          {renderedBoard.elements.filter((el) => isPendingElement(el) || isErrorElement(el)).map((el) => {
-            const errorMessage = el.error
-            return (
-              <div
-                key={el.id}
-                className="analysis-board-pending-card"
-                style={{ left: 40, top: 40 + renderedBoard.elements.indexOf(el) * 120 }}
-              >
-                {errorMessage ? (
-                  <>
-                    <p role="alert">{errorMessage}</p>
-                    <button type="button" onClick={() => void handleRetryError(el.id)}>重试</button>
-                    <button type="button" onClick={() => handleDeleteError(el.id)}>删除</button>
-                  </>
-                ) : (
-                  <p>AI 生成中…</p>
-                )}
-              </div>
-            )
-          })}
         </div>
       </div>
 

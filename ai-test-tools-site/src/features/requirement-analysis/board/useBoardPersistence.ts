@@ -1,28 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Board } from './types'
 import { normalizeErrorMessage } from '../../../lib/app-error'
 
 const SAVE_DEBOUNCE_MS = 1500
 const RETRY_INTERVAL_MS = 10000
 
 /**
- * 白板变更自动持久化到外部保存函数。
- * - board 引用变化后防抖 1.5s 触发 saveFn(board)
- * - 失败时返回 saveError 文案，下一次 board 变更或 10s 后重试
+ * 画板变更自动持久化到外部保存函数（泛型：调用方传入可序列化快照）。
+ * - value 引用变化后防抖 1.5s 触发 saveFn(value)
+ * - 失败时返回 saveError 文案，下一次变更或 10s 后重试
  */
-export function useBoardPersistence(
-  saveFn: (board: Board) => Promise<void>,
-  board: Board,
+export function useBoardPersistence<T>(
+  saveFn: (value: T) => Promise<void>,
+  value: T,
 ): { saveError: string | null } {
   const [saveError, setSaveError] = useState<string | null>(null)
-  const boardRef = useRef(board)
+  const valueRef = useRef(value)
   const retryTimerRef = useRef<number | null>(null)
   const pendingRef = useRef(false)
   const saveRef = useRef<() => Promise<void>>(async () => {})
 
   const save = useCallback(async () => {
     try {
-      await saveFn(boardRef.current)
+      await saveFn(valueRef.current)
       setSaveError(null)
       pendingRef.current = false
       if (retryTimerRef.current !== null) {
@@ -46,7 +45,7 @@ export function useBoardPersistence(
   }, [save])
 
   useEffect(() => {
-    boardRef.current = board
+    valueRef.current = value
     if (retryTimerRef.current !== null) {
       window.clearTimeout(retryTimerRef.current)
       retryTimerRef.current = null
@@ -61,7 +60,7 @@ export function useBoardPersistence(
         retryTimerRef.current = null
       }
     }
-  }, [board, saveFn, saveRef])
+  }, [value, saveFn, saveRef])
 
   return { saveError }
 }
