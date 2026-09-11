@@ -10,6 +10,8 @@ import { sharedTestCaseStore } from "./features/testcase/shared-store.js";
 import { registerDataFactoryRoutes } from "./features/datafactory/routes.js";
 import { bootstrapReports } from "./features/report/migrate.js";
 import { registerReportRoutes } from "./features/report/routes.js";
+import { bootstrapRequirementV2 } from "./features/requirement-v2/migrate.js";
+import { registerRequirementV2Routes } from "./features/requirement-v2/routes.js";
 import { registerLogRoutes } from "./log-routes.js";
 import { traceMiddleware } from "./middleware/trace.js";
 import { AppError, badRequest, internal, notFound } from "./app-error.js";
@@ -69,6 +71,8 @@ export async function createMcpExpressApp(runtime = new JmeterMcpRuntime()): Pro
   registerDataFactoryRoutes(app);
   const reportRepo = await bootstrapReports();
   registerReportRoutes(app, reportRepo);
+  const analysisRepo = await bootstrapRequirementV2();
+  registerRequirementV2Routes(app, analysisRepo);
   registerLogRoutes(app);
 
   app.get("/ai/config", (_req, res) => {
