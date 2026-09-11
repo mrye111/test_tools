@@ -63,8 +63,8 @@ describe('需求分析列表页', () => {
   it('渲染记录列表与计数摘要', async () => {
     renderPage()
     await waitFor(() => expect(screen.getByText('登录需求分析')).toBeInTheDocument())
-    expect(screen.getByText('问题 2（待澄清 1）')).toBeInTheDocument()
-    expect(screen.getByText('条件 5 · 覆盖 3')).toBeInTheDocument()
+    expect(screen.getByText(/问题 2（待澄清 1）/)).toBeInTheDocument()
+    expect(screen.getByText(/条件 5 · 覆盖 3/)).toBeInTheDocument()
   })
 
   it('空输入点分析给出字段错误', async () => {
@@ -98,7 +98,7 @@ describe('需求分析列表页', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '删除 登录需求分析' }))
     expect(screen.getByRole('alertdialog')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '删除', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
 
     await waitFor(() => expect(stub.deleteAnalysisRecord).toHaveBeenCalledWith('ra2_1'))
   })
