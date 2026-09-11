@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>需求分析 v2 原型 · 三区结果形态</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --surface: rgba(255,255,255,0.82);
+    --border: rgba(15,23,42,0.09);
+    --text: #1e293b;
+    --muted: #64748b;
+    --accent: #3b82f6;
+    --danger: #ef4444;
+    --warn: #f59e0b;
+    --ok: #22c55e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+  .capsule { position: sticky; top: 12px; z-index: 20; margin: 12px auto 0; width: fit-content; display: flex; gap: 10px; align-items: center;
+    background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; box-shadow: 0 8px 30px -18px rgba(15,23,42,.35); }
+  .capsule button { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 13px; padding: 4px 8px; border-radius: 8px; }
+  .capsule button:hover { background: rgba(59,130,246,.1); color: var(--accent); }
+  .capsule .title { font-weight: 600; }
+  .layout { max-width: 1200px; margin: 18px auto 60px; padding: 0 20px; display: grid; grid-template-columns: 190px 1fr; gap: 18px; }
+  nav.zones { position: sticky; top: 70px; align-self: start; display: flex; flex-direction: column; gap: 4px; }
+  nav.zones a { display: block; padding: 8px 12px; border-radius: 10px; color: var(--muted); text-decoration: none; font-size: 13px; border: 1px solid transparent; }
+  nav.zones a:hover, nav.zones a.active { color: var(--text); background: var(--surface); border-color: var(--border); }
+  nav.zones .count { float: right; font-size: 11px; background: rgba(100,116,139,.12); border-radius: 6px; padding: 1px 6px; }
+  section.zone { background: var(--surface); backdrop-filter: blur(10px); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; margin-bottom: 18px; }
+  section.zone h2 { font-size: 15px; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  section.zone .hint { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+  .badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); }
+  .b-ambiguity { color: var(--warn); border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.08); }
+  .b-missing { color: var(--danger); border-color: rgba(239,68,68,.4); background: rgba(239,68,68,.07); }
+  .b-conflict { color: #8b5cf6; border-color: rgba(139,92,246,.4); background: rgba(139,92,246,.08); }
+  .b-untestable { color: #0ea5e9; border-color: rgba(14,165,233,.4); background: rgba(14,165,233,.08); }
+  .sev { font-size: 11px; color: var(--muted); }
+  .issue { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .issue .head { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .issue .quote { font-size: 12px; color: var(--muted); border-left: 3px solid rgba(100,116,139,.3); padding-left: 8px; margin: 6px 0; }
+  .issue .ask { font-size: 13px; margin: 6px 0; }
+  .issue .ask::before { content: "💬 建议澄清："; color: var(--muted); font-size: 12px; }
+  .status { margin-left: auto; font-size: 12px; border-radius: 8px; border: 1px solid var(--border); padding: 3px 10px; cursor: pointer; background: #fff; }
+  .status.open { color: var(--warn); border-color: rgba(245,158,11,.45); }
+  .status.resolved { color: var(--ok); border-color: rgba(34,197,94,.45); }
+  .status.accepted { color: var(--muted); }
+  .ac { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .ac .from { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .ac .rewritten { font-size: 13.5px; }
+  .ac .ops { margin-top: 8px; display: flex; gap: 8px; }
+  .ac .ops button { font-size: 12px; padding: 3px 12px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; color: var(--muted); }
+  .ac .ops button.confirm:hover, .ac .ops button.confirm.on { color: var(--ok); border-color: rgba(34,197,94,.5); }
+  .ac .ops button.reject:hover, .ac .ops button.reject.on { color: var(--danger); border-color: rgba(239,68,68,.5); }
+  .ac.is-confirmed { border-color: rgba(34,197,94,.45); background: rgba(34,197,94,.05); }
+  .ac.is-rejected { opacity: .55; }
+  .cond-req { margin-bottom: 14px; }
+  .cond-req h3 { font-size: 13px; margin-bottom: 6px; }
+  .cond { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; font-size: 13px; }
+  .cond:hover { background: rgba(59,130,246,.06); }
+  .cond .kind { font-size: 11px; padding: 0 7px; border-radius: 6px; flex: none; }
+  .k-normal { background: rgba(59,130,246,.12); color: var(--accent); }
+  .k-boundary { background: rgba(245,158,11,.14); color: var(--warn); }
+  .k-exception { background: rgba(239,68,68,.1); color: var(--danger); }
+  .relay-bar { position: sticky; bottom: 14px; margin-top: 6px; display: flex; align-items: center; gap: 12px; background: var(--surface); backdrop-filter: blur(12px);
+    border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; box-shadow: 0 10px 30px -18px rgba(15,23,42,.4); }
+  .relay-bar .primary { margin-left: auto; background: var(--accent); color: #fff; border: none; padding: 7px 18px; border-radius: 10px; cursor: pointer; }
+  table.rtm { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.rtm th, table.rtm td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+  table.rtm th { background: rgba(100,116,139,.08); color: var(--muted); font-weight: 500; }
+  .cov { font-size: 22px; font-weight: 700; color: var(--accent); }
+  .cov small { font-size: 12px; color: var(--muted); font-weight: 400; }
+  .input-strip { display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: 12.5px; }
+  .input-strip .file { border: 1px dashed var(--border); border-radius: 8px; padding: 4px 10px; }
+</style>
+</head>
+<body>
+
+<header class="capsule">
+  <button>← 返回列表</button>
+  <span class="title">登录模块需求分析</span>
+  <button>导出 ▾</button>
+</header>
+
+<div class="layout">
+  <nav class="zones">
+    <a href="#z-issues" class="active">问题日志 <span class="count">4</span></a>
+    <a href="#z-ac">验收准则 <span class="count">3</span></a>
+    <a href="#z-cond">测试条件 <span class="count">9</span></a>
+    <a href="#z-rtm">追溯矩阵</a>
+  </nav>
+
+  <main>
+    <section class="zone">
+      <div class="input-strip">
+        <span class="file">📄 登录模块需求 v2.3.md</span>
+        <span>分析完成 · 耗时 41s · 需求条目 6 条</span>
+        <button style="margin-left:auto;border:1px solid var(--border);background:#fff;border-radius:8px;padding:4px 12px;cursor:pointer;color:var(--muted)">重新分析</button>
+      </div>
+    </section>
+
+    <section class="zone" id="z-issues">
+      <h2>⚠️ 问题日志</h2>
+      <p class="hint">AI 发现的歧义 / 缺失 / 冲突 / 不可测项。点状态可流转：待澄清 → 已澄清 / 已接受。</p>
+
+      <div class="issue">
+        <div class="head"><span class="badge b-untestable">不可测</span><span class="sev">严重度 高 · 条目 R2</span><button class="status open">待澄清</button></div>
+        <p class="quote">「系统应在用户登录失败时给出友好提示」</p>
+        <p>「友好」不可度量，无法判定通过与否。</p>
+        <p class="ask">提示文案与样式具体指什么？是否包含剩余尝试次数？</p>
+      </div>
+
+      <div class="issue">
+        <div class="head"><span class="badge b-missing">缺失</span><span class="sev">严重度 高 · 条目 R3</span><button class="status open">待澄清</button></div>
+        <p class="quote">「连续输错密码后账号锁定」</p>
+        <p>只写了正常路径：未说明锁定阈值、锁定时长、解锁途径。</p>
+        <p class="ask">错误几次触发锁定？锁定时长多久？是否支持管理员解锁？</p>
+      </div>
+
+      <div class="issue">
+        <div class="head"><span class="badge b-conflict">冲突</span><span class="sev">严重度 中 · 条目 R2/R5</span><button class="status open">待澄清</button></div>
+        <p class="quote">「失败提示不透露账号是否存在」（R2）与「未注册手机号提示去注册」（R5）</p>
+        <p>两条需求在安全策略上互相矛盾。</p>
+        <p class="ask">以哪条为准？或按登录方式区分策略？</p>
+      </div>
+
+      <div class="issue">
+        <div class="head"><span class="badge b-ambiguity">歧义</span><span class="sev">严重度 低 · 条目 R6</span><button class="status resolved">已澄清</button></div>
+        <p class="quote">「支持多端登录」</p>
+        <p>「多端」范围不明——已澄清为 Web + iOS + Android，不含小程序。</p>
+      </div>
+    </section>
+
+    <section class="zone" id="z-ac">
+      <h2>✅ 可测试化验收准则</h2>
+      <p class="hint">AI 将模糊需求改写为可度量形式，确认后生效；驳回则保留原文并标记。</p>
+
+      <div class="ac is-confirmed">
+        <p class="from">原文：「系统应在用户登录失败时给出友好提示」</p>
+        <p class="rewritten">→ 登录失败时，页面在 1s 内于表单上方展示错误条，包含失败原因分类（密码错误/账号锁定/网络异常），不区分「账号不存在」与「密码错误」。</p>
+        <div class="ops"><button class="confirm on">✓ 已确认</button><button>编辑</button><button class="reject">驳回</button></div>
+      </div>
+
+      <div class="ac">
+        <p class="from">原文：「连续输错密码后账号锁定」</p>
+        <p class="rewritten">→ 同一账号 10 分钟内连续 5 次密码错误 → 锁定 30 分钟；锁定期间任何凭据登录均返回「账号已锁定」；锁定到期后自动解除。</p>
+        <div class="ops"><button class="confirm">确认</button><button>编辑</button><button class="reject">驳回</button></div>
+      </div>
+
+      <div class="ac is-rejected">
+        <p class="from">原文：「页面加载要快」</p>
+        <p class="rewritten">→ 登录页 P95 首屏加载 ≤ 2s（4G 网络）。 <em style="color:var(--danger)">（已驳回：由性能专项另立需求）</em></p>
+        <div class="ops"><button class="confirm">确认</button><button>编辑</button><button class="reject on">已驳回</button></div>
+      </div>
+    </section>
+
+    <section class="zone" id="z-cond">
+      <h2>🧪 测试条件清单</h2>
+      <p class="hint">每条需求导出的待验证点。勾选后一键接力到用例生成工具。</p>
+
+      <div class="cond-req">
+        <h3>R3 账号锁定</h3>
+        <label class="cond"><input type="checkbox" checked><span class="kind k-normal">正常</span>5 次错误 → 锁定 30 分钟</label>
+        <label class="cond"><input type="checkbox" checked><span class="kind k-boundary">边界</span>第 4 次错误仍可登录；第 5 次触发锁定</label>
+        <label class="cond"><input type="checkbox" checked><span class="kind k-boundary">边界</span>跨 10 分钟窗口的错误计数重置</label>
+        <label class="cond"><input type="checkbox" checked><span class="kind k-exception">异常</span>锁定期间正确密码登录被拒绝</label>
+        <label class="cond"><input type="checkbox"><span class="kind k-exception">异常</span>锁定到期自动解除（时间边界 ±1s）</label>
+      </div>
+      <div class="cond-req">
+        <h3>R2 失败提示</h3>
+        <label class="cond"><input type="checkbox" checked><span class="kind k-normal">正常</span>密码错误 → 错误条 1s 内展示</label>
+        <label class="cond"><input type="checkbox" checked><span class="kind k-exception">异常</span>网络异常 → 提示网络分类文案</label>
+      </div>
+
+      <div class="relay-bar">
+        <span>已选 <b>6</b> / 9 条测试条件</span>
+        <button class="primary">接力到用例生成 →</button>
+      </div>
+    </section>
+
+    <section class="zone" id="z-rtm">
+      <h2>🔗 追溯矩阵（RTM）</h2>
+      <p class="hint">需求 ↔ 测试条件 ↔ 用例的双向追溯。覆盖率为条件级。</p>
+      <p><span class="cov">67%</span> <small>条件覆盖率（6/9 已接力生成用例）</small></p>
+      <br>
+      <table class="rtm">
+        <thead><tr><th>需求条目</th><th>测试条件</th><th>用例</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr><td>R3 账号锁定</td><td>5 次错误→锁定</td><td>TC-LOGIN-003</td><td>✅ 已生成</td></tr>
+          <tr><td>R3 账号锁定</td><td>第 4 次仍可登录</td><td>TC-LOGIN-004</td><td>✅ 已生成</td></tr>
+          <tr><td>R3 账号锁定</td><td>到期自动解除</td><td>—</td><td>⬜ 未接力</td></tr>
+          <tr><td>R2 失败提示</td><td>错误条 1s 内展示</td><td>TC-LOGIN-001</td><td>✅ 已生成</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</div>
+
+<script>
+  // 状态流转
+  document.querySelectorAll('.status').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const order = [['open','待澄清'], ['resolved','已澄清'], ['accepted','已接受']];
+      const idx = order.findIndex(([cls]) => btn.classList.contains(cls));
+      const next = order[(idx + 1) % order.length];
+      btn.classList.remove('open','resolved','accepted');
+      btn.classList.add(next[0]);
+      btn.textContent = next[1];
+    });
+  });
+  // 验收准则 确认/驳回
+  document.querySelectorAll('.ac').forEach(card => {
+    const confirmBtn = card.querySelector('.confirm');
+    const rejectBtn = card.querySelector('.reject');
+    confirmBtn.addEventListener('click', () => {
+      card.classList.toggle('is-confirmed'); card.classList.remove('is-rejected');
+      confirmBtn.classList.toggle('on'); rejectBtn.classList.remove('on');
+    });
+    rejectBtn.addEventListener('click', () => {
+      card.classList.toggle('is-rejected'); card.classList.remove('is-confirmed');
+      rejectBtn.classList.toggle('on'); confirmBtn.classList.remove('on');
+    });
+  });
+  // 勾选计数
+  const boxes = document.querySelectorAll('.cond input');
+  const counter = document.querySelector('.relay-bar b');
+  boxes.forEach(b => b.addEventListener('change', () => {
+    counter.textContent = document.querySelectorAll('.cond input:checked').length;
+  }));
+</script>
+</body>
+</html>
