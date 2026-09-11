@@ -4,6 +4,19 @@ import { useContext, useMemo, useState } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import { layoutMindmap } from '../elements/layout'
 import { BoardCanvasContext } from './context'
+import {
+  dtAddAction,
+  dtAddCondition,
+  dtAddRule,
+  dtRemoveAction,
+  dtRemoveCondition,
+  dtRemoveRule,
+  dtRenameRow,
+  dtToggleAction,
+  dtToggleCell,
+  ogRegenerateRows,
+  ogSetFactorLevels,
+} from './table-ops'
 import type {
   CeNodeData,
   ChartPendingNodeData,
@@ -108,8 +121,39 @@ export function FlowchartNodeView({ id, data, selected }: NodeProps<Node<Flowcha
   )
 }
 
-/** 判定表节点：整体只读表格（格内编辑在跟随票 #20） */
-export function DecisionTableNodeView({ data, selected }: NodeProps<Node<DecisionTableNodeData>>) {
+/** 行头重命名（双击进入内联编辑） */
+function RowHeaderCell({ text, onRename }: { text: string; onRename: (text: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(text)
+  if (!editing) {
+    return (
+      <th className="rf-table-rowhead" title={`${text}（双击改名）`} onDoubleClick={() => { setDraft(text); setEditing(true) }}>
+        {text}
+      </th>
+    )
+  }
+  return (
+    <th className="rf-table-rowhead">
+      <input
+        className="rf-node-edit nodrag"
+        value={draft}
+        autoFocus
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => { setEditing(false); onRename(draft) }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { setEditing(false); onRename(draft) }
+          if (e.key === 'Escape') setEditing(false)
+        }}
+      />
+    </th>
+  )
+}
+
+/** 判定表节点：格内编辑（#20）——单元格点击循环 Y/N/-、动作 ✓ 开关、行列增删、行头双击改名 */
+export function DecisionTableNodeView({ id, data, selected }: NodeProps<Node<DecisionTableNodeData>>) {
+  const { onUpdateDecisionTable } = useContext(BoardCanvasContext)
+  const patch = (next: DecisionTableNodeData) => onUpdateDecisionTable?.(id, next)
+
   return (
     <div className={`rf-table-node${selected ? ' is-selected' : ''}`}>
       <div className="rf-table-title">判定表</div>
@@ -118,45 +162,136 @@ export function DecisionTableNodeView({ data, selected }: NodeProps<Node<Decisio
           <tr>
             <th className="rf-table-rowhead" />
             {data.rules.map((_, i) => (
-              <th key={i}>规则{i + 1}</th>
+              <th key={i}>
+                规则{i + 1}
+                {data.rules.length > 1 && (
+                  <button type="button" className="rf-table-mini-btn nodrag" aria-label={`删除规则${i + 1}`} onClick={() => patch(dtRemoveRule(data, i))}>×</button>
+                )}
+              </th>
             ))}
           </tr>
         </thead>
         <tbody>
           {data.conditions.map((condition, row) => (
             <tr key={`c-${row}`}>
-              <th className="rf-table-rowhead" title={condition}>{condition}</th>
+              <RowHeaderCell text={condition} onRename={(t) => patch(dtRenameRow(data, 'conditions', row, t))} />
               {data.rules.map((rule, col) => (
-                <td key={col} className={`rf-table-cell rf-dt-${rule.conditionValues[row] === 'Y' ? 'y' : rule.conditionValues[row] === 'N' ? 'n' : 'dash'}`}>
+                <td
+                  key={col}
+                  className={`rf-table-cell rf-dt-${rule.conditionValues[row] === 'Y' ? 'y' : rule.conditionValues[row] === 'N' ? 'n' : 'dash'} rf-dt-editable`}
+                  title="点击切换 Y/N/-"
+                  onClick={() => patch(dtToggleCell(data, row, col))}
+                >
                   {rule.conditionValues[row] ?? ''}
                 </td>
               ))}
+              {data.conditions.length > 1 && (
+                <td className="rf-table-side">
+                  <button type="button" className="rf-table-mini-btn nodrag" aria-label={`删除条件「${condition}」`} onClick={() => patch(dtRemoveCondition(data, row))}>×</button>
+                </td>
+              )}
             </tr>
           ))}
           {data.actions.map((action, row) => (
             <tr key={`a-${row}`} className="rf-table-action-row">
-              <th className="rf-table-rowhead" title={action}>{action}</th>
+              <RowHeaderCell text={action} onRename={(t) => patch(dtRenameRow(data, 'actions', row, t))} />
               {data.rules.map((rule, col) => (
-                <td key={col} className="rf-table-cell">{rule.actionValues[row] ? '✓' : ''}</td>
+                <td
+                  key={col}
+                  className="rf-table-cell rf-dt-editable"
+                  title="点击切换动作是否执行"
+                  onClick={() => patch(dtToggleAction(data, row, col))}
+                >
+                  {rule.actionValues[row] ? '✓' : ''}
+                </td>
               ))}
+              {data.actions.length > 1 && (
+                <td className="rf-table-side">
+                  <button type="button" className="rf-table-mini-btn nodrag" aria-label={`删除动作「${action}」`} onClick={() => patch(dtRemoveAction(data, row))}>×</button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
       </table>
+      <div className="rf-table-actions nodrag">
+        <button type="button" onClick={() => patch(dtAddCondition(data))}>+ 条件</button>
+        <button type="button" onClick={() => patch(dtAddAction(data))}>+ 动作</button>
+        <button type="button" onClick={() => patch(dtAddRule(data))}>+ 规则</button>
+      </div>
     </div>
   )
 }
 
-/** 正交表节点：整体只读表格 */
-export function OrthogonalNodeView({ data, selected }: NodeProps<Node<OrthogonalNodeData>>) {
+/** 正交表节点：因子/水平编辑（#20），水平变更后自动重算阵列 */
+export function OrthogonalNodeView({ id, data, selected }: NodeProps<Node<OrthogonalNodeData>>) {
+  const { onUpdateOrthogonal } = useContext(BoardCanvasContext)
+  const [regenError, setRegenError] = useState<string | null>(null)
+  const [editingFactor, setEditingFactor] = useState<number | null>(null)
+  const [levelsDraft, setLevelsDraft] = useState('')
+
+  const regenerate = (next: OrthogonalNodeData) => {
+    const result = ogRegenerateRows(next)
+    // OrthogonalNodeData 带 Record 索引签名，'error' in 收窄需 typeof 兜底
+    if ('error' in result && typeof result.error === 'string') {
+      setRegenError(result.error)
+      return
+    }
+    setRegenError(null)
+    onUpdateOrthogonal?.(id, result as OrthogonalNodeData)
+  }
+
   return (
     <div className={`rf-table-node${selected ? ' is-selected' : ''}`}>
-      <div className="rf-table-title">正交表 {data.arrayName}</div>
+      <div className="rf-table-title">
+        正交表 {data.arrayName}
+        <button
+          type="button"
+          className="rf-table-mini-btn nodrag"
+          style={{ marginLeft: 8 }}
+          onClick={() => regenerate(data)}
+        >
+          重算阵列
+        </button>
+      </div>
+      {regenError && <p className="rf-table-error" role="alert">{regenError}</p>}
       <table className="rf-table">
         <thead>
           <tr>
             {data.factors.map((factor, i) => (
-              <th key={i} title={factor.name}>{factor.name}</th>
+              <th key={i} title={`${factor.name}（水平：${factor.levels.join(' / ')}，点击编辑水平）`} className="rf-og-factor">
+                <span onDoubleClick={(e) => { e.stopPropagation() }}>{factor.name}</span>
+                {editingFactor === i ? (
+                  <input
+                    className="rf-node-edit nodrag"
+                    value={levelsDraft}
+                    autoFocus
+                    placeholder="水平，逗号分隔"
+                    onChange={(e) => setLevelsDraft(e.target.value)}
+                    onBlur={() => {
+                      setEditingFactor(null)
+                      const next = ogSetFactorLevels(data, i, levelsDraft)
+                      if (next !== data) regenerate(next)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setEditingFactor(null)
+                        const next = ogSetFactorLevels(data, i, levelsDraft)
+                        if (next !== data) regenerate(next)
+                      }
+                      if (e.key === 'Escape') setEditingFactor(null)
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="rf-og-levels nodrag"
+                    onClick={() => { setLevelsDraft(factor.levels.join('，')); setEditingFactor(i) }}
+                  >
+                    {factor.levels.join(' / ')}
+                  </button>
+                )}
+              </th>
             ))}
           </tr>
         </thead>

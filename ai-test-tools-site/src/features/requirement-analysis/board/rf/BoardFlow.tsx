@@ -56,6 +56,9 @@ export interface BoardFlowProps {
   onUpdateNodeText?: (nodeId: string, text: string) => void
   /** 因果图边约束切换（#19） */
   onCycleConstraint?: (edgeId: string) => void
+  /** 判定表/正交表内容更新（#20） */
+  onUpdateDecisionTable?: (nodeId: string, data: Extract<BoardNode['data'], { kind: 'decision-table' }>) => void
+  onUpdateOrthogonal?: (nodeId: string, data: Extract<BoardNode['data'], { kind: 'orthogonal' }>) => void
 }
 
 const nodeTypes = {
@@ -101,7 +104,7 @@ function BoardFlowInner(props: BoardFlowProps & { onInitViewport?: (vp: BoardVie
 
   const [spacePressed, setSpacePressed] = useState(false)
   const pasteCountRef = useRef(0)
-  const { onUndo, onRedo, onUpdateNodeText, onCycleConstraint } = props
+  const { onUndo, onRedo, onUpdateNodeText, onCycleConstraint, onUpdateDecisionTable, onUpdateOrthogonal } = props
 
   /** 手动连线（#19）：同种同组校验由 connectNodes 承担，落图为 commit 变更 */
   const onConnect = useCallback(
@@ -259,8 +262,8 @@ function BoardFlowInner(props: BoardFlowProps & { onInitViewport?: (vp: BoardVie
   }, [graph, onGraphChange, onUndo, onRedo])
 
   const contextValue = useMemo(
-    () => ({ tree, onSelectMindmapNode, onRetryPending, onDeletePending, onUpdateNodeText, onCycleConstraint }),
-    [tree, onSelectMindmapNode, onRetryPending, onDeletePending, onUpdateNodeText, onCycleConstraint],
+    () => ({ tree, onSelectMindmapNode, onRetryPending, onDeletePending, onUpdateNodeText, onCycleConstraint, onUpdateDecisionTable, onUpdateOrthogonal }),
+    [tree, onSelectMindmapNode, onRetryPending, onDeletePending, onUpdateNodeText, onCycleConstraint, onUpdateDecisionTable, onUpdateOrthogonal],
   )
 
   const defaultViewport = useMemo<Viewport | undefined>(() => viewport, []) // eslint-disable-line react-hooks/exhaustive-deps

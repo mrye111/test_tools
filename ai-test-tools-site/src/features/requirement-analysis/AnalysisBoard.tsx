@@ -323,6 +323,18 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
     [onGraphChange],
   )
 
+  /** 判定表/正交表内容更新（#20）：整份 data 替换，入快照栈 */
+  const handleUpdateTableNode = useCallback(
+    (nodeId: string, data: BoardGraph['nodes'][number]['data']) => {
+      const current = graphRef.current
+      onGraphChange({
+        nodes: current.nodes.map((n) => (n.id === nodeId ? { ...n, data } : n)),
+        edges: current.edges,
+      })
+    },
+    [onGraphChange],
+  )
+
   /** 选中集删除（工具栏按钮；键盘删除由 RF deleteKeyCode 处理） */
   const handleDeleteSelection = useCallback(() => {
     if (selection.size === 0) return
@@ -587,6 +599,8 @@ export function AnalysisBoard(props: AnalysisBoardProps) {
             onRedo={onRedo}
             onUpdateNodeText={handleUpdateNodeText}
             onCycleConstraint={handleCycleConstraint}
+            onUpdateDecisionTable={handleUpdateTableNode}
+            onUpdateOrthogonal={handleUpdateTableNode}
           />
 
           {/* 选中工具栏：derive 动作 + 复制/删除 */}

@@ -389,6 +389,86 @@
   color: var(--rf-text);
 }
 
+/* ── 表格内编辑（#20） ─────────────────────── */
+.rf-dt-editable {
+  cursor: pointer;
+}
+
+.rf-dt-editable:hover {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.rf-table-mini-btn {
+  margin-left: 4px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: transparent;
+  color: var(--rf-text-muted);
+  cursor: pointer;
+}
+
+.rf-table-mini-btn:hover {
+  color: var(--rf-text);
+  border-color: var(--rf-accent);
+}
+
+.rf-table-side {
+  border: none !important;
+  padding: 0 4px !important;
+}
+
+.rf-table-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rf-table-actions button {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 7px;
+  border: 1px dashed rgba(148, 163, 184, 0.4);
+  background: transparent;
+  color: var(--rf-text-muted);
+  cursor: pointer;
+}
+
+.rf-table-actions button:hover {
+  color: var(--rf-text);
+  border-color: var(--rf-accent);
+}
+
+.rf-og-factor {
+  vertical-align: top;
+}
+
+.rf-og-levels {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--rf-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rf-og-levels:hover {
+  color: var(--rf-accent);
+}
+
+.rf-table-error {
+  margin: 4px 0;
+  font-size: 11px;
+  color: #fca5a5;
+}
+
 /* RF 手柄弱化 */
 .rf-board .react-flow__handle {
   width: 8px;
