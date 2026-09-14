@@ -28,6 +28,7 @@ const detail = {
   updatedAt: new Date().toISOString(),
   requirements: [
     { id: 'r1', recordId: 'ra2_1', parentId: null, level: 0, text: '账号锁定', sort: 0 },
+    { id: 'r2', recordId: 'ra2_1', parentId: null, level: 0, text: '页面加载速度要求', sort: 1 },
   ],
   issues: [
     {
@@ -107,6 +108,11 @@ describe('需求分析详情页（四分区）', () => {
     // 已生成用例的条件禁用勾选（条件区与 RTM 表都有该文本，取第一个）
     const generated = screen.getAllByText('到期自动解除')[0].closest('label')!.querySelector('input')!
     expect(generated).toBeDisabled()
+
+    // 未覆盖需求区（#31）：无条件的 r2 条目显式列出并给出原因
+    expect(screen.getByText('🕳️ 未覆盖需求')).toBeInTheDocument()
+    expect(screen.getByText('页面加载速度要求')).toBeInTheDocument()
+    expect(screen.getByText(/未涉及（AI 判断为低风险/)).toBeInTheDocument()
 
     expect(screen.getByText('33%')).toBeInTheDocument()
     expect(screen.getByText('ts_1')).toBeInTheDocument()

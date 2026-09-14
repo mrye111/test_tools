@@ -8,7 +8,7 @@ vi.mock("../testcase/ai.js", async () => {
 });
 
 import { streamChatCompletionParts } from "../testcase/ai.js";
-import { analyzeRequirement, AnalysisGenerateError, validateAnalysis } from "./analyze.js";
+import { analyzeRequirement, AnalysisGenerateError, validateAnalysis, validateConditionsBatch } from "./analyze.js";
 import type { AiRequestConfig } from "../testcase/types.js";
 
 const mockStream = vi.mocked(streamChatCompletionParts);
@@ -32,7 +32,7 @@ function scriptResponses(...responses: string[]) {
 
 const SOURCE = "用户登录：连续输错密码后账号锁定。登录失败时给出友好提示。支持多端登录。";
 
-const VALID_ANALYSIS = JSON.stringify({
+const PASS_ONE = JSON.stringify({
   title: "登录需求分析",
   requirements: [
     { id: "r1", parentId: null, level: 0, text: "账号锁定" },
@@ -51,9 +51,13 @@ const VALID_ANALYSIS = JSON.stringify({
   criteria: [
     { reqId: "r1", originalText: "连续输错密码后账号锁定", rewrittenText: "10 分钟内连续 5 次错误 → 锁定 30 分钟" },
   ],
+});
+
+const BATCH_CONDITIONS = JSON.stringify({
   conditions: [
     { reqId: "r1", text: "5 次错误触发锁定", kind: "normal" },
     { reqId: "r1", text: "第 4 次仍可登录", kind: "boundary" },
+    { reqId: "r2", text: "错误条 1s 内展示", kind: "normal" },
   ],
 });
 
@@ -61,76 +65,123 @@ beforeEach(() => {
   mockStream.mockReset();
 });
 
-describe("validateAnalysis 校验", () => {
+describe("validateAnalysis（阶段一）", () => {
   it("合法输出通过并补默认状态", () => {
-    const result = validateAnalysis(JSON.parse(VALID_ANALYSIS), SOURCE);
+    const result = validateAnalysis(JSON.parse(PASS_ONE), SOURCE);
     expect(result.errors).toBeUndefined();
     expect(result.analysis!.issues[0].status).toBe("open");
-    expect(result.analysis!.conditions[0].relay).toBe("none");
   });
 
-  it("结构错误逐个报出：空条目/非法枚举/悬空引用", () => {
+  it("结构错误逐个报出：空条目/非法枚举", () => {
     const result = validateAnalysis(
-      {
-        title: "x",
-        requirements: [],
-        issues: [{ type: "weird", severity: "high", quote: "q", description: "d" }],
-        conditions: [{ reqId: "ghost", text: "x", kind: "normal" }],
-      },
+      { title: "x", requirements: [], issues: [{ type: "weird", severity: "high", quote: "q", description: "d" }] },
       SOURCE,
     );
     expect(result.analysis).toBeUndefined();
     expect(result.errors!.join()).toContain("requirements 为空");
     expect(result.errors!.join()).toContain("type 非法");
-    expect(result.errors!.join()).toContain("不存在的需求条目: ghost");
   });
 
   it("数据诚实：quote 无法在原文溯源则拒绝", () => {
-    const parsed = JSON.parse(VALID_ANALYSIS);
+    const parsed = JSON.parse(PASS_ONE);
     parsed.issues[0].quote = "原文里根本没有这句话";
     const result = validateAnalysis(parsed, SOURCE);
     expect(result.errors!.join()).toContain("无法在需求原文中找到");
   });
 
   it("quote 溯源容忍空白与中文引号差异", () => {
-    const parsed = JSON.parse(VALID_ANALYSIS);
+    const parsed = JSON.parse(PASS_ONE);
     parsed.issues[0].quote = "「连续输错密码后 账号锁定」";
     const result = validateAnalysis(parsed, SOURCE);
     expect(result.errors).toBeUndefined();
   });
 });
 
-describe("analyzeRequirement 管线", () => {
-  it("一次通过：分析→校验→落库，done 事件带记录", async () => {
-    scriptResponses(VALID_ANALYSIS);
+describe("validateConditionsBatch（阶段二·覆盖导向）", () => {
+  const batch = [
+    { id: "r1", text: "账号锁定" },
+    { id: "r2", text: "失败提示" },
+  ];
+
+  it("合法批次通过", () => {
+    const result = validateConditionsBatch(JSON.parse(BATCH_CONDITIONS), batch);
+    expect(result.errors).toBeUndefined();
+    expect(result.conditions).toHaveLength(3);
+  });
+
+  it("批次外引用拒绝", () => {
+    const result = validateConditionsBatch({ conditions: [{ reqId: "r9", text: "x", kind: "normal" }] }, batch);
+    expect(result.errors!.join()).toContain("批次外");
+  });
+
+  it("覆盖缺失拒绝：有条目没有任何条件（#31 核心语义）", () => {
+    const result = validateConditionsBatch({ conditions: [{ reqId: "r1", text: "x", kind: "normal" }] }, batch);
+    expect(result.errors!.join()).toContain("未覆盖任何测试条件: r2");
+  });
+});
+
+describe("analyzeRequirement 两阶段管线", () => {
+  it("小文档：阶段一 + 单批条件 → 落库，done 带记录", async () => {
+    scriptResponses(PASS_ONE, BATCH_CONDITIONS);
     const repo = new MemoryAnalysisRepository();
     const events: string[] = [];
     const record = await analyzeRequirement(aiConfig, repo, { sourceText: SOURCE }, (e) => events.push(e.type));
 
-    expect(record.title).toBe("登录需求分析");
     expect(record.issues).toHaveLength(1);
-    expect(record.conditions).toHaveLength(2);
-    expect(events).toEqual(["progress", "progress", "done"]);
+    expect(record.conditions).toHaveLength(3);
+    expect(events).toEqual(["progress", "progress", "progress", "done"]);
     expect(await repo.countRecords()).toBe(1);
   });
 
-  it("校验失败修复重试一次后成功", async () => {
-    scriptResponses("这不是 JSON", VALID_ANALYSIS);
+  it("阶段一不合格修复重试后成功", async () => {
+    scriptResponses("这不是 JSON", PASS_ONE, BATCH_CONDITIONS);
     const repo = new MemoryAnalysisRepository();
     const record = await analyzeRequirement(aiConfig, repo, { sourceText: SOURCE });
     expect(record.issues).toHaveLength(1);
-    expect(mockStream).toHaveBeenCalledTimes(2);
+    expect(mockStream).toHaveBeenCalledTimes(3);
   });
 
-  it("两次都不合格抛 AnalysisGenerateError，不落库", async () => {
+  it("阶段一两次都不合格抛错，不落库", async () => {
     scriptResponses("bad json", JSON.stringify({ requirements: [] }));
     const repo = new MemoryAnalysisRepository();
     await expect(analyzeRequirement(aiConfig, repo, { sourceText: SOURCE })).rejects.toThrow(AnalysisGenerateError);
     expect(await repo.countRecords()).toBe(0);
   });
 
+  it("条件批次两次不合格不阻断：该批次条目落入未覆盖，记录仍创建", async () => {
+    scriptResponses(PASS_ONE, "bad json", JSON.stringify({ conditions: [{ reqId: "r9", text: "x", kind: "normal" }] }));
+    const repo = new MemoryAnalysisRepository();
+    const record = await analyzeRequirement(aiConfig, repo, { sourceText: SOURCE });
+    expect(record.conditions).toHaveLength(0);
+    expect(await repo.countRecords()).toBe(1);
+  });
+
+  it("需求条目 > 10 时分多批调用", async () => {
+    const many = JSON.stringify({
+      title: "大文档",
+      requirements: Array.from({ length: 12 }, (_, i) => ({ id: `r${i + 1}`, parentId: null, level: 0, text: `条目${i + 1}` })),
+      issues: [],
+      criteria: [],
+    });
+    const batch1 = JSON.stringify({
+      conditions: Array.from({ length: 10 }, (_, i) => ({ reqId: `r${i + 1}`, text: `条件${i + 1}`, kind: "normal" })),
+    });
+    const batch2 = JSON.stringify({
+      conditions: [
+        { reqId: "r11", text: "条件11", kind: "normal" },
+        { reqId: "r12", text: "条件12", kind: "boundary" },
+      ],
+    });
+    scriptResponses(many, batch1, batch2);
+    const repo = new MemoryAnalysisRepository();
+    const record = await analyzeRequirement(aiConfig, repo, { sourceText: SOURCE });
+    expect(record.conditions).toHaveLength(12);
+    // 阶段一 1 次 + 条件 2 批
+    expect(mockStream).toHaveBeenCalledTimes(3);
+  });
+
   it("titleHint 覆盖 AI 标题", async () => {
-    scriptResponses(VALID_ANALYSIS);
+    scriptResponses(PASS_ONE, BATCH_CONDITIONS);
     const repo = new MemoryAnalysisRepository();
     const record = await analyzeRequirement(aiConfig, repo, { sourceText: SOURCE, titleHint: "  自定义标题  " });
     expect(record.title).toBe("自定义标题");

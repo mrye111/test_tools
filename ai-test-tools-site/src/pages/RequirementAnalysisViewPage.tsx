@@ -193,6 +193,23 @@ export function RequirementAnalysisViewPage() {
     return groups
   }, [record])
 
+  /** 未覆盖需求：没有任何条件的条目（#31 覆盖导向——未覆盖显式陈述，不静默缺席） */
+  const uncovered = useMemo(() => {
+    if (!record) return []
+    const coveredReqIds = new Set(record.conditions.map((c) => c.reqId).filter(Boolean))
+    return record.requirements
+      .filter((req) => !coveredReqIds.has(req.id))
+      .map((req) => {
+        const untestableIssue = record.issues.find((i) => i.reqId === req.id && i.type === 'untestable')
+        return {
+          req,
+          reason: untestableIssue
+            ? `不可测：${untestableIssue.description}`
+            : '未涉及（AI 判断为低风险或无独立验证点）',
+        }
+      })
+  }, [record])
+
   if (loading) {
     return (
       <div className="page-shell flex min-h-[60vh] flex-col items-center justify-center gap-3 text-muted">
@@ -244,6 +261,7 @@ export function RequirementAnalysisViewPage() {
           <a href="#ra2-issues">问题日志 <span className="ra2-count">{record.issues.length}</span></a>
           <a href="#ra2-criteria">验收准则 <span className="ra2-count">{record.criteria.length}</span></a>
           <a href="#ra2-conditions">测试条件 <span className="ra2-count">{record.conditions.length}</span></a>
+          {uncovered.length > 0 && <a href="#ra2-uncovered">未覆盖 <span className="ra2-count">{uncovered.length}</span></a>}
           <a href="#ra2-rtm">追溯矩阵</a>
         </nav>
 
@@ -352,7 +370,7 @@ export function RequirementAnalysisViewPage() {
               <span>已选 <b>{[...checked].filter((cid) => record.conditions.find((c) => c.id === cid)?.relay === 'none').length}</b> / {relayableCount} 条可接力测试条件</span>
               <button
                 type="button"
-                className="ra2-relay-btn"
+                className="ra2-relay-btn ai-glass-action"
                 disabled={relaying || checked.size === 0}
                 onClick={() => void handleRelay()}
               >
@@ -361,6 +379,21 @@ export function RequirementAnalysisViewPage() {
               </button>
             </div>
           </section>
+
+          {uncovered.length > 0 && (
+            <section className="ra2-zone" id="ra2-uncovered">
+              <h2>🕳️ 未覆盖需求</h2>
+              <p className="ra2-zone-hint">以下条目本轮未产出测试条件。未覆盖是显式陈述，不等于没有风险——请人工确认是否接受。</p>
+              <ul className="ra2-uncovered-list">
+                {uncovered.map(({ req, reason }) => (
+                  <li key={req.id} className="ra2-uncovered-item">
+                    <span className="ra2-uncovered-text">{req.text}</span>
+                    <span className="ra2-uncovered-reason">{reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           <section className="ra2-zone" id="ra2-rtm">
             <h2>🔗 追溯矩阵（RTM）</h2>

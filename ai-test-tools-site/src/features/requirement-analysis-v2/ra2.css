@@ -251,9 +251,6 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #3b82f6;
-  color: #fff;
-  border: none;
   padding: 7px 18px;
   border-radius: 10px;
   cursor: pointer;
@@ -290,4 +287,30 @@
   background: rgba(100, 116, 139, 0.08);
   color: var(--color-muted, #64748b);
   font-weight: 500;
+}
+
+/* 未覆盖需求（#31 覆盖导向） */
+.ra2-uncovered-list {
+  list-style: none;
+  padding: 0;
+}
+
+.ra2-uncovered-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-left: 3px solid rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.05);
+  border-radius: 0 8px 8px 0;
+  margin-bottom: 8px;
+}
+
+.ra2-uncovered-text {
+  font-size: 13px;
+}
+
+.ra2-uncovered-reason {
+  font-size: 11px;
+  color: var(--color-muted, #64748b);
 }
