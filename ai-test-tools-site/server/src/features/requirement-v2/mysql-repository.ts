@@ -197,7 +197,12 @@ export class MysqlAnalysisRepository implements AnalysisRepository {
     const [reqRows] = await this.pool.execute<ReqRow[]>("SELECT * FROM ra2_requirements WHERE record_id = ? ORDER BY sort ASC", [id]);
     const [issueRows] = await this.pool.execute<IssueRow[]>("SELECT * FROM ra2_issues WHERE record_id = ? ORDER BY created_at ASC", [id]);
     const [criterionRows] = await this.pool.execute<CriterionRow[]>("SELECT * FROM ra2_criteria WHERE record_id = ? ORDER BY created_at ASC", [id]);
-    const [conditionRows] = await this.pool.execute<ConditionRow[]>("SELECT * FROM ra2_conditions WHERE record_id = ? ORDER BY sort ASC", [id]);
+    // JOIN 需求表排序：需求 sort 为第一键（结构保证，不靠赋值约定），条件 sort 作组内次序；悬空引用排尾
+    const [conditionRows] = await this.pool.execute<ConditionRow[]>(
+      `SELECT c.* FROM ra2_conditions c LEFT JOIN ra2_requirements r ON c.req_id = r.id
+       WHERE c.record_id = ? ORDER BY r.sort IS NULL ASC, r.sort ASC, c.sort ASC`,
+      [id],
+    );
     return {
       ...record,
       requirements: reqRows.map(toReq),

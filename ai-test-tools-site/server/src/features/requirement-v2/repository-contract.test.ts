@@ -160,6 +160,18 @@ export function runAnalysisContractTests(name: string, factory: () => AnalysisRe
       expect(second.conditions[0].criterionId).toBe(second.criteria[0].id);
     });
 
+    it("条件顺序由需求 sort 决定：乱序输入重排（结构保证，不靠生成顺序）", async () => {
+      // 输入条件的引用顺序与需求 sort 相反——返回必须按需求 sort 重排
+      const input = makeInput();
+      input.conditions = [
+        { id: "c-a", reqId: "req-r3", criterionId: null, text: "r3 的条件", kind: "normal", relay: "none", testsetId: null, sort: 0 },
+        { id: "c-b", reqId: "req-root", criterionId: null, text: "root 的条件", kind: "normal", relay: "none", testsetId: null, sort: 1 },
+      ];
+      const created = await repo.createRecord(input);
+      const texts = created.conditions.map((c) => c.text);
+      expect(texts).toEqual(["root 的条件", "r3 的条件"]);
+    });
+
     it("上限 200 条（内存实现抽样验证边界语义）", async () => {
       // 只验证语义存在，不真建 200 条
       await expect(repo.createRecord(makeInput())).resolves.toBeTruthy();

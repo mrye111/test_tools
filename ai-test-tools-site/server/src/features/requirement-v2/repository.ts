@@ -59,8 +59,8 @@ export class MemoryAnalysisRepository implements AnalysisRepository {
       requirements: this.requirements.get(id) ?? [],
       issues: this.childrenOf(this.issues, id),
       criteria: this.childrenOf(this.criteria, id),
-      // 条件按 sort 排序（创建时按生成顺序赋值），保证分组与需求顺序一致
-      conditions: this.childrenOf(this.conditions, id).sort((a, b) => a.sort - b.sort),
+      // 条件按（需求 sort, 条件 sort）排序：与 MySQL JOIN 排序同语义；reqId 悬空排尾
+      conditions: this.sortedConditions(id),
     });
   }
 
@@ -240,6 +240,15 @@ export class MemoryAnalysisRepository implements AnalysisRepository {
       coverage: rows.length === 0 ? 0 : Math.round((covered / rows.length) * 100),
       rows,
     };
+  }
+
+  private sortedConditions(recordId: string): TestCondition[] {
+    const reqSortById = new Map((this.requirements.get(recordId) ?? []).map((r) => [r.id, r.sort]));
+    return this.childrenOf(this.conditions, recordId).sort((a, b) => {
+      const reqA = a.reqId ? (reqSortById.get(a.reqId) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+      const reqB = b.reqId ? (reqSortById.get(b.reqId) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+      return reqA !== reqB ? reqA - reqB : a.sort - b.sort;
+    });
   }
 
   private childrenOf<T extends { recordId: string; createdAt: Date }>(map: Map<string, T>, recordId: string): T[] {

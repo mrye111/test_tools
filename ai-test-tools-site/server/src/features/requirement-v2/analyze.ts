@@ -46,6 +46,8 @@ export interface AnalyzeInput {
 const ISSUE_TYPES: IssueType[] = ["ambiguity", "missing", "conflict", "untestable"];
 const SEVERITIES: IssueSeverity[] = ["high", "medium", "low"];
 const CONDITION_KINDS: ConditionKind[] = ["normal", "boundary", "exception"];
+/** 每条需求条件数上限：广度优先于深度（先保覆盖率，再谈条件丰富度）；超出确定性截断前 N 条 */
+export const MAX_CONDITIONS_PER_REQ = 4;
 
 interface ValidatedPassOne {
   title: string;
@@ -178,6 +180,7 @@ export function validateConditionsBatch(
 
   const condRaw = Array.isArray(raw.conditions) ? raw.conditions : [];
   const conditions: CreateAnalysisInput["conditions"] = [];
+  const perReqCount = new Map<string, number>();
   condRaw.forEach((item, index) => {
     if (!isObject(item) || typeof item.text !== "string" || !item.text.trim()) {
       errors.push(`第 ${index + 1} 个条件缺少 text`);
@@ -192,6 +195,10 @@ export function validateConditionsBatch(
       return;
     }
     covered.add(item.reqId);
+    // per-req 上限：确定性截断（保留前 N 条），不参与错误判定
+    const count = perReqCount.get(item.reqId) ?? 0;
+    perReqCount.set(item.reqId, count + 1);
+    if (count >= MAX_CONDITIONS_PER_REQ) return;
     conditions.push({
       id: randomUUID(),
       reqId: item.reqId,

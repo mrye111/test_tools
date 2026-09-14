@@ -114,6 +114,23 @@ describe("validateConditionsBatch（阶段二·覆盖导向）", () => {
     expect(result.errors!.join()).toContain("批次外");
   });
 
+  it("per-req 上限：单条目 5 条条件确定性截断为前 4 条（广度优先）", () => {
+    const result = validateConditionsBatch(
+      {
+        conditions: [
+          ...Array.from({ length: 5 }, (_, i) => ({ reqId: "r1", text: `条件${i + 1}`, kind: "normal" })),
+          { reqId: "r2", text: "r2 的条件", kind: "normal" },
+        ],
+      },
+      batch,
+    );
+    expect(result.errors).toBeUndefined();
+    expect(result.conditions).toHaveLength(5);
+    expect(result.conditions!.filter((c) => c.reqId === "r1")).toHaveLength(4);
+    expect(result.conditions![0].text).toBe("条件1");
+    expect(result.conditions![3].text).toBe("条件4");
+  });
+
   it("覆盖缺失拒绝：有条目没有任何条件（#31 核心语义）", () => {
     const result = validateConditionsBatch({ conditions: [{ reqId: "r1", text: "x", kind: "normal" }] }, batch);
     expect(result.errors!.join()).toContain("未覆盖任何测试条件: r2");
