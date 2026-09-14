@@ -4,7 +4,7 @@ import type { JsonObject } from "../testcase/types.js";
 
 /** 输出规模上限（与 analyze.ts 校验一致） */
 export const ANALYSIS_LIMITS = {
-  MAX_REQUIREMENTS: 60,
+  MAX_REQUIREMENTS: 120,
   MAX_ISSUES: 30,
   MAX_CRITERIA: 30,
   MAX_CONDITIONS: 300,
@@ -40,7 +40,7 @@ const SYSTEM_PROMPT = `你是一名资深测试分析师（ISTQB Test Analyst）
 
 ## 分析要求
 
-1. **需求条目**：把需求分解为原子条目（一条只说一件事），可用 parentId/level 表达层级。条目 id 用 r1、r2… 依次编号。若原文带编号（如 REQ-001），沿用原编号并确保唯一。
+1. **需求条目**：把需求分解为原子条目（一条只说一件事），可用 parentId/level 表达层级。**若原文已带编号（如 REQ-001），沿用原编号作条目粒度、不再拆细**；无编号时把复合句拆成原子条目，id 用 r1、r2… 依次编号并确保唯一。
 2. **问题日志**（核心价值）：找出歧义（模糊措辞）、缺失（只写正常路径、缺错误处理/异常分支）、冲突（条目间矛盾）、不可测（无客观判定标准）四类问题。quote 必须是原文逐字引用，严禁编造。没有问题的需求不要硬凑。
 3. **验收准则**：对模糊但重要的条目，改写为可度量形式（如「响应快」→「P95 响应时间 < 2s」）。originalText 引用原文，rewrittenText 给出可观察、可度量的判定标准。仅对需要可测化的条目产出，不必覆盖全部条目。
 4. **规模上限**：需求条目 ≤ ${ANALYSIS_LIMITS.MAX_REQUIREMENTS}，问题 ≤ ${ANALYSIS_LIMITS.MAX_ISSUES}，准则 ≤ ${ANALYSIS_LIMITS.MAX_CRITERIA}。超出时优先保留高严重度/高风险项。
