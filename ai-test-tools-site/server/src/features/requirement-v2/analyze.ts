@@ -200,6 +200,7 @@ export function validateConditionsBatch(
       kind: item.kind as ConditionKind,
       relay: "none",
       testsetId: null,
+      sort: index,
     });
   });
 
@@ -298,12 +299,16 @@ export async function analyzeRequirement(
     });
     const conditions = await runConditionsBatch(config, batch, input.sourceText);
     allConditions.push(...conditions);
-    if (allConditions.length > ANALYSIS_LIMITS.MAX_CONDITIONS) {
-      logger.warn({ total: allConditions.length }, "测试条件总数超上限，超出部分裁剪");
-      allConditions.length = ANALYSIS_LIMITS.MAX_CONDITIONS;
-      break;
-    }
   }
+  // 安全阀：硬顶 300（#31 后覆盖导向，不再提前 break 砍掉后续章节；超限截断并记录）
+  if (allConditions.length > ANALYSIS_LIMITS.MAX_CONDITIONS) {
+    logger.warn({ total: allConditions.length, cap: ANALYSIS_LIMITS.MAX_CONDITIONS }, "测试条件总数超安全阀，超出部分截断");
+    allConditions.length = ANALYSIS_LIMITS.MAX_CONDITIONS;
+  }
+  // 记录内排序：按生成顺序赋值 sort，保证详情页分组与需求顺序一致
+  allConditions.forEach((condition, index) => {
+    condition.sort = index;
+  });
 
   onEvent({ type: "progress", stage: "save", message: "校验通过，正在保存分析记录…" });
   const record = await repo.createRecord({

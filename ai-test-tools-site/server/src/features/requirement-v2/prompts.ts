@@ -7,7 +7,7 @@ export const ANALYSIS_LIMITS = {
   MAX_REQUIREMENTS: 60,
   MAX_ISSUES: 30,
   MAX_CRITERIA: 30,
-  MAX_CONDITIONS: 150,
+  MAX_CONDITIONS: 300,
   /** 条件分批：每批需求条目数 */
   CONDITIONS_BATCH_SIZE: 10,
 } as const;

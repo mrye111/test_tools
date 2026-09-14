@@ -59,7 +59,8 @@ export class MemoryAnalysisRepository implements AnalysisRepository {
       requirements: this.requirements.get(id) ?? [],
       issues: this.childrenOf(this.issues, id),
       criteria: this.childrenOf(this.criteria, id),
-      conditions: this.childrenOf(this.conditions, id),
+      // 条件按 sort 排序（创建时按生成顺序赋值），保证分组与需求顺序一致
+      conditions: this.childrenOf(this.conditions, id).sort((a, b) => a.sort - b.sort),
     });
   }
 

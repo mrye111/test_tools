@@ -37,8 +37,8 @@ export function makeInput(title = "登录需求分析"): CreateAnalysisInput {
       },
     ],
     conditions: [
-      { id: "cond-1", reqId: "req-r3", criterionId: "cri-1", text: "5 次错误触发锁定", kind: "normal", relay: "none", testsetId: null },
-      { id: "cond-2", reqId: "req-r3", criterionId: "cri-1", text: "第 4 次仍可登录", kind: "boundary", relay: "none", testsetId: null },
+      { id: "cond-1", reqId: "req-r3", criterionId: "cri-1", text: "5 次错误触发锁定", kind: "normal", relay: "none", testsetId: null, sort: 0 },
+      { id: "cond-2", reqId: "req-r3", criterionId: "cri-1", text: "第 4 次仍可登录", kind: "boundary", relay: "none", testsetId: null, sort: 1 },
     ],
   };
 }

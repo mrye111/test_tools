@@ -125,7 +125,7 @@ export function registerRequirementV2Routes(app: Express, repo: AnalysisReposito
           rewrittenText: asString(c.rewrittenText) ?? "",
           status: "pending" as const,
         })),
-        conditions: conditions.map((c: Record<string, unknown>) => ({
+        conditions: conditions.map((c: Record<string, unknown>, index: number) => ({
           id: asString(c.id) ?? randomUUID(),
           reqId: asString(c.reqId),
           criterionId: asString(c.criterionId),
@@ -133,6 +133,7 @@ export function registerRequirementV2Routes(app: Express, repo: AnalysisReposito
           kind: isEnum(c.kind, CONDITION_KINDS) ? c.kind : "normal",
           relay: "none" as const,
           testsetId: null,
+          sort: index,
         })),
       });
       res.status(201).json({ success: true, record });

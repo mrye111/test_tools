@@ -68,6 +68,8 @@ export interface TestCondition {
   kind: ConditionKind;
   relay: RelayState;
   testsetId: string | null;
+  /** 记录内排序（创建时按输入顺序赋值，保证分组与需求顺序一致） */
+  sort: number;
   createdAt: Date;
   updatedAt: Date;
 }

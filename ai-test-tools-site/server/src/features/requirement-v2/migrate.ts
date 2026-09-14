@@ -58,6 +58,7 @@ const RA2_SCHEMA_STATEMENTS = [
     kind ENUM('normal','boundary','exception') NOT NULL,
     relay ENUM('none','relayed','generated') NOT NULL DEFAULT 'none',
     testset_id VARCHAR(36),
+    sort INT NOT NULL DEFAULT 0,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     CONSTRAINT fk_ra2cond_record FOREIGN KEY (record_id) REFERENCES ra2_records(id) ON DELETE CASCADE
@@ -76,6 +77,12 @@ async function initRa2Schema(pool: Pool): Promise<void> {
   try {
     for (const statement of RA2_SCHEMA_STATEMENTS) {
       await connection.query(statement);
+    }
+    // 存量表补列（幂等）：sort 列 2026-09-14 引入，老库 ALTER 一次；重复列错误吞掉
+    try {
+      await connection.query("ALTER TABLE ra2_conditions ADD COLUMN sort INT NOT NULL DEFAULT 0");
+    } catch {
+      // 列已存在
     }
   } finally {
     connection.release();

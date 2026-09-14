@@ -89,6 +89,7 @@ interface ConditionRow extends RowDataPacket {
   kind: string;
   relay: string;
   testset_id: string | null;
+  sort: number;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -147,6 +148,7 @@ function toCondition(row: ConditionRow): TestCondition {
     kind: row.kind as ConditionKind,
     relay: row.relay as RelayState,
     testsetId: row.testset_id,
+    sort: row.sort,
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
   };
@@ -195,7 +197,7 @@ export class MysqlAnalysisRepository implements AnalysisRepository {
     const [reqRows] = await this.pool.execute<ReqRow[]>("SELECT * FROM ra2_requirements WHERE record_id = ? ORDER BY sort ASC", [id]);
     const [issueRows] = await this.pool.execute<IssueRow[]>("SELECT * FROM ra2_issues WHERE record_id = ? ORDER BY created_at ASC", [id]);
     const [criterionRows] = await this.pool.execute<CriterionRow[]>("SELECT * FROM ra2_criteria WHERE record_id = ? ORDER BY created_at ASC", [id]);
-    const [conditionRows] = await this.pool.execute<ConditionRow[]>("SELECT * FROM ra2_conditions WHERE record_id = ? ORDER BY created_at ASC", [id]);
+    const [conditionRows] = await this.pool.execute<ConditionRow[]>("SELECT * FROM ra2_conditions WHERE record_id = ? ORDER BY sort ASC", [id]);
     return {
       ...record,
       requirements: reqRows.map(toReq),
@@ -232,9 +234,10 @@ export class MysqlAnalysisRepository implements AnalysisRepository {
       id: newId("rai_"),
       reqId: issue.reqId ? (reqIdMap.get(issue.reqId) ?? issue.reqId) : issue.reqId,
     }));
-    const conditions = input.conditions.map((condition) => ({
+    const conditions = input.conditions.map((condition, index) => ({
       ...condition,
       id: newId("rcd_"),
+      sort: condition.sort ?? index,
       reqId: condition.reqId ? (reqIdMap.get(condition.reqId) ?? condition.reqId) : condition.reqId,
       criterionId: condition.criterionId ? (criterionIdMap.get(condition.criterionId) ?? condition.criterionId) : condition.criterionId,
     }));
@@ -263,8 +266,8 @@ export class MysqlAnalysisRepository implements AnalysisRepository {
     }
     for (const condition of conditions) {
       await this.pool.execute(
-        "INSERT INTO ra2_conditions (id, record_id, req_id, criterion_id, text, kind, relay, testset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [condition.id, id, condition.reqId, condition.criterionId, condition.text, condition.kind, condition.relay, condition.testsetId, time, time],
+        "INSERT INTO ra2_conditions (id, record_id, req_id, criterion_id, text, kind, relay, testset_id, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [condition.id, id, condition.reqId, condition.criterionId, condition.text, condition.kind, condition.relay, condition.testsetId, condition.sort, time, time],
       );
     }
     return (await this.getRecord(id))!;
