@@ -115,6 +115,7 @@ export function registerRequirementV2Routes(app: Express, repo: AnalysisReposito
           severity: isEnum(i.severity, SEVERITIES) ? i.severity : "medium",
           quote: asString(i.quote) ?? "",
           description: asString(i.description) ?? "",
+          example: asString(i.example) ?? "",
           suggestedQuestion: asString(i.suggestedQuestion) ?? "",
           status: "open" as const,
         })),

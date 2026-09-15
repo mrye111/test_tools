@@ -63,6 +63,7 @@ interface IssueRow extends RowDataPacket {
   severity: string;
   quote: string;
   description: string;
+  example: string;
   suggested_question: string;
   status: string;
   created_at: Date | string;
@@ -118,6 +119,7 @@ function toIssue(row: IssueRow): AnalysisIssue {
     severity: row.severity as IssueSeverity,
     quote: row.quote,
     description: row.description,
+    example: row.example ?? "",
     suggestedQuestion: row.suggested_question,
     status: row.status as IssueStatus,
     createdAt: toDate(row.created_at),
@@ -259,8 +261,8 @@ export class MysqlAnalysisRepository implements AnalysisRepository {
     }
     for (const issue of issues) {
       await this.pool.execute(
-        "INSERT INTO ra2_issues (id, record_id, req_id, type, severity, quote, description, suggested_question, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [issue.id, id, issue.reqId, issue.type, issue.severity, issue.quote, issue.description, issue.suggestedQuestion, issue.status, time, time],
+        "INSERT INTO ra2_issues (id, record_id, req_id, type, severity, quote, description, example, suggested_question, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [issue.id, id, issue.reqId, issue.type, issue.severity, issue.quote, issue.description, issue.example ?? "", issue.suggestedQuestion, issue.status, time, time],
       );
     }
     for (const criterion of criteria) {
@@ -336,8 +338,8 @@ export class MysqlAnalysisRepository implements AnalysisRepository {
     const id = newId("rai_");
     const time = now();
     await this.pool.execute(
-      "INSERT INTO ra2_issues (id, record_id, req_id, type, severity, quote, description, suggested_question, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)",
-      [id, recordId, input.reqId ?? null, input.type, input.severity, input.quote, input.description, input.suggestedQuestion ?? "", time, time],
+      "INSERT INTO ra2_issues (id, record_id, req_id, type, severity, quote, description, example, suggested_question, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)",
+      [id, recordId, input.reqId ?? null, input.type, input.severity, input.quote, input.description, input.example ?? "", input.suggestedQuestion ?? "", time, time],
     );
     await this.pool.execute("UPDATE ra2_records SET updated_at = ? WHERE id = ?", [time, recordId]);
     const [rows] = await this.pool.execute<IssueRow[]>("SELECT * FROM ra2_issues WHERE id = ?", [id]);

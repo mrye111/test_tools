@@ -48,6 +48,8 @@ export interface AnalysisIssue {
   severity: IssueSeverity
   quote: string
   description: string
+  /** 简单易懂的具体例子（≤60字；空串=无，兼容旧记录） */
+  example: string
   suggestedQuestion: string
   status: IssueStatus
 }

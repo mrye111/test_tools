@@ -112,6 +112,7 @@ export class MemoryAnalysisRepository implements AnalysisRepository {
       const mappedId = newId("rai_");
       this.issues.set(mappedId, {
         ...issue,
+        example: issue.example ?? "",
         id: mappedId,
         reqId: issue.reqId ? (reqIdMap.get(issue.reqId) ?? issue.reqId) : issue.reqId,
         recordId: record.id,
@@ -187,6 +188,7 @@ export class MemoryAnalysisRepository implements AnalysisRepository {
       severity: input.severity,
       quote: input.quote,
       description: input.description,
+      example: input.example ?? "",
       suggestedQuestion: input.suggestedQuestion ?? "",
       status: "open",
       createdAt: time,

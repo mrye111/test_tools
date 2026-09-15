@@ -42,6 +42,8 @@ export interface AnalysisIssue {
   severity: IssueSeverity;
   quote: string;
   description: string;
+  /** 简单易懂的具体例子（≤60字，AI 分析时产出；空串表示无） */
+  example: string;
   suggestedQuestion: string;
   status: IssueStatus;
   createdAt: Date;
@@ -106,6 +108,7 @@ export interface CreateIssueInput {
   severity: IssueSeverity;
   quote: string;
   description: string;
+  example?: string;
   suggestedQuestion?: string;
 }
 

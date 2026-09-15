@@ -23,6 +23,7 @@ export function makeInput(title = "登录需求分析"): CreateAnalysisInput {
         severity: "high",
         quote: "「连续输错密码后账号锁定」",
         description: "未说明锁定阈值与时长",
+        example: "第 5 次输错和第 6 次输错结果一样吗？文档没说",
         suggestedQuestion: "错误几次触发锁定？",
         status: "open",
       },

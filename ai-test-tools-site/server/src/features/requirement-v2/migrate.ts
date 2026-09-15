@@ -32,6 +32,7 @@ const RA2_SCHEMA_STATEMENTS = [
     severity ENUM('high','medium','low') NOT NULL,
     quote TEXT NOT NULL,
     description TEXT NOT NULL,
+    example TEXT NOT NULL,
     suggested_question TEXT NOT NULL,
     status ENUM('open','resolved','accepted') NOT NULL DEFAULT 'open',
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -81,6 +82,12 @@ async function initRa2Schema(pool: Pool): Promise<void> {
     // 存量表补列（幂等）：sort 列 2026-09-14 引入，老库 ALTER 一次；重复列错误吞掉
     try {
       await connection.query("ALTER TABLE ra2_conditions ADD COLUMN sort INT NOT NULL DEFAULT 0");
+    } catch {
+      // 列已存在
+    }
+    // example 列（问题示例）2026-09-14 引入
+    try {
+      await connection.query("ALTER TABLE ra2_issues ADD COLUMN example TEXT NOT NULL");
     } catch {
       // 列已存在
     }

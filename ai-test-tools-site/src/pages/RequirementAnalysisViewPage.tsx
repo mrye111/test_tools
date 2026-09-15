@@ -65,6 +65,7 @@ export function RequirementAnalysisViewPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [relaying, setRelaying] = useState(false)
+  const [activeTab, setActiveTab] = useState<'issues' | 'criteria' | 'conditions' | 'uncovered' | 'rtm'>('issues')
   const [editingCriterionId, setEditingCriterionId] = useState<string | null>(null)
   const [criterionDraft, setCriterionDraft] = useState('')
 
@@ -256,17 +257,29 @@ export function RequirementAnalysisViewPage() {
         </div>
       </div>
 
-      <div className="ra2-view-layout">
-        <nav className="ra2-zone-nav" aria-label="分区导航">
-          <a href="#ra2-issues">问题日志 <span className="ra2-count">{record.issues.length}</span></a>
-          <a href="#ra2-criteria">验收准则 <span className="ra2-count">{record.criteria.length}</span></a>
-          <a href="#ra2-conditions">测试条件 <span className="ra2-count">{record.conditions.length}</span></a>
-          {uncovered.length > 0 && <a href="#ra2-uncovered">未覆盖 <span className="ra2-count">{uncovered.length}</span></a>}
-          <a href="#ra2-rtm">追溯矩阵</a>
+      <div className="ra2-view-tabs">
+        <nav className="ra2-tabs" role="tablist" aria-label="分析结果分区">
+          <button type="button" role="tab" aria-selected={activeTab === 'issues'} className={activeTab === 'issues' ? 'is-active' : ''} onClick={() => setActiveTab('issues')}>
+            问题日志 <span className="ra2-count">{record.issues.length}</span>
+          </button>
+          <button type="button" role="tab" aria-selected={activeTab === 'criteria'} className={activeTab === 'criteria' ? 'is-active' : ''} onClick={() => setActiveTab('criteria')}>
+            验收准则 <span className="ra2-count">{record.criteria.length}</span>
+          </button>
+          <button type="button" role="tab" aria-selected={activeTab === 'conditions'} className={activeTab === 'conditions' ? 'is-active' : ''} onClick={() => setActiveTab('conditions')}>
+            测试条件 <span className="ra2-count">{record.conditions.length}</span>
+          </button>
+          {uncovered.length > 0 && (
+            <button type="button" role="tab" aria-selected={activeTab === 'uncovered'} className={activeTab === 'uncovered' ? 'is-active' : ''} onClick={() => setActiveTab('uncovered')}>
+              未覆盖 <span className="ra2-count">{uncovered.length}</span>
+            </button>
+          )}
+          <button type="button" role="tab" aria-selected={activeTab === 'rtm'} className={activeTab === 'rtm' ? 'is-active' : ''} onClick={() => setActiveTab('rtm')}>
+            追溯矩阵
+          </button>
         </nav>
 
         <main className="ra2-zones">
-          <section className="ra2-zone" id="ra2-issues">
+          {activeTab === 'issues' && <section className="ra2-zone" id="ra2-issues">
             <h2>⚠️ 问题日志</h2>
             <p className="ra2-zone-hint">AI 发现的歧义/缺失/冲突/不可测项。点状态可流转：待澄清 → 已澄清 → 已接受。</p>
             {record.issues.length === 0 && <p className="text-muted">未发现需求问题。</p>}
@@ -286,12 +299,13 @@ export function RequirementAnalysisViewPage() {
                 </div>
                 <blockquote className="ra2-issue-quote">{issue.quote}</blockquote>
                 <p className="ra2-issue-desc">{issue.description}</p>
+                {issue.example && <p className="ra2-issue-example">💡 比如：{issue.example}</p>}
                 {issue.suggestedQuestion && <p className="ra2-issue-ask">💬 建议澄清：{issue.suggestedQuestion}</p>}
               </article>
             ))}
-          </section>
+          </section>}
 
-          <section className="ra2-zone" id="ra2-criteria">
+          {activeTab === 'criteria' && <section className="ra2-zone" id="ra2-criteria">
             <h2>✅ 可测试化验收准则</h2>
             <p className="ra2-zone-hint">AI 将模糊需求改写为可度量形式。确认后生效；驳回会自动在问题日志生成「不可测」条目。</p>
             {record.criteria.length === 0 && <p className="text-muted">本轮分析未产生验收准则改写。</p>}
@@ -341,9 +355,9 @@ export function RequirementAnalysisViewPage() {
                 )}
               </article>
             ))}
-          </section>
+          </section>}
 
-          <section className="ra2-zone" id="ra2-conditions">
+          {activeTab === 'conditions' && <section className="ra2-zone" id="ra2-conditions">
             <h2>🧪 测试条件清单</h2>
             <p className="ra2-zone-hint">每条需求导出的待验证点。勾选后一键接力到用例生成工具。</p>
             {record.conditions.length === 0 && <p className="text-muted">本轮分析未产出测试条件。</p>}
@@ -378,9 +392,9 @@ export function RequirementAnalysisViewPage() {
                 接力到用例生成 →
               </button>
             </div>
-          </section>
+          </section>}
 
-          {uncovered.length > 0 && (
+          {activeTab === 'uncovered' && uncovered.length > 0 && (
             <section className="ra2-zone" id="ra2-uncovered">
               <h2>🕳️ 未覆盖需求</h2>
               <p className="ra2-zone-hint">以下条目本轮未产出测试条件。未覆盖是显式陈述，不等于没有风险——请人工确认是否接受。</p>
@@ -395,7 +409,7 @@ export function RequirementAnalysisViewPage() {
             </section>
           )}
 
-          <section className="ra2-zone" id="ra2-rtm">
+          {activeTab === 'rtm' && <section className="ra2-zone" id="ra2-rtm">
             <h2>🔗 追溯矩阵（RTM）</h2>
             <p className="ra2-zone-hint">需求 ↔ 测试条件 ↔ 用例的双向追溯。覆盖率为条件级。</p>
             {rtm && (
@@ -421,7 +435,7 @@ export function RequirementAnalysisViewPage() {
                 </table>
               </>
             )}
-          </section>
+          </section>}
         </main>
       </div>
     </div>

@@ -138,6 +138,7 @@ export function validateAnalysis(raw: unknown, sourceText: string): { analysis?:
       severity: item.severity as IssueSeverity,
       quote: item.quote.trim(),
       description: item.description.trim(),
+      example: typeof item.example === "string" ? item.example.trim().slice(0, 200) : "",
       suggestedQuestion: typeof item.suggestedQuestion === "string" ? item.suggestedQuestion.trim() : "",
       status: "open",
     });
