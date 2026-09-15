@@ -1,6 +1,7 @@
 import type { JsonObject } from "./jmx-serializer.js";
 import type { McpTool } from "./tool-registry.js";
 import { createTools } from "./tool-registry.js";
+import { createRequirementV2Tools } from "./features/requirement-v2/mcp-tools.js";
 import { err, type ToolResult } from "./tool-result.js";
 import { TestPlanService } from "./jmeterBackend.js";
 import { withSpanSync } from "./middleware/trace.js";
@@ -17,6 +18,8 @@ export class JmeterMcpRuntime {
 
   constructor() {
     for (const tool of createTools()) this.tools.set(tool.name, tool);
+    // 需求分析 v2：聊天端直用的异步任务制工具（发起/查询）
+    for (const tool of createRequirementV2Tools()) this.tools.set(tool.name, tool);
   }
 
   dispatch(request: JsonObject): JsonObject | null {
