@@ -173,6 +173,62 @@ export function runAnalysisContractTests(name: string, factory: () => AnalysisRe
       expect(texts).toEqual(["root 的条件", "r3 的条件"]);
     });
 
+    it("条件 CRUD：创建校验归属并默认未接力；编辑保留 relay/testsetId", async () => {
+      const created = await repo.createRecord(makeInput());
+      const reqId = created.requirements[0].id;
+
+      const added = await repo.createCondition(created.id, { reqId, criterionId: null, text: "人工新增条件", kind: "exception" });
+      expect(added.relay).toBe("none");
+      expect(added.testsetId).toBeNull();
+      expect(added.id).toMatch(/^rcd_/);
+      expect(added.sort).toBeGreaterThanOrEqual(0);
+
+      // 跨记录引用拒绝
+      const other = await repo.createRecord(makeInput("另一条"));
+      await expect(
+        repo.createCondition(created.id, { reqId: other.requirements[0].id, criterionId: null, text: "越界", kind: "normal" }),
+      ).rejects.toThrow(/不属于|不存在/);
+
+      // 编辑文本/分类，不影响接力状态
+      const edited = await repo.updateCondition(created.id, added.id, { text: "改后的条件", kind: "boundary" });
+      expect(edited.text).toBe("改后的条件");
+      expect(edited.kind).toBe("boundary");
+      expect(edited.relay).toBe("none");
+    });
+
+    it("条件保护：已接力/已生成的条件禁止编辑删除", async () => {
+      const created = await repo.createRecord(makeInput());
+      const [cond1] = created.conditions.map((c) => c.id);
+      await repo.markConditionsRelayed(created.id, [cond1]);
+      await expect(repo.updateCondition(created.id, cond1, { text: "改" })).rejects.toThrow(/接力|生成/);
+      await expect(repo.deleteCondition(created.id, cond1)).rejects.toThrow(/接力|生成/);
+    });
+
+    it("条件删除只影响目标，RTM 计数联动", async () => {
+      const created = await repo.createRecord(makeInput());
+      const [cond1] = created.conditions.map((c) => c.id);
+      await repo.deleteCondition(created.id, cond1);
+      const rtm = await repo.getRtm(created.id);
+      expect(rtm.totalConditions).toBe(1);
+    });
+
+    it("问题批量更新：原子、归属校验、计数联动", async () => {
+      const created = await repo.createRecord(makeInput());
+      await repo.createIssue(created.id, { type: "ambiguity", severity: "low", quote: "q2", description: "d2" });
+      const detail = await repo.getRecord(created.id);
+      const ids = detail!.issues.map((i) => i.id);
+
+      const updated = await repo.bulkPatchIssues(created.id, ids, { status: "resolved" });
+      expect(updated).toHaveLength(2);
+      expect(updated.every((i) => i.status === "resolved")).toBe(true);
+
+      // 跨记录 id 拒绝且原子
+      const other = await repo.createRecord(makeInput("另一条"));
+      await expect(repo.bulkPatchIssues(created.id, [ids[0], other.issues[0].id], { status: "accepted" })).rejects.toThrow(/不属于|不存在/);
+      const after = await repo.getRecord(created.id);
+      expect(after!.issues.find((i) => i.id === ids[0])!.status).toBe("resolved");
+    });
+
     it("上限 200 条（内存实现抽样验证边界语义）", async () => {
       // 只验证语义存在，不真建 200 条
       await expect(repo.createRecord(makeInput())).resolves.toBeTruthy();

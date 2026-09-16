@@ -72,6 +72,8 @@ export interface TestCondition {
   kind: ConditionKind
   relay: RelayState
   testsetId: string | null
+  /** 记录内排序（服务端赋值） */
+  sort: number
 }
 
 export interface AnalysisRecordDetail {
@@ -79,6 +81,10 @@ export interface AnalysisRecordDetail {
   title: string
   sourceFileName: string | null
   sourceText: string
+  /** 重新分析来源记录 id（旧记录保留） */
+  previousRecordId: string | null
+  /** 本次继承的已处理问题数 */
+  inheritedIssueCount: number
   createdAt: string
   updatedAt: string
   requirements: RequirementItem[]
@@ -183,6 +189,45 @@ export async function linkConditionsToTestset(conditionIds: string[], testsetId:
   return data.linked
 }
 
+/** 人工新增条件 */
+export async function createCondition(recordId: string, input: { reqId: string; criterionId?: string | null; text: string; kind: ConditionKind }): Promise<TestCondition> {
+  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/conditions`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  const data = await parseOk<{ condition: TestCondition }>(response)
+  return data.condition
+}
+
+/** 编辑条件（已接力/已生成由后端拒绝） */
+export async function updateCondition(recordId: string, conditionId: string, patch: { text?: string; kind?: ConditionKind; reqId?: string; criterionId?: string | null }): Promise<TestCondition> {
+  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/conditions/${conditionId}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  const data = await parseOk<{ condition: TestCondition }>(response)
+  return data.condition
+}
+
+/** 删除条件（已接力/已生成由后端拒绝） */
+export async function deleteCondition(recordId: string, conditionId: string): Promise<void> {
+  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/conditions/${conditionId}`), { method: 'DELETE' })
+  await parseOk(response)
+}
+
+/** 问题批量状态更新（原子；返回更新后的条目） */
+export async function bulkPatchIssues(recordId: string, issueIds: string[], status: IssueStatus): Promise<AnalysisIssue[]> {
+  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/issues/bulk`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ issueIds, status }),
+  })
+  const data = await parseOk<{ issues: AnalysisIssue[]; updated: number }>(response)
+  return data.issues
+}
+
 export async function getAnalysisRtm(recordId: string): Promise<RtmView> {
   const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/rtm`))
   const data = await parseOk<{ rtm: RtmView }>(response)
@@ -199,17 +244,11 @@ export async function parseRequirementDocument(file: File): Promise<{ text: stri
   return parseOk<{ text: string; warnings: string[]; truncated: boolean }>(response)
 }
 
-/** AI 分析（SSE）：完成时返回落库后的完整记录 */
-export async function analyzeRequirementStream(
-  body: { sourceText: string; title?: string; sourceFileName?: string },
-  aiConfig: RuntimeAiConfig,
+/** SSE 读取器：analyze/reanalyze 共用 */
+async function readAnalysisStream(
+  response: Response,
   onEvent: (event: AnalysisStreamEvent) => void,
 ): Promise<AnalysisRecordDetail | null> {
-  const response = await fetch(buildUrl('/api/requirement-analysis-v2/analyze'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, aiConfig }),
-  })
   if (!response.ok || !response.body) {
     let message = `请求失败：${response.status}`
     try {
@@ -264,4 +303,32 @@ export async function analyzeRequirementStream(
 
   if (streamError) throw new Error(streamError)
   return record
+}
+
+/** AI 分析（SSE）：完成时返回落库后的完整记录 */
+export async function analyzeRequirementStream(
+  body: { sourceText: string; title?: string; sourceFileName?: string },
+  aiConfig: RuntimeAiConfig,
+  onEvent: (event: AnalysisStreamEvent) => void,
+): Promise<AnalysisRecordDetail | null> {
+  const response = await fetch(buildUrl('/api/requirement-analysis-v2/analyze'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, aiConfig }),
+  })
+  return readAnalysisStream(response, onEvent)
+}
+
+/** 重新分析（SSE）：新记录 + 继承已处理问题状态；完成返回新记录 */
+export async function reanalyzeRecordStream(
+  recordId: string,
+  aiConfig: RuntimeAiConfig,
+  onEvent: (event: AnalysisStreamEvent) => void,
+): Promise<AnalysisRecordDetail | null> {
+  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/reanalyze`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ aiConfig }),
+  })
+  return readAnalysisStream(response, onEvent)
 }

@@ -108,6 +108,41 @@ describe("requirement-v2 路由", () => {
     expect((detail.body.record as { issues: unknown[] }).issues.length).toBe(2);
   });
 
+  it("条件 CRUD：创建/编辑/删除与归属校验", async () => {
+    const record = await createDetail();
+    const reqId = (await api(`/api/requirement-analysis-v2/records/${record.id}`)).body.record as { requirements: Array<{ id: string }> };
+    const targetReqId = reqId.requirements[0].id;
+
+    const created = await api(`/api/requirement-analysis-v2/records/${record.id}/conditions`, {
+      method: "POST",
+      body: JSON.stringify({ reqId: targetReqId, text: "人工新增", kind: "exception" }),
+    });
+    expect(created.status).toBe(201);
+    const condition = (created.body as { condition: { id: string; relay: string } }).condition;
+    expect(condition.relay).toBe("none");
+
+    const edited = await api(`/api/requirement-analysis-v2/records/${record.id}/conditions/${condition.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ text: "改后", kind: "boundary" }),
+    });
+    expect((edited.body as { condition: { text: string } }).condition.text).toBe("改后");
+
+    expect((await api(`/api/requirement-analysis-v2/records/${record.id}/conditions`, { method: "POST", body: JSON.stringify({ reqId: "ghost", text: "x", kind: "normal" }) })).status).toBe(404);
+
+    expect((await api(`/api/requirement-analysis-v2/records/${record.id}/conditions/${condition.id}`, { method: "DELETE" })).status).toBe(200);
+  });
+
+  it("问题批量更新：状态校验与跨记录拒绝", async () => {
+    const record = await createDetail();
+    const detail = (await api(`/api/requirement-analysis-v2/records/${record.id}`)).body.record as { issues: Array<{ id: string }> };
+    const ids = detail.issues.map((i) => i.id);
+
+    expect((await api(`/api/requirement-analysis-v2/records/${record.id}/issues/bulk`, { method: "POST", body: JSON.stringify({ issueIds: ids, status: "resolved" }) })).status).toBe(200);
+    expect((await api(`/api/requirement-analysis-v2/records/${record.id}/issues/bulk`, { method: "POST", body: JSON.stringify({ issueIds: [], status: "resolved" }) })).status).toBe(400);
+    expect((await api(`/api/requirement-analysis-v2/records/${record.id}/issues/bulk`, { method: "POST", body: JSON.stringify({ issueIds: ids, status: "weird" }) })).status).toBe(400);
+    expect((await api(`/api/requirement-analysis-v2/records/${record.id}/issues/bulk`, { method: "POST", body: JSON.stringify({ issueIds: ["ghost"], status: "resolved" }) })).status).toBe(404);
+  });
+
   it("接力与回写：relay → link-testset → RTM 覆盖率", async () => {
     const record = await createDetail();
     const id = record.id;

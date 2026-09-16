@@ -5,7 +5,7 @@ import { logger } from "../../logger.js";
 import { beginSse, emit, endSse } from "../../shared/sse.js";
 import { parseAiRequestConfig } from "../testcase/ai.js";
 import { analysisDbMode } from "./migrate.js";
-import { analyzeRequirement, AnalysisGenerateError } from "./analyze.js";
+import { analyzeRequirement, AnalysisGenerateError, reanalyzeRequirement } from "./analyze.js";
 import { DocumentParseError, MAX_FILE_BYTES, parseRequirementDocument } from "./parsers.js";
 import type {
   AnalysisRepository,
@@ -40,11 +40,13 @@ function fail(res: Response, status: number, message: string): void {
   res.status(status).json({ success: false, error: message });
 }
 
-/** 错误消息 → HTTP 状态：不存在 404，上限 409，其余 500 */
+/** 错误消息 → HTTP 状态：不存在 404，上限/禁止/批量为空 409/400，其余 500 */
 function errorStatus(err: unknown): number {
   const message = err instanceof Error ? err.message : "";
   if (message.includes("不存在")) return 404;
   if (message.includes("已达上限")) return 409;
+  if (message.includes("禁止")) return 409;
+  if (message.includes("不能为空") || message.includes("非法")) return 400;
   return 500;
 }
 
@@ -223,6 +225,81 @@ export function registerRequirementV2Routes(app: Express, repo: AnalysisReposito
     }
   });
 
+  /** 人工新增条件（归属校验在仓储层） */
+  app.post("/api/requirement-analysis-v2/records/:id/conditions", async (req, res) => {
+    try {
+      const b = body(req);
+      const reqId = asString(b.reqId);
+      const text = asString(b.text)?.trim();
+      if (!reqId) return fail(res, 400, "reqId 不能为空");
+      if (!text) return fail(res, 400, "text 不能为空");
+      if (text.length > 2000) return fail(res, 400, "text 超过 2000 字上限");
+      if (!isEnum(b.kind, CONDITION_KINDS)) return fail(res, 400, "kind 必须是 normal/boundary/exception 之一");
+      const criterionId = asString(b.criterionId);
+      const condition = await repo.createCondition(req.params.id, { reqId, criterionId, text, kind: b.kind });
+      res.status(201).json({ success: true, condition });
+    } catch (err) {
+      handleError(res, err, "新增测试条件");
+    }
+  });
+
+  /** 编辑条件（已接力/已生成拒绝，保护 RTM） */
+  app.patch("/api/requirement-analysis-v2/records/:id/conditions/:conditionId", async (req, res) => {
+    try {
+      const b = body(req);
+      const patch: { text?: string; kind?: ConditionKind; reqId?: string; criterionId?: string | null } = {};
+      if (b.text !== undefined) {
+        const text = asString(b.text)?.trim();
+        if (!text) return fail(res, 400, "text 不能为空");
+        if (text.length > 2000) return fail(res, 400, "text 超过 2000 字上限");
+        patch.text = text;
+      }
+      if (b.kind !== undefined) {
+        if (!isEnum(b.kind, CONDITION_KINDS)) return fail(res, 400, "kind 必须是 normal/boundary/exception 之一");
+        patch.kind = b.kind;
+      }
+      if (b.reqId !== undefined) {
+        const reqId = asString(b.reqId);
+        if (!reqId) return fail(res, 400, "reqId 不能为空");
+        patch.reqId = reqId;
+      }
+      if (b.criterionId !== undefined) {
+        patch.criterionId = asString(b.criterionId);
+      }
+      const condition = await repo.updateCondition(req.params.id, req.params.conditionId, patch);
+      res.json({ success: true, condition });
+    } catch (err) {
+      handleError(res, err, "编辑测试条件");
+    }
+  });
+
+  /** 删除条件（已接力/已生成拒绝） */
+  app.delete("/api/requirement-analysis-v2/records/:id/conditions/:conditionId", async (req, res) => {
+    try {
+      await repo.deleteCondition(req.params.id, req.params.conditionId);
+      res.json({ success: true });
+    } catch (err) {
+      handleError(res, err, "删除测试条件");
+    }
+  });
+
+  /** 问题批量状态更新（原子） */
+  app.post("/api/requirement-analysis-v2/records/:id/issues/bulk", async (req, res) => {
+    try {
+      const b = body(req);
+      const issueIds = b.issueIds;
+      if (!Array.isArray(issueIds) || issueIds.length === 0 || !issueIds.every((v) => typeof v === "string")) {
+        return fail(res, 400, "issueIds 必须是非空字符串数组");
+      }
+      if (issueIds.length > 200) return fail(res, 400, "单次批量更新不超过 200 条");
+      if (!isEnum(b.status, ISSUE_STATUSES)) return fail(res, 400, "status 必须是 open/resolved/accepted 之一");
+      const issues = await repo.bulkPatchIssues(req.params.id, issueIds, { status: b.status });
+      res.json({ success: true, issues, updated: issues.length });
+    } catch (err) {
+      handleError(res, err, "批量更新问题状态");
+    }
+  });
+
   /** 接力：勾选条件 → relayed。 */
   app.post("/api/requirement-analysis-v2/records/:id/relay", async (req, res) => {
     try {
@@ -259,6 +336,47 @@ export function registerRequirementV2Routes(app: Express, repo: AnalysisReposito
       res.json({ success: true, rtm: await repo.getRtm(req.params.id) });
     } catch (err) {
       handleError(res, err, "获取追溯矩阵");
+    }
+  });
+
+  /** 重新分析（SSE）：新记录 + 保守继承已处理问题状态，旧记录不动。 */
+  app.post("/api/requirement-analysis-v2/records/:id/reanalyze", async (req, res) => {
+    const b = body(req);
+    let config;
+    try {
+      config = parseAiRequestConfig(b);
+    } catch (err) {
+      fail(res, 400, err instanceof Error ? err.message : "AI 配置无效");
+      return;
+    }
+    const existing = await repo.getRecord(req.params.id);
+    if (!existing) {
+      fail(res, 404, "分析记录不存在");
+      return;
+    }
+    const sourceText = asString(b.sourceText)?.trim();
+    if (sourceText !== null && sourceText !== undefined && sourceText.length > 50000) {
+      fail(res, 400, "sourceText 超过 50000 字上限");
+      return;
+    }
+
+    beginSse(res);
+    try {
+      await reanalyzeRequirement(config, repo, { recordId: req.params.id, sourceText: sourceText || undefined }, (event) => {
+        if (event.type === "done") {
+          emit(res, "done", { record: event.record });
+        } else if (event.type === "error") {
+          emit(res, "error", { message: event.message });
+        } else {
+          emit(res, "progress", { stage: event.stage, message: event.message });
+        }
+      });
+      endSse(res, true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "重新分析失败";
+      logger.error({ err }, "[requirement-v2] 重新分析失败");
+      emit(res, "error", { message });
+      endSse(res, false);
     }
   });
 

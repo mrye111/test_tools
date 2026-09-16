@@ -71,9 +71,9 @@ function expectTreeMutation(name: string, args: JsonObject, mustContain?: string
 // ── Registry surface ──
 
 describe("jmeter tool registry", () => {
-  it("registers exactly 48 tools including the 5 sampler tools the frontend templates call", () => {
+  it("registers exactly 50 tools（48 个 JMeter 工具 + 2 个需求分析任务工具）", () => {
     const runtime = new JmeterMcpRuntime();
-    expect(runtime.tools.size).toBe(48);
+    expect(runtime.tools.size).toBe(50);
     for (const name of ["add_jdbc_request", "add_tcp_sampler", "add_smtp_sampler", "add_ftp_sampler", "add_system_sampler"]) {
       expect(runtime.tools.has(name), `tool ${name} must be registered`).toBe(true);
     }

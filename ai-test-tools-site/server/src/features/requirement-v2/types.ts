@@ -30,6 +30,10 @@ export interface AnalysisRecord {
   title: string;
   sourceFileName: string | null;
   sourceText: string;
+  /** 重新分析来源记录（新记录引用旧记录；旧记录永不覆盖） */
+  previousRecordId: string | null;
+  /** 本次分析继承的已处理问题数（resolved/accepted，保守匹配） */
+  inheritedIssueCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -96,6 +100,9 @@ export interface CreateAnalysisInput {
   title: string;
   sourceFileName?: string | null;
   sourceText: string;
+  /** 重新分析来源（仅服务端管线设置；公共 POST /records 忽略） */
+  previousRecordId?: string | null;
+  inheritedIssueCount?: number;
   requirements: Array<Omit<RequirementItem, "recordId">>;
   issues: Array<Omit<AnalysisIssue, "recordId" | "createdAt" | "updatedAt">>;
   criteria: Array<Omit<AcceptanceCriterion, "recordId" | "createdAt" | "updatedAt">>;
@@ -110,6 +117,14 @@ export interface CreateIssueInput {
   description: string;
   example?: string;
   suggestedQuestion?: string;
+}
+
+/** 人工新增/编辑条件（relay/testsetId 走接力与回写专用通路，不接受任意覆盖） */
+export interface UpsertConditionInput {
+  reqId: string;
+  criterionId?: string | null;
+  text: string;
+  kind: ConditionKind;
 }
 
 /** RTM 行：需求 × 条件 × 用例集 */
@@ -149,4 +164,13 @@ export interface AnalysisRepository {
   /** 用例集保存后回写：条件 → generated + testsetId */
   markConditionsGenerated(conditionIds: string[], testsetId: string): Promise<number>;
   getRtm(recordId: string): Promise<RtmView>;
+
+  /** 人工新增条件（recordId 归属校验；relay 恒为 none） */
+  createCondition(recordId: string, input: UpsertConditionInput): Promise<TestCondition>;
+  /** 编辑条件文本/分类/关联；已接力/已生成的条件拒绝（保护 RTM） */
+  updateCondition(recordId: string, conditionId: string, input: Partial<UpsertConditionInput>): Promise<TestCondition>;
+  /** 删除条件；已接力/已生成的条件拒绝（保护 RTM） */
+  deleteCondition(recordId: string, conditionId: string): Promise<void>;
+  /** 问题批量状态更新：原子（任一失败全部回滚），全部 id 必须属于 recordId */
+  bulkPatchIssues(recordId: string, issueIds: string[], patch: { status: IssueStatus }): Promise<AnalysisIssue[]>;
 }

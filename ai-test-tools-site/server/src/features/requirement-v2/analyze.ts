@@ -9,6 +9,7 @@ import { streamChatCompletionParts } from "../testcase/ai.js";
 import type { AiRequestConfig } from "../testcase/types.js";
 import { isObject, parseMaybeJsonObject } from "../testcase/utils.js";
 import { logger } from "../../logger.js";
+import { inheritIssueStatuses } from "./state-inheritance.js";
 import {
   ANALYSIS_LIMITS,
   ANALYSIS_REPAIR_INSTRUCTION,
@@ -280,17 +281,16 @@ async function runConditionsBatch(
 }
 
 /**
- * 覆盖导向需求分析管线：阶段一全局分析 → 阶段二分批条件 → 落库。
- * 未产出条件的需求条目不落条件表，由前端「未覆盖需求」区显式呈现。
+ * 管线主体：阶段一全局分析 + 阶段二有界并行条件生成（不含落库）。
+ * 重新分析复用同一管线，落库前叠加状态继承。
  */
-export async function analyzeRequirement(
+async function runPipeline(
   config: AiRequestConfig,
-  repo: AnalysisRepository,
-  input: AnalyzeInput,
-  onEvent: (event: AnalysisEvent) => void = () => {},
-): Promise<AnalysisRecordDetail> {
+  sourceText: string,
+  onEvent: (event: AnalysisEvent) => void,
+): Promise<{ passOne: ValidatedPassOne; conditions: CreateAnalysisInput["conditions"] }> {
   onEvent({ type: "progress", stage: "analyze", message: "正在分析需求文本…" });
-  const passOne = await runPassOne(config, input.sourceText);
+  const passOne = await runPassOne(config, sourceText);
 
   const leafReqs: Array<RequirementInput> = passOne.requirements;
   const batches: Array<Array<{ id: string; text: string }>> = [];
@@ -299,14 +299,27 @@ export async function analyzeRequirement(
   }
 
   const allConditions: CreateAnalysisInput["conditions"] = [];
-  for (const [index, batch] of batches.entries()) {
-    onEvent({
-      type: "progress",
-      stage: "conditions",
-      message: `正在生成测试条件（第 ${index + 1}/${batches.length} 批，共 ${leafReqs.length} 条需求）…`,
-    });
-    const conditions = await runConditionsBatch(config, batch, input.sourceText);
-    allConditions.push(...conditions);
+  // 有界并发：最多 3 批同时执行，避免 AI 限流；乱序完成仍按批次顺序合并（确定性）
+  const CONCURRENCY = 3;
+  const results: Array<CreateAnalysisInput["conditions"] | null> = batches.map(() => null);
+  let nextBatch = 0;
+  let completed = 0;
+  const workers = Array.from({ length: Math.min(CONCURRENCY, batches.length) }, async () => {
+    while (nextBatch < batches.length) {
+      const batchIndex = nextBatch;
+      nextBatch += 1;
+      results[batchIndex] = await runConditionsBatch(config, batches[batchIndex], sourceText);
+      completed += 1;
+      onEvent({
+        type: "progress",
+        stage: "conditions",
+        message: `测试条件批次进度：${completed}/${batches.length}（共 ${leafReqs.length} 条需求）`,
+      });
+    }
+  });
+  await Promise.all(workers);
+  for (const result of results) {
+    if (result) allConditions.push(...result);
   }
   // 安全阀：硬顶 300（#31 后覆盖导向，不再提前 break 砍掉后续章节；超限截断并记录）
   if (allConditions.length > ANALYSIS_LIMITS.MAX_CONDITIONS) {
@@ -318,6 +331,21 @@ export async function analyzeRequirement(
     condition.sort = index;
   });
 
+  return { passOne, conditions: allConditions };
+}
+
+/**
+ * 覆盖导向需求分析管线：阶段一全局分析 → 阶段二分批条件 → 落库。
+ * 未产出条件的需求条目不落条件表，由前端「未覆盖需求」区显式呈现。
+ */
+export async function analyzeRequirement(
+  config: AiRequestConfig,
+  repo: AnalysisRepository,
+  input: AnalyzeInput,
+  onEvent: (event: AnalysisEvent) => void = () => {},
+): Promise<AnalysisRecordDetail> {
+  const { passOne, conditions } = await runPipeline(config, input.sourceText, onEvent);
+
   onEvent({ type: "progress", stage: "save", message: "校验通过，正在保存分析记录…" });
   const record = await repo.createRecord({
     title: input.titleHint?.trim() || passOne.title,
@@ -326,7 +354,45 @@ export async function analyzeRequirement(
     requirements: passOne.requirements,
     issues: passOne.issues,
     criteria: passOne.criteria,
-    conditions: allConditions,
+    conditions,
+  });
+  onEvent({ type: "done", record });
+  return record;
+}
+
+/**
+ * 重新分析：同一原文（或新文本）产出新记录，旧记录永不覆盖。
+ * 落库前重读旧记录（生成期间的人工编辑不丢），保守继承已处理问题状态：
+ * 仅需求文本未变 + 问题内容唯一匹配时继承 resolved/accepted。
+ */
+export async function reanalyzeRequirement(
+  config: AiRequestConfig,
+  repo: AnalysisRepository,
+  input: { recordId: string; sourceText?: string },
+  onEvent: (event: AnalysisEvent) => void = () => {},
+): Promise<AnalysisRecordDetail> {
+  const old = await repo.getRecord(input.recordId);
+  if (!old) throw new AnalysisGenerateError(`分析记录不存在: ${input.recordId}`);
+  const sourceText = input.sourceText?.trim() || old.sourceText;
+
+  const { passOne, conditions } = await runPipeline(config, sourceText, onEvent);
+
+  onEvent({ type: "progress", stage: "validate", message: "正在合并上一版的已处理状态…" });
+  const latestOld = await repo.getRecord(input.recordId);
+  if (!latestOld) throw new AnalysisGenerateError("原记录在分析期间已被删除，未创建新记录");
+  const inherited = inheritIssueStatuses(latestOld, passOne.requirements, passOne.issues);
+
+  onEvent({ type: "progress", stage: "save", message: `校验通过，正在保存新记录（继承 ${inherited.inheritedCount} 条已处理问题）…` });
+  const record = await repo.createRecord({
+    title: old.title,
+    sourceFileName: old.sourceFileName,
+    sourceText,
+    previousRecordId: old.id,
+    inheritedIssueCount: inherited.inheritedCount,
+    requirements: passOne.requirements,
+    issues: inherited.issues,
+    criteria: passOne.criteria,
+    conditions,
   });
   onEvent({ type: "done", record });
   return record;

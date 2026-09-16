@@ -20,6 +20,7 @@ import {
   type RtmRow,
   type RtmView,
   type TestCondition,
+  type UpsertConditionInput,
 } from "./types.js";
 
 function now(): Date {
@@ -42,6 +43,8 @@ interface RecordRow extends RowDataPacket {
   title: string;
   source_file_name: string | null;
   source_text: string;
+  previous_record_id: string | null;
+  inherited_issue_count: number;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -101,6 +104,8 @@ function toRecord(row: RecordRow): AnalysisRecord {
     title: row.title,
     sourceFileName: row.source_file_name,
     sourceText: row.source_text,
+    previousRecordId: row.previous_record_id ?? null,
+    inheritedIssueCount: Number(row.inherited_issue_count ?? 0),
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
   };
@@ -250,8 +255,8 @@ export class MysqlAnalysisRepository implements AnalysisRepository {
     }));
 
     await this.pool.execute(
-      "INSERT INTO ra2_records (id, title, source_file_name, source_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-      [id, input.title, input.sourceFileName ?? null, input.sourceText, time, time],
+      "INSERT INTO ra2_records (id, title, source_file_name, source_text, previous_record_id, inherited_issue_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, input.title, input.sourceFileName ?? null, input.sourceText, input.previousRecordId ?? null, input.inheritedIssueCount ?? 0, time, time],
     );
     for (const req of requirements) {
       await this.pool.execute(
@@ -390,5 +395,93 @@ export class MysqlAnalysisRepository implements AnalysisRepository {
       coverage: rows.length === 0 ? 0 : Math.round((covered / rows.length) * 100),
       rows,
     };
+  }
+
+  /** 人工新增条件：reqId 归属校验；relay 恒为 none；组内 sort 追加 */
+  async createCondition(recordId: string, input: UpsertConditionInput): Promise<TestCondition> {
+    const detail = await this.getRecord(recordId);
+    if (!detail) throw new Error(`分析记录不存在: ${recordId}`);
+    if (!detail.requirements.some((r) => r.id === input.reqId)) {
+      throw new Error(`需求条目不存在或不属于该记录: ${input.reqId}`);
+    }
+    if (input.criterionId && !detail.criteria.some((c) => c.id === input.criterionId)) {
+      throw new Error(`验收准则不存在或不属于该记录: ${input.criterionId}`);
+    }
+    const text = input.text.trim();
+    if (!text) throw new Error("条件文本不能为空");
+    const siblings = detail.conditions.filter((c) => c.reqId === input.reqId);
+    const sort = siblings.length === 0 ? 0 : Math.max(...siblings.map((c) => c.sort)) + 1;
+    const id = newId("rcd_");
+    const time = now();
+    await this.pool.execute(
+      "INSERT INTO ra2_conditions (id, record_id, req_id, criterion_id, text, kind, relay, testset_id, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'none', NULL, ?, ?, ?)",
+      [id, recordId, input.reqId, input.criterionId ?? null, text, input.kind, sort, time, time],
+    );
+    await this.pool.execute("UPDATE ra2_records SET updated_at = ? WHERE id = ?", [time, recordId]);
+    const [rows] = await this.pool.execute<ConditionRow[]>("SELECT * FROM ra2_conditions WHERE id = ?", [id]);
+    return toCondition(rows[0]);
+  }
+
+  /** 编辑条件：已接力/已生成拒绝（保护 RTM 关联） */
+  async updateCondition(recordId: string, conditionId: string, input: Partial<UpsertConditionInput>): Promise<TestCondition> {
+    const [existingRows] = await this.pool.execute<ConditionRow[]>("SELECT * FROM ra2_conditions WHERE id = ?", [conditionId]);
+    if (existingRows.length === 0 || existingRows[0].record_id !== recordId) throw new Error(`测试条件不存在: ${conditionId}`);
+    const existing = toCondition(existingRows[0]);
+    if (existing.relay !== "none") throw new Error(`条件已接力或已生成用例，禁止编辑: ${conditionId}`);
+    if (input.reqId !== undefined) {
+      const [reqRows] = await this.pool.execute<RowDataPacket[]>("SELECT id FROM ra2_requirements WHERE id = ? AND record_id = ?", [input.reqId, recordId]);
+      if (reqRows.length === 0) throw new Error(`需求条目不存在或不属于该记录: ${input.reqId}`);
+    }
+    const text = input.text !== undefined ? input.text.trim() : existing.text;
+    if (!text) throw new Error("条件文本不能为空");
+    await this.pool.execute(
+      "UPDATE ra2_conditions SET text = ?, kind = ?, req_id = ?, criterion_id = ?, updated_at = ? WHERE id = ?",
+      [text, input.kind ?? existing.kind, input.reqId ?? existing.reqId, input.criterionId === undefined ? existing.criterionId : input.criterionId, now(), conditionId],
+    );
+    await this.pool.execute("UPDATE ra2_records SET updated_at = ? WHERE id = ?", [now(), recordId]);
+    const [rows] = await this.pool.execute<ConditionRow[]>("SELECT * FROM ra2_conditions WHERE id = ?", [conditionId]);
+    return toCondition(rows[0]);
+  }
+
+  /** 删除条件：已接力/已生成拒绝 */
+  async deleteCondition(recordId: string, conditionId: string): Promise<void> {
+    const [rows] = await this.pool.execute<ConditionRow[]>("SELECT relay FROM ra2_conditions WHERE id = ?", [conditionId]);
+    if (rows.length === 0) throw new Error(`测试条件不存在: ${conditionId}`);
+    if (rows[0].relay !== "none") throw new Error(`条件已接力或已生成用例，禁止删除: ${conditionId}`);
+    const [result] = await this.pool.execute<ResultSetHeader>("DELETE FROM ra2_conditions WHERE id = ? AND record_id = ?", [conditionId, recordId]);
+    if (result.affectedRows === 0) throw new Error(`测试条件不存在: ${conditionId}`);
+    await this.pool.execute("UPDATE ra2_records SET updated_at = ? WHERE id = ?", [now(), recordId]);
+  }
+
+  /** 问题批量状态更新：事务内先校验归属，再统一更新——全成全败 */
+  async bulkPatchIssues(recordId: string, issueIds: string[], patch: { status: IssueStatus }): Promise<AnalysisIssue[]> {
+    if (issueIds.length === 0) throw new Error("批量更新不能为空");
+    const uniqueIds = [...new Set(issueIds)];
+    const connection = await this.pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [recordRows] = await connection.execute<RowDataPacket[]>("SELECT id FROM ra2_records WHERE id = ?", [recordId]);
+      if (recordRows.length === 0) throw new Error(`分析记录不存在: ${recordId}`);
+      const placeholders = uniqueIds.map(() => "?").join(", ");
+      const [rows] = await connection.execute<IssueRow[]>(
+        `SELECT * FROM ra2_issues WHERE id IN (${placeholders}) FOR UPDATE`,
+        uniqueIds,
+      );
+      if (rows.length !== uniqueIds.length || rows.some((row) => row.record_id !== recordId)) {
+        throw new Error("问题不存在或不属于该记录");
+      }
+      await connection.execute(
+        `UPDATE ra2_issues SET status = ?, updated_at = ? WHERE id IN (${placeholders})`,
+        [patch.status, now(), ...uniqueIds],
+      );
+      await connection.execute("UPDATE ra2_records SET updated_at = ? WHERE id = ?", [now(), recordId]);
+      await connection.commit();
+      return rows.map((row) => toIssue({ ...row, status: patch.status, updated_at: now() }));
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   }
 }

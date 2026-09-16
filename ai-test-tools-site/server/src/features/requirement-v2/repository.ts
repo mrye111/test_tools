@@ -9,10 +9,12 @@ import {
   type AnalysisRepository,
   type CreateAnalysisInput,
   type CreateIssueInput,
+  type IssueStatus,
   type RequirementItem,
   type RtmRow,
   type RtmView,
   type TestCondition,
+  type UpsertConditionInput,
 } from "./types.js";
 
 function deepClone<T>(value: T): T {
@@ -74,6 +76,8 @@ export class MemoryAnalysisRepository implements AnalysisRepository {
       title: input.title,
       sourceFileName: input.sourceFileName ?? null,
       sourceText: input.sourceText,
+      previousRecordId: input.previousRecordId ?? null,
+      inheritedIssueCount: input.inheritedIssueCount ?? 0,
       createdAt: time,
       updatedAt: time,
     };
@@ -242,6 +246,90 @@ export class MemoryAnalysisRepository implements AnalysisRepository {
       coverage: rows.length === 0 ? 0 : Math.round((covered / rows.length) * 100),
       rows,
     };
+  }
+
+  /** 人工新增条件：reqId 必须属于本记录；relay 恒为 none */
+  async createCondition(recordId: string, input: UpsertConditionInput): Promise<TestCondition> {
+    this.mustRecord(recordId);
+    const reqOk = (this.requirements.get(recordId) ?? []).some((r) => r.id === input.reqId);
+    if (!reqOk) throw new Error(`需求条目不存在或不属于该记录: ${input.reqId}`);
+    if (input.criterionId) {
+      const criterion = this.criteria.get(input.criterionId);
+      if (!criterion || criterion.recordId !== recordId) throw new Error(`验收准则不存在或不属于该记录: ${input.criterionId}`);
+    }
+    const text = input.text.trim();
+    if (!text) throw new Error("条件文本不能为空");
+    const time = now();
+    const siblings = this.childrenOf(this.conditions, recordId).filter((c) => c.reqId === input.reqId);
+    const sort = siblings.length === 0 ? 0 : Math.max(...siblings.map((c) => c.sort)) + 1;
+    const condition: TestCondition = {
+      id: newId("rcd_"),
+      recordId,
+      reqId: input.reqId,
+      criterionId: input.criterionId ?? null,
+      text,
+      kind: input.kind,
+      relay: "none",
+      testsetId: null,
+      sort,
+      createdAt: time,
+      updatedAt: time,
+    };
+    this.conditions.set(condition.id, condition);
+    this.touchRecord(recordId);
+    return deepClone(condition);
+  }
+
+  /** 编辑条件：已接力/已生成拒绝（保护 RTM 关联） */
+  async updateCondition(recordId: string, conditionId: string, input: Partial<UpsertConditionInput>): Promise<TestCondition> {
+    this.mustRecord(recordId);
+    const existing = this.conditions.get(conditionId);
+    if (!existing || existing.recordId !== recordId) throw new Error(`测试条件不存在: ${conditionId}`);
+    if (existing.relay !== "none") throw new Error(`条件已接力或已生成用例，禁止编辑: ${conditionId}`);
+    if (input.reqId !== undefined) {
+      const reqOk = (this.requirements.get(recordId) ?? []).some((r) => r.id === input.reqId);
+      if (!reqOk) throw new Error(`需求条目不存在或不属于该记录: ${input.reqId}`);
+    }
+    const text = input.text !== undefined ? input.text.trim() : existing.text;
+    if (!text) throw new Error("条件文本不能为空");
+    const updated: TestCondition = {
+      ...existing,
+      reqId: input.reqId ?? existing.reqId,
+      criterionId: input.criterionId === undefined ? existing.criterionId : input.criterionId,
+      text,
+      kind: input.kind ?? existing.kind,
+      updatedAt: now(),
+    };
+    this.conditions.set(conditionId, updated);
+    this.touchRecord(recordId);
+    return deepClone(updated);
+  }
+
+  /** 删除条件：已接力/已生成拒绝 */
+  async deleteCondition(recordId: string, conditionId: string): Promise<void> {
+    this.mustRecord(recordId);
+    const existing = this.conditions.get(conditionId);
+    if (!existing || existing.recordId !== recordId) throw new Error(`测试条件不存在: ${conditionId}`);
+    if (existing.relay !== "none") throw new Error(`条件已接力或已生成用例，禁止删除: ${conditionId}`);
+    this.conditions.delete(conditionId);
+    this.touchRecord(recordId);
+  }
+
+  /** 问题批量状态更新：先全量校验（归属/存在/枚举），再统一生效——原子语义 */
+  async bulkPatchIssues(recordId: string, issueIds: string[], patch: { status: IssueStatus }): Promise<AnalysisIssue[]> {
+    this.mustRecord(recordId);
+    if (issueIds.length === 0) throw new Error("批量更新不能为空");
+    const uniqueIds = [...new Set(issueIds)];
+    const targets: AnalysisIssue[] = [];
+    for (const id of uniqueIds) {
+      const existing = this.issues.get(id);
+      if (!existing || existing.recordId !== recordId) throw new Error(`问题不存在或不属于该记录: ${id}`);
+      targets.push(existing);
+    }
+    const updated = targets.map((issue) => ({ ...issue, status: patch.status, updatedAt: now() }));
+    for (const issue of updated) this.issues.set(issue.id, issue);
+    this.touchRecord(recordId);
+    return updated.map((issue) => deepClone(issue));
   }
 
   private sortedConditions(recordId: string): TestCondition[] {

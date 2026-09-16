@@ -9,6 +9,12 @@ const stub = vi.hoisted(() => ({
   patchAnalysisIssue: vi.fn(),
   patchCriterion: vi.fn(),
   relayConditions: vi.fn(),
+  downloadAnalysisMarkdown: vi.fn(),
+  bulkPatchIssues: vi.fn(),
+  createCondition: vi.fn(),
+  updateCondition: vi.fn(),
+  deleteCondition: vi.fn(),
+  reanalyzeRecordStream: vi.fn(),
 }))
 
 vi.mock('../features/requirement-analysis-v2/analysis-api', () => ({
@@ -17,13 +23,33 @@ vi.mock('../features/requirement-analysis-v2/analysis-api', () => ({
   patchAnalysisIssue: stub.patchAnalysisIssue,
   patchCriterion: stub.patchCriterion,
   relayConditions: stub.relayConditions,
+  bulkPatchIssues: stub.bulkPatchIssues,
+  createCondition: stub.createCondition,
+  updateCondition: stub.updateCondition,
+  deleteCondition: stub.deleteCondition,
+  reanalyzeRecordStream: stub.reanalyzeRecordStream,
 }))
+
+vi.mock('../features/requirement-analysis-v2/markdown-export', () => ({
+  downloadAnalysisMarkdown: stub.downloadAnalysisMarkdown,
+}))
+
+vi.mock('../lib/model-config-store', () => ({
+  loadStoredModelConfig: vi.fn(() => ({ id: 'p1' })),
+}))
+
+vi.mock('../shared/api-types', async () => {
+  const actual = await vi.importActual<typeof import('../shared/api-types')>('../shared/api-types')
+  return { ...actual, toAiConfig: vi.fn(() => ({ baseUrl: 'http://x', model: 'm' })) }
+})
 
 const detail = {
   id: 'ra2_1',
   title: '登录需求分析',
   sourceFileName: 'login.md',
   sourceText: '原始需求文本',
+  previousRecordId: null,
+  inheritedIssueCount: 0,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   requirements: [
@@ -90,6 +116,11 @@ beforeEach(() => {
   stub.patchAnalysisIssue.mockImplementation(async (id, patch) => ({ ...detail.issues[0], ...patch }))
   stub.patchCriterion.mockResolvedValue({ criterion: { ...detail.criteria[0], status: 'confirmed' }, issue: null })
   stub.relayConditions.mockResolvedValue(1)
+  stub.bulkPatchIssues.mockImplementation(async (_id, ids, status) => detail.issues.filter((i) => ids.includes(i.id)).map((i) => ({ ...i, status })))
+  stub.createCondition.mockImplementation(async (_id, input) => ({
+    id: 'cond_new', recordId: 'ra2_1', reqId: input.reqId, criterionId: null, text: input.text, kind: input.kind, relay: 'none', testsetId: null, sort: 99,
+  }))
+  stub.deleteCondition.mockResolvedValue(undefined)
 })
 
 describe('需求分析详情页（四分区）', () => {
@@ -131,7 +162,7 @@ describe('需求分析详情页（四分区）', () => {
 
   it('问题状态点选流转并调用 patch', async () => {
     renderPage()
-    await waitFor(() => screen.getByText('待澄清'))
+    await waitFor(() => screen.getByRole('button', { name: '待澄清' }))
     fireEvent.click(screen.getByRole('button', { name: '待澄清' }))
     await waitFor(() => expect(stub.patchAnalysisIssue).toHaveBeenCalledWith('i1', { status: 'resolved' }))
     expect(screen.getByRole('button', { name: '已澄清' })).toBeInTheDocument()
@@ -163,5 +194,91 @@ describe('需求分析详情页（四分区）', () => {
     expect(payload.conditions[0].id).toBe('cond1')
     expect(payload.requirement).toContain('5 次错误触发锁定')
     await waitFor(() => expect(screen.getByText('用例生成页')).toBeInTheDocument())
+  })
+
+  it('问题筛选：按状态过滤，计数联动，全选只作用于可见项', async () => {
+    renderPage()
+    await waitFor(() => screen.getByRole('button', { name: '待澄清' }))
+
+    fireEvent.change(screen.getByRole('combobox', { name: '按状态筛选' }), { target: { value: 'resolved' } })
+    expect(screen.getByText('当前筛选下没有问题。')).toBeInTheDocument()
+    expect(screen.getByText('0 / 1 条')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('combobox', { name: '按状态筛选' }), { target: { value: 'all' } })
+    expect(screen.getByText('1 / 1 条')).toBeInTheDocument()
+  })
+
+  it('批量操作：全选 → 确认 → 调用原子批量接口并更新状态', async () => {
+    renderPage()
+    await waitFor(() => screen.getByRole('button', { name: '待澄清' }))
+
+    fireEvent.click(screen.getByRole('button', { name: '全选当前结果' }))
+    fireEvent.click(screen.getByRole('button', { name: '批量标记已澄清' }))
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '标记已澄清' }))
+
+    await waitFor(() => expect(stub.bulkPatchIssues).toHaveBeenCalledWith('ra2_1', ['i1'], 'resolved'))
+    await waitFor(() => screen.getByRole('button', { name: '已澄清' }))
+  })
+
+  it('条件新增：输入 → Enter → 创建并出现在分组', async () => {
+    renderPage()
+    await waitFor(() => screen.getByRole('tab', { name: /测试条件/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /测试条件/ }))
+    await waitFor(() => screen.getAllByText('5 次错误触发锁定'))
+
+    fireEvent.click(screen.getAllByRole('button', { name: /新增条件/ })[0])
+    const input = screen.getByRole('textbox', { name: '新条件文本' })
+    fireEvent.change(input, { target: { value: '人工补充的边界条件' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => expect(stub.createCondition).toHaveBeenCalledWith('ra2_1', expect.objectContaining({ reqId: 'r1', text: '人工补充的边界条件' })))
+    await waitFor(() => screen.getByText('人工补充的边界条件'))
+  })
+
+  it('条件删除：确认弹窗 → 调用删除 → 从列表移除', async () => {
+    renderPage()
+    await waitFor(() => screen.getByRole('tab', { name: /测试条件/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /测试条件/ }))
+    await waitFor(() => screen.getAllByText('5 次错误触发锁定'))
+
+    fireEvent.click(screen.getByRole('button', { name: /删除条件：5 次错误触发锁定/ }))
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
+
+    await waitFor(() => expect(stub.deleteCondition).toHaveBeenCalledWith('ra2_1', 'cond1'))
+    await waitFor(() => {
+      const matches = screen.queryAllByText('5 次错误触发锁定')
+      // RTM 表仍可能显示该文本，条件区应移除——只剩 RTM 的一条
+      expect(matches.length).toBeLessThanOrEqual(1)
+    })
+  })
+
+  it('重新分析：确认后调用 SSE 并跳转新记录页', async () => {
+    stub.reanalyzeRecordStream.mockResolvedValue({ ...detail, id: 'ra2_new', previousRecordId: 'ra2_1', inheritedIssueCount: 1 })
+    renderPage()
+    await waitFor(() => expect(screen.getByText('登录需求分析')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: '重新分析' }))
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '开始重新分析' }))
+
+    await waitFor(() => expect(stub.reanalyzeRecordStream).toHaveBeenCalledWith('ra2_1', expect.anything(), expect.any(Function)))
+  })
+
+  it('重新分析生成的记录显示继承提示', async () => {
+    stub.getAnalysisRecord.mockResolvedValue({ ...detail, previousRecordId: 'ra2_0', inheritedIssueCount: 2 })
+    renderPage()
+    await waitFor(() => expect(screen.getByText(/已继承 2 条已处理问题的状态/)).toBeInTheDocument())
+  })
+
+  it('导出 Markdown 按钮触发下载（含全部结果与 RTM）', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByText('登录需求分析')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: '导出 Markdown' }))
+    expect(stub.downloadAnalysisMarkdown).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'ra2_1' }),
+      expect.objectContaining({ coverage: 33 }),
+    )
   })
 })

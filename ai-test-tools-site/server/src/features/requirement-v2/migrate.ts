@@ -12,6 +12,8 @@ const RA2_SCHEMA_STATEMENTS = [
     title VARCHAR(200) NOT NULL,
     source_file_name VARCHAR(255),
     source_text MEDIUMTEXT NOT NULL,
+    previous_record_id VARCHAR(36),
+    inherited_issue_count INT NOT NULL DEFAULT 0,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -90,6 +92,19 @@ async function initRa2Schema(pool: Pool): Promise<void> {
       await connection.query("ALTER TABLE ra2_issues ADD COLUMN example TEXT NOT NULL");
     } catch {
       // 列已存在
+    }
+    // 重新分析元数据列：information_schema 检测后按需补列；真实错误（权限/类型）不吞
+    const [prevCol] = await connection.query(
+      "SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ra2_records' AND COLUMN_NAME = 'previous_record_id'",
+    );
+    if (Number((prevCol as Array<{ n: number }>)[0]?.n ?? 0) === 0) {
+      await connection.query("ALTER TABLE ra2_records ADD COLUMN previous_record_id VARCHAR(36)");
+    }
+    const [inhCol] = await connection.query(
+      "SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ra2_records' AND COLUMN_NAME = 'inherited_issue_count'",
+    );
+    if (Number((inhCol as Array<{ n: number }>)[0]?.n ?? 0) === 0) {
+      await connection.query("ALTER TABLE ra2_records ADD COLUMN inherited_issue_count INT NOT NULL DEFAULT 0");
     }
   } finally {
     connection.release();

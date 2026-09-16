@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryAnalysisRepository } from "./repository.js";
+import { makeInput } from "./repository-contract.test.js";
 
 // mock AI 模块：streamChatCompletionParts 按脚本队列产出响应
 vi.mock("../testcase/ai.js", async () => {
@@ -8,7 +9,7 @@ vi.mock("../testcase/ai.js", async () => {
 });
 
 import { streamChatCompletionParts } from "../testcase/ai.js";
-import { analyzeRequirement, AnalysisGenerateError, validateAnalysis, validateConditionsBatch } from "./analyze.js";
+import { analyzeRequirement, AnalysisGenerateError, reanalyzeRequirement, validateAnalysis, validateConditionsBatch } from "./analyze.js";
 import type { AiRequestConfig } from "../testcase/types.js";
 
 const mockStream = vi.mocked(streamChatCompletionParts);
@@ -195,6 +196,131 @@ describe("analyzeRequirement 两阶段管线", () => {
     expect(record.conditions).toHaveLength(12);
     // 阶段一 1 次 + 条件 2 批
     expect(mockStream).toHaveBeenCalledTimes(3);
+  });
+
+  it("条件批次并行：并发数不超过 3，乱序完成仍按批次顺序合并", async () => {
+    // 30 条需求 = 3 批；deferred 流模拟并发，记录最大并发数
+    const manyReqs = Array.from({ length: 30 }, (_, i) => ({ id: `r${i + 1}`, parentId: null, level: 0, text: `条目${i + 1}` }));
+    const passOne = JSON.stringify({ title: "大文档", requirements: manyReqs, issues: [], criteria: [] });
+
+    let activeCalls = 0;
+    let maxActiveCalls = 0;
+    const gates: Array<() => void> = [];
+    mockStream.mockImplementation(async function* () {
+      activeCalls += 1;
+      maxActiveCalls = Math.max(maxActiveCalls, activeCalls);
+      yield { type: "content" as const, text: passOne };
+      activeCalls -= 1;
+    });
+    // 阶段一用第一个 mock；阶段二每批 deferred：先收集 gate，全部启动后逆序放行
+    mockStream.mockReset();
+    mockStream.mockImplementationOnce(async function* () {
+      yield { type: "content" as const, text: passOne };
+    });
+    for (let b = 0; b < 3; b++) {
+      mockStream.mockImplementationOnce(async function* () {
+        activeCalls += 1;
+        maxActiveCalls = Math.max(maxActiveCalls, activeCalls);
+        await new Promise<void>((resolve) => gates.push(resolve));
+        const conds = Array.from({ length: 10 }, (_, i) => ({ reqId: `r${b * 10 + i + 1}`, text: `批${b + 1}条件${i + 1}`, kind: "normal" }));
+        activeCalls -= 1;
+        yield { type: "content" as const, text: JSON.stringify({ conditions: conds }) };
+      });
+    }
+
+    const repo = new MemoryAnalysisRepository();
+    const run = analyzeRequirement(aiConfig, repo, { sourceText: SOURCE });
+    // 等 3 批都进入（或并发上限内全部启动）
+    await vi.waitFor(() => {
+      expect(gates.length).toBe(3);
+    });
+    expect(maxActiveCalls).toBeLessThanOrEqual(3);
+    // 逆序放行：批 3 先完成
+    gates[2]();
+    await new Promise((r) => setImmediate(r));
+    gates[1]();
+    await new Promise((r) => setImmediate(r));
+    gates[0]();
+    const record = await run;
+    expect(record.conditions).toHaveLength(30);
+    // 合并顺序 = 批次顺序（批1 的条件在最前），与完成顺序无关
+    expect(record.conditions[0].text).toBe("批1条件1");
+    expect(record.conditions[10].text).toBe("批2条件1");
+    expect(record.conditions[20].text).toBe("批3条件1");
+  });
+
+  it("重新分析：新记录 + 继承已处理问题 + 旧记录不动", async () => {
+    const repo = new MemoryAnalysisRepository();
+    // 原文必须包含问题 quote（溯源校验）
+    const oldInput = makeInput();
+    oldInput.sourceText = "用户登录：连续输错密码后账号锁定。";
+    const old = await repo.createRecord(oldInput);
+    const oldIssueId = old.issues[0].id;
+    await repo.patchIssue(oldIssueId, { status: "resolved" });
+
+    // 新分析产出与旧记录同需求文本、同问题内容 → 继承 resolved
+    const passOneSame = JSON.stringify({
+      title: "登录需求分析",
+      requirements: [
+        { id: "x1", parentId: null, level: 0, text: "登录模块" },
+        { id: "x2", parentId: "x1", level: 1, text: "账号锁定" },
+      ],
+      issues: [
+        { reqId: "x2", type: "missing", severity: "high", quote: "「连续输错密码后账号锁定」", description: "未说明锁定阈值与时长", suggestedQuestion: "" },
+      ],
+      criteria: [],
+    });
+    const batch = JSON.stringify({ conditions: [
+      { reqId: "x1", text: "根条件", kind: "normal" },
+      { reqId: "x2", text: "锁定条件", kind: "normal" },
+    ] });
+    scriptResponses(passOneSame, batch);
+
+    const record = await reanalyzeRequirement(aiConfig, repo, { recordId: old.id });
+    expect(record.id).not.toBe(old.id);
+    expect(record.previousRecordId).toBe(old.id);
+    expect(record.inheritedIssueCount).toBe(1);
+    expect(record.issues[0].status).toBe("resolved");
+    // 旧记录原样
+    const oldAfter = await repo.getRecord(old.id);
+    expect(oldAfter!.issues).toHaveLength(1);
+    expect(await repo.countRecords()).toBe(2);
+  });
+
+  it("重新分析：原文不变但问题内容变化的条目不继承", async () => {
+    const repo = new MemoryAnalysisRepository();
+    const oldInput = makeInput();
+    oldInput.sourceText = "用户登录：连续输错密码后账号锁定。";
+    const old = await repo.createRecord(oldInput);
+    await repo.patchIssue(old.issues[0].id, { status: "accepted" });
+
+    const passOneChanged = JSON.stringify({
+      title: "登录需求分析",
+      requirements: [
+        { id: "x1", parentId: null, level: 0, text: "登录模块" },
+        { id: "x2", parentId: "x1", level: 1, text: "账号锁定" },
+      ],
+      issues: [
+        { reqId: "x2", type: "missing", severity: "high", quote: "「连续输错密码后账号锁定」", description: "完全不同的描述", suggestedQuestion: "" },
+      ],
+      criteria: [],
+    });
+    // 条件批次的 reqId 必须与本测试的需求 id（x1/x2）一致
+    const batchX = JSON.stringify({ conditions: [
+      { reqId: "x1", text: "根条件", kind: "normal" },
+      { reqId: "x2", text: "锁定条件", kind: "normal" },
+    ] });
+    scriptResponses(passOneChanged, batchX);
+    const record = await reanalyzeRequirement(aiConfig, repo, { recordId: old.id });
+    expect(record.inheritedIssueCount).toBe(0);
+    expect(record.issues[0].status).toBe("open");
+  });
+
+  it("重新分析：记录不存在抛错，不创建新记录", async () => {
+    const repo = new MemoryAnalysisRepository();
+    await expect(reanalyzeRequirement(aiConfig, repo, { recordId: "missing" })).rejects.toThrow(/不存在/);
+    expect(await repo.countRecords()).toBe(0);
+    expect(mockStream).not.toHaveBeenCalled();
   });
 
   it("titleHint 覆盖 AI 标题", async () => {
