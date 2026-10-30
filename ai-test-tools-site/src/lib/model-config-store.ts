@@ -15,6 +15,37 @@ import {
 const LEGACY_STORAGE_KEY = 'nexuskit_model_config'
 const STORAGE_KEY = 'nexuskit_model_configs'
 
+/** activeModelId 的云端指针前缀：`cloud:<id>` 指向服务端云端配置（本体与密钥不出服务端）。 */
+export const CLOUD_ACTIVE_ID_PREFIX = 'cloud:'
+
+export function toCloudActiveModelId(id: string) {
+  return `${CLOUD_ACTIVE_ID_PREFIX}${id}`
+}
+
+function isCloudActiveModelId(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.startsWith(CLOUD_ACTIVE_ID_PREFIX)
+    && value.slice(CLOUD_ACTIVE_ID_PREFIX.length).trim().length > 0
+}
+
+/** 从 activeModelId 解析云端配置 id；非云端指针 → null。 */
+export function parseCloudActiveModelId(activeModelId: string | null | undefined): string | null {
+  return isCloudActiveModelId(activeModelId) ? activeModelId.slice(CLOUD_ACTIVE_ID_PREFIX.length) : null
+}
+
+/** 当前指针指向的云端配置 id；activeModelId 非云端指针 → null。 */
+export function getActiveCloudConfigId(): string | null {
+  return parseCloudActiveModelId(loadStoredModelConfigState().activeModelId)
+}
+
+/** 云端条目设为当前：只存指针（activeModelId 归浏览器，spec §4），配置本体实时从服务端取。 */
+export function setActiveCloudModelConfig(id: string) {
+  const state = loadStoredModelConfigState()
+  const nextState: StoredModelConfigState = { ...state, activeModelId: toCloudActiveModelId(id) }
+  saveStoredModelConfigState(nextState)
+  return nextState
+}
+
 type LegacyStoredModelConfig = {
   id?: string
   name?: string
@@ -172,9 +203,10 @@ function parseState(raw: string): StoredModelConfigState | null {
           .filter((item): item is UniversalProvider => item !== null)
       : []
 
-    if (models.length === 0) return null
+    // 云端指针（cloud:<id>）不挂在本地 models 里：即使本地为空也得保住指针，避免被当成无配置吞掉
+    if (models.length === 0 && !isCloudActiveModelId(parsed.activeModelId)) return null
 
-    const activeModelId = models.some((item) => item.id === parsed.activeModelId)
+    const activeModelId = models.some((item) => item.id === parsed.activeModelId) || isCloudActiveModelId(parsed.activeModelId)
       ? parsed.activeModelId ?? null
       : models[0].id
 
@@ -194,7 +226,10 @@ function parseLegacyModel(raw: string) {
 }
 
 function writeLegacyMirror(state: StoredModelConfigState) {
-  const active = state.models.find((item) => item.id === state.activeModelId) ?? state.models[0] ?? null
+  // 当前指向云端条目时旧键无法表达（密钥不出服务端）：清空旧镜像而不是错写成本地第一条
+  const active = isCloudActiveModelId(state.activeModelId)
+    ? null
+    : state.models.find((item) => item.id === state.activeModelId) ?? state.models[0] ?? null
   if (!active) {
     localStorage.removeItem(LEGACY_STORAGE_KEY)
     return
@@ -248,7 +283,7 @@ export function saveStoredModelConfigState(state: StoredModelConfigState) {
     .filter((item): item is UniversalProvider => item !== null)
   const nextState: StoredModelConfigState = {
     models: normalizedModels,
-    activeModelId: normalizedModels.some((item) => item.id === state.activeModelId)
+    activeModelId: normalizedModels.some((item) => item.id === state.activeModelId) || isCloudActiveModelId(state.activeModelId)
       ? state.activeModelId
       : normalizedModels[0]?.id ?? null,
   }

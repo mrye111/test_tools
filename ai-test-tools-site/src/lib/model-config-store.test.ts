@@ -2,9 +2,12 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   createEmptyModelConfigState,
   deleteStoredModelConfig,
+  getActiveCloudConfigId,
   loadStoredModelConfig,
   loadStoredModelConfigState,
+  parseCloudActiveModelId,
   saveStoredModelConfigState,
+  setActiveCloudModelConfig,
   setActiveStoredModelConfig,
   setStoredModelConfigCurrentModel,
   upsertStoredModelConfig,
@@ -183,5 +186,72 @@ describe('model-config-store', () => {
     const state = loadStoredModelConfigState()
     expect(state.models).toEqual([])
     expect(state.activeModelId).toBeNull()
+  })
+
+  describe('云端指针（activeModelId = cloud:<id>）', () => {
+    const localModel = {
+      id: 'model-a',
+      name: '供应商 A',
+      providerType: 'openrouter',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      apiKey: 'key-a',
+      model: 'openai/gpt-5.5',
+      apiFormat: 'openai_responses' as const,
+    }
+
+    it('云端条目设为当前后指针跨保存/读取存活', () => {
+      upsertStoredModelConfig(localModel)
+      setActiveCloudModelConfig('cfg-1')
+
+      expect(loadStoredModelConfigState().activeModelId).toBe('cloud:cfg-1')
+      expect(getActiveCloudConfigId()).toBe('cfg-1')
+
+      // 本地列表的后续保存不吞掉云端指针
+      saveStoredModelConfigState(loadStoredModelConfigState())
+      expect(loadStoredModelConfigState().activeModelId).toBe('cloud:cfg-1')
+    })
+
+    it('本地为空时云端指针也不被吞掉', () => {
+      setActiveCloudModelConfig('cfg-solo')
+
+      const state = loadStoredModelConfigState()
+      expect(state.models).toEqual([])
+      expect(state.activeModelId).toBe('cloud:cfg-solo')
+      expect(getActiveCloudConfigId()).toBe('cfg-solo')
+      // 本地兜底读不到配置（云端本体在服务端，由 loadActiveAiConfigSelection 实时取）
+      expect(loadStoredModelConfig()).toBeNull()
+    })
+
+    it('云端指针下 loadStoredModelConfig 回退本地第一条，旧版镜像键被清空', () => {
+      upsertStoredModelConfig(localModel)
+      expect(window.localStorage.getItem('nexuskit_model_config')).toContain('model-a')
+
+      setActiveCloudModelConfig('cfg-1')
+
+      expect(loadStoredModelConfig()?.id).toBe('model-a')
+      expect(window.localStorage.getItem('nexuskit_model_config')).toBeNull()
+    })
+
+    it('parseCloudActiveModelId 只认 cloud: 前缀且 id 非空', () => {
+      expect(parseCloudActiveModelId('cloud:cfg-1')).toBe('cfg-1')
+      expect(parseCloudActiveModelId('model-a')).toBeNull()
+      expect(parseCloudActiveModelId('cloud:')).toBeNull()
+      expect(parseCloudActiveModelId('cloud:  ')).toBeNull()
+      expect(parseCloudActiveModelId(null)).toBeNull()
+      expect(parseCloudActiveModelId(undefined)).toBeNull()
+    })
+
+    it('删除本地条目不影响云端指针；切回本地条目覆盖云端指针', () => {
+      upsertStoredModelConfig(localModel)
+      upsertStoredModelConfig({ ...localModel, id: 'model-b', name: '供应商 B' })
+      setActiveCloudModelConfig('cfg-1')
+
+      deleteStoredModelConfig('model-b')
+      expect(loadStoredModelConfigState().activeModelId).toBe('cloud:cfg-1')
+
+      setActiveStoredModelConfig('model-a')
+      expect(loadStoredModelConfigState().activeModelId).toBe('model-a')
+      expect(getActiveCloudConfigId()).toBeNull()
+    })
   })
 })

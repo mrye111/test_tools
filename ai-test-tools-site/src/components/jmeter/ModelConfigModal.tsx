@@ -2,12 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
   ChevronDown,
+  Cloud,
   Download,
   Eye,
   EyeOff,
   ExternalLink,
   Globe,
+  HardDrive,
   KeyRound,
+  Loader2,
+  PlugZap,
   Plus,
   Save,
   Sparkles,
@@ -19,6 +23,10 @@ import { ModalShell } from '../ui/ModalShell'
 import { useErrorDialog } from '../ui/ErrorDialogProvider'
 import { MODEL_CONFIG_PRESETS, findModelConfigPreset } from '../../lib/model-config-presets'
 import { fetchModelsForConfig, type FetchedModel } from '../../lib/model-fetch-api'
+import {
+  isCloudModelConfigConflict,
+  testCloudModelConfig,
+} from '../../lib/auth-api'
 import {
   applyPresetToDraft,
   createProviderDraft,
@@ -32,12 +40,24 @@ import {
   type UniversalProvider,
 } from '../../shared/api-types'
 
+/** 保存目标：本地（现状）或云端；云端编辑已有条目时必带 version（乐观锁）。 */
+export type ModelConfigSaveTarget = { storage: 'local' } | { storage: 'cloud'; version?: number }
+
+/** 双存储支持（设置页传入）：缺省 = 纯本地弹窗，行为与接入前一致。 */
+export interface CloudStorageOptions {
+  /** 正在编辑的云端条目元信息（掩码回显 + 乐观锁版本）；新建或本地条目为 null */
+  editing: { apiKeyMask: string | null; version: number } | null
+  /** 云端数据已变化（保存成功、409 冲突）后回调，父级重新拉取云端列表 */
+  onChanged: () => void
+}
+
 interface Props {
   /** 由父组件控制显隐；置 false 时播放退出动画后卸载（组件需保持挂载） */
   open: boolean
   initialConfig?: UniversalProvider | null
+  cloudStorage?: CloudStorageOptions
   onClose: () => void
-  onSave: (config: UniversalProvider) => void
+  onSave: (config: UniversalProvider, target: ModelConfigSaveTarget) => void | Promise<void>
 }
 
 function groupedModels(models: FetchedModel[]) {
@@ -77,7 +97,7 @@ function formatApiFormatLabel(apiFormat: AiApiFormat) {
   return 'OpenAI Responses'
 }
 
-export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props) {
+export function ModelConfigModal({ open, initialConfig, cloudStorage, onClose, onSave }: Props) {
   type DraftErrorField = 'name' | 'baseUrl' | 'apiKey' | 'model'
   const { showError } = useErrorDialog()
   // 关闭期间 initialConfig 可能被父组件清空，缓存编辑态以维持退出动画中的标题；
@@ -96,6 +116,11 @@ export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props
   const [fetchedModels, setFetchedModels] = useState<FetchedModel[]>([])
   const [showModelMenu, setShowModelMenu] = useState(false)
   const [pendingDeleteModelId, setPendingDeleteModelId] = useState<string | null>(null)
+  // 双存储：默认本地；编辑云端条目时默认云端。cloudStorage 缺省时开关不渲染、恒走本地
+  const [storage, setStorage] = useState<'local' | 'cloud'>(cloudStorage?.editing ? 'cloud' : 'local')
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testOk, setTestOk] = useState(false)
 
   // 组件现在常驻挂载，每次从关闭到打开时重建草稿（等价于原先的条件挂载 + key 重挂载）；
   // 同时递增会话号，使上一会话在途的 fetchModels 回调失效（旧请求结果不注入新表单）
@@ -112,11 +137,19 @@ export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props
       setFetchedModels([])
       setShowModelMenu(false)
       setPendingDeleteModelId(null)
+      setStorage(cloudStorage?.editing ? 'cloud' : 'local')
+      setSaving(false)
+      setTesting(false)
+      setTestOk(false)
     }
     prevOpenRef.current = open
-  }, [open, initialConfig])
+  }, [open, initialConfig, cloudStorage])
 
   const selectedPreset = useMemo(() => findModelConfigPreset(selectedPresetType), [selectedPresetType])
+
+  const cloudEnabled = Boolean(cloudStorage)
+  // 编辑云端条目且仍存云端：apiKey 留空 = 保持不变（只回显掩码，明文不出服务端）
+  const cloudKeyKeep = cloudEnabled && storage === 'cloud' && Boolean(cloudStorage?.editing)
 
   const candidateModels = useMemo(
     () => normalizeModelOptions(draft.modelOptions ?? []),
@@ -135,6 +168,8 @@ export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props
 
   const updateDraft = <K extends keyof UniversalProvider>(key: K, value: UniversalProvider[K]) => {
     setDraft((current) => ({ ...current, [key]: value }))
+    // 连接参数一经改动，此前的试连成功标记即失效
+    if (key === 'baseUrl' || key === 'apiKey' || key === 'model') setTestOk(false)
     if (key === 'name' || key === 'baseUrl' || key === 'apiKey' || key === 'model') {
       const field = key as DraftErrorField
       setFieldErrors((current) => {
@@ -213,7 +248,7 @@ export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props
       }
     }
 
-    if (fields.includes('apiKey') && !draft.apiKey.trim()) {
+    if (fields.includes('apiKey') && !draft.apiKey.trim() && !cloudKeyKeep) {
       nextErrors.apiKey = '请输入 API Key'
     }
 
@@ -266,9 +301,58 @@ export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props
     }
   }
 
-  const handleSave = () => {
+  /** 云端条目的测试连接由服务端代发（密钥不出服务端）：测当前草稿，留空密钥时复用云端已存密钥。 */
+  const handleTestCloud = async () => {
+    if (!cloudStorage) return
+    if (!validateDraft(['baseUrl', 'model'])) return
+
+    setTesting(true)
+    setTestOk(false)
+    const session = fetchSessionRef.current
+    const isCurrentSession = () => session === fetchSessionRef.current
+    try {
+      await testCloudModelConfig(normalizeProviderDraft(draft), {
+        apiKey: draft.apiKey,
+        editingId: cloudStorage.editing ? draft.id : undefined,
+      })
+      if (isCurrentSession()) setTestOk(true)
+    } catch (testError) {
+      if (!isCurrentSession()) return
+      showError(testError, {
+        title: '测试连接失败',
+        fallbackMessage: '测试连接失败，请检查配置后重试。',
+      })
+    } finally {
+      if (isCurrentSession()) setTesting(false)
+    }
+  }
+
+  const handleSave = async () => {
     if (!validateDraft(['name', 'baseUrl', 'apiKey', 'model'])) return
-    onSave(normalizeProviderDraft(draft))
+
+    const target: ModelConfigSaveTarget = cloudEnabled && storage === 'cloud'
+      // 编辑云端条目必带回 version；新建/本地上云不带
+      ? { storage: 'cloud', version: cloudStorage?.editing?.version }
+      : { storage: 'local' }
+
+    setSaving(true)
+    try {
+      await onSave(normalizeProviderDraft(draft), target)
+      // 成功后由父组件关闭弹窗并刷新列表（本地同步、云端异步两种父实现都走这里）
+    } catch (saveError) {
+      if (isCloudModelConfigConflict(saveError)) {
+        showError('该云端配置已被其他设备修改，请刷新后重试。', { title: '保存冲突' })
+        // 重新拉取云端列表，下次打开编辑即为最新版本
+        cloudStorage?.onChanged()
+      } else {
+        showError(saveError, {
+          title: '保存失败',
+          fallbackMessage: '保存模型配置失败，请稍后重试。',
+        })
+      }
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -360,6 +444,46 @@ export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props
                   </div>
 
                   <div className="space-y-4">
+                    {cloudEnabled && (
+                      <div>
+                        <label className="field-label">存储位置</label>
+                        <div className="grid grid-cols-2 gap-2 max-sm:grid-cols-1">
+                          {([
+                            { value: 'local' as const, label: '本地', hint: '仅保存在此浏览器', Icon: HardDrive },
+                            { value: 'cloud' as const, label: '云端', hint: '加密挂账号，多设备可用', Icon: Cloud },
+                          ]).map(({ value, label, hint, Icon }) => {
+                            const active = storage === value
+                            return (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => setStorage(value)}
+                                aria-pressed={active}
+                                className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all ${
+                                  active
+                                    ? 'border-accent/35 bg-accent/10 shadow-[0_10px_24px_-18px_oklch(0.58_0.17_262/0.5)]'
+                                    : 'border-[oklch(0.92_0.008_264/0.88)] bg-white/72 hover:border-accent/25 hover:bg-white'
+                                }`}
+                              >
+                                <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-accent' : 'text-muted'}`} />
+                                <span className="min-w-0">
+                                  <span className={`block text-sm font-medium ${active ? 'text-accent' : 'text-fg'}`}>{label}</span>
+                                  <span className="block truncate text-[11px] text-muted">{hint}</span>
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                        <p className="helper-text">
+                          {storage === 'cloud'
+                            ? '切换即迁移：保存时上传到云端并删除本地副本。密钥保存后只显示掩码、不再回显明文，测试连接由服务端代发。'
+                            : cloudStorage?.editing
+                              ? '拨回本地并保存：下载到此浏览器并删除云端副本；云端密钥不导出明文，需重新填写 API Key。'
+                              : '仅保存在当前浏览器的 localStorage，不上传服务器。'}
+                        </p>
+                      </div>
+                    )}
+
                     <div>
                       <label className="field-label field-label-required">名称</label>
                       <input
@@ -405,7 +529,7 @@ export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props
                     </div>
 
                     <div>
-                      <label className="field-label field-label-required">API Key</label>
+                      <label className={cloudKeyKeep ? 'field-label' : 'field-label field-label-required'}>API Key</label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-muted">
                           <KeyRound className="h-4 w-4" />
@@ -414,7 +538,9 @@ export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props
                           type={showApiKey ? 'text' : 'password'}
                           value={draft.apiKey}
                           onChange={(event) => updateDraft('apiKey', event.target.value)}
-                          placeholder="sk-..."
+                          placeholder={cloudKeyKeep
+                            ? `留空保持不变（当前 ${cloudStorage?.editing?.apiKeyMask ?? '已保存'}）`
+                            : 'sk-...'}
                           className={`${inputClass('apiKey')} !pl-12 !pr-12`}
                           aria-invalid={Boolean(fieldErrors.apiKey)}
                         />
@@ -428,6 +554,9 @@ export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props
                         </button>
                       </div>
                       {fieldErrors.apiKey && <p className="field-error">{fieldErrors.apiKey}</p>}
+                      {cloudKeyKeep && (
+                        <p className="helper-text">云端密钥保存后不再回显明文；留空表示沿用已保存的密钥。</p>
+                      )}
                     </div>
 
                     <div>
@@ -515,18 +644,40 @@ export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props
                           <ExternalLink className="h-3.5 w-3.5" />
                         </a>
                       )}
-                      <button
-                        type="button"
-                        onClick={handleFetchModels}
-                        className="secondary-action px-3 py-2 text-xs"
-                        disabled={loadingModels}
-                        title="获取模型列表"
-                      >
-                        <Download className={`h-4 w-4 ${loadingModels ? 'animate-bounce' : ''}`} />
-                        获取模型列表
-                      </button>
+                      {cloudEnabled && storage === 'cloud' ? (
+                        <button
+                          type="button"
+                          onClick={handleTestCloud}
+                          className="secondary-action px-3 py-2 text-xs"
+                          disabled={testing}
+                          title="由服务端代发请求，密钥不出服务端"
+                        >
+                          {testing
+                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                            : <PlugZap className="h-4 w-4" />}
+                          测试连接
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleFetchModels}
+                          className="secondary-action px-3 py-2 text-xs"
+                          disabled={loadingModels}
+                          title="获取模型列表"
+                        >
+                          <Download className={`h-4 w-4 ${loadingModels ? 'animate-bounce' : ''}`} />
+                          获取模型列表
+                        </button>
+                      )}
                     </div>
                   </div>
+
+                  {testOk && (
+                    <p className="flex items-center gap-2 rounded-xl border border-emerald-600/20 bg-emerald-50/70 px-3 py-2 text-xs text-emerald-700">
+                      <Check className="h-3.5 w-3.5 shrink-0" />
+                      连接成功：服务端已用当前配置完成试连。
+                    </p>
+                  )}
 
                   <div className="space-y-4">
                     <div>
@@ -746,22 +897,26 @@ export function ModelConfigModal({ open, initialConfig, onClose, onSave }: Props
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[oklch(0.92_0.008_264/0.88)] bg-white/86 px-6 py-4 max-sm:px-4">
               <div className="text-[11px] leading-5 text-muted">
-                统一供应商仅保存在浏览器本地 `localStorage`，不会上传到服务器。
+                {cloudEnabled && storage === 'cloud'
+                  ? '云端配置加密保存于服务端并挂当前账号，密钥保存后不再回显明文。'
+                  : '本地配置仅保存在浏览器 localStorage，不会上传到服务器。'}
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
                   onClick={onClose}
                   className="secondary-action px-5 py-2.5 text-sm"
+                  disabled={saving}
                 >
                   取消
                 </button>
                 <button
                   type="button"
-                  onClick={handleSave}
+                  onClick={() => void handleSave()}
                   className="primary-action px-5 py-2.5 text-sm"
+                  disabled={saving}
                 >
-                  <Save className="h-4 w-4" />
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   {isEditMode ? '保存修改' : '添加统一供应商'}
                 </button>
               </div>
