@@ -6,3 +6,5 @@ Tools/
 /TestCase/
 /.codegraph/
 /server/
+automation.config.json*
+/.scratch/

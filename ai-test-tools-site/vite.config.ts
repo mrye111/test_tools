@@ -19,6 +19,14 @@ export default defineConfig({
       // 后端运行时文件变化不应触发前端整页刷新，否则生成中的页面状态会被清空。
       ignored: ['**/server/data/**', '**/server/generated/**', '**/server/dist/**'],
     },
+    // 会话登录要求同源（Cookie + CSRF Origin 校验）：dev 一律经 vite 代理到后端，不经跨域直连。
+    // 后端端口可用 VITE_API_TARGET 覆盖（如本机 3000 被其他应用占用时指向 3001）。
+    proxy: Object.fromEntries(
+      ['/api', '/tools', '/health', '/ai', '/files', '/sse', '/messages', '/rpc'].map((prefix) => [
+        prefix,
+        { target: process.env.VITE_API_TARGET ?? 'http://localhost:3000', changeOrigin: false, timeout: 0 },
+      ]),
+    ),
   },
   test: {
     globals: true,

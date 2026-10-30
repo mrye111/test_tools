@@ -30,3 +30,7 @@ shots/
 server/generated/
 server/data/
 /public/codex-demo-report.json
+/tools/
+__pycache__/
+.venv/
+.impeccable/hook.cache.json

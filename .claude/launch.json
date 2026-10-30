@@ -6,6 +6,36 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "ai-test-tools-site", "run", "dev", "--", "--port", "5199"],
       "port": 5199
+    },
+    {
+      "name": "dev-alt",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "ai-test-tools-site", "run", "dev", "--", "--port", "5201"],
+      "port": 5201
+    },
+    {
+      "name": "dev-5203",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "ai-test-tools-site", "run", "dev", "--", "--port", "5203"],
+      "port": 5203
+    },
+    {
+      "name": "dev-5198",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "ai-test-tools-site", "run", "dev", "--", "--port", "5198"],
+      "port": 5198
+    },
+    {
+      "name": "p1-verify",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", ".claude\\dev-p1-verify.cmd"],
+      "port": 5202
+    },
+    {
+      "name": "prototypes",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "5311", "--directory", "docs"],
+      "port": 5311
     }
   ]
 }
