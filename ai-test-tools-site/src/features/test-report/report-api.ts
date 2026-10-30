@@ -3,8 +3,8 @@
  * REST 记录接口 + SSE 生成/追改流；报告产物为单文件 HTML。
  */
 
-import { buildUrl, parseJson } from '../../lib/httpClient'
-import type { RuntimeAiConfig } from '../../shared/api-types'
+import { apiFetch, buildUrl, parseJson } from '../../lib/httpClient'
+import type { AiConfigSubmitPayload } from '../../shared/api-types'
 
 /** 报告类型：测试总结 / 快速简报 / 缺陷分析 / 自由输入 */
 export type ReportType = 'summary' | 'brief' | 'defect' | 'free'
@@ -66,13 +66,13 @@ function normalizeReport(value: unknown): TestReport {
 }
 
 export async function getReportStorageStatus(): Promise<'mysql' | 'memory'> {
-  const response = await fetch(buildUrl('/api/test-report/storage-status'))
+  const response = await apiFetch(buildUrl('/api/test-report/storage-status'))
   const data = await parseJson<{ mode: 'mysql' | 'memory' }>(response)
   return data.mode
 }
 
 export async function listReports(page = 1, pageSize = 20): Promise<ReportListResult> {
-  const response = await fetch(buildUrl(`/api/test-report/reports?page=${page}&pageSize=${pageSize}`))
+  const response = await apiFetch(buildUrl(`/api/test-report/reports?page=${page}&pageSize=${pageSize}`))
   const data = await parseJson<{ reports: unknown[]; total: number; page: number; pageSize: number }>(response)
   return {
     reports: (data.reports ?? []).map(normalizeSummary),
@@ -83,13 +83,13 @@ export async function listReports(page = 1, pageSize = 20): Promise<ReportListRe
 }
 
 export async function getReport(id: string): Promise<TestReport> {
-  const response = await fetch(buildUrl(`/api/test-report/reports/${id}`))
+  const response = await apiFetch(buildUrl(`/api/test-report/reports/${id}`))
   const data = await parseJson<{ report: unknown }>(response)
   return normalizeReport(data.report)
 }
 
 export async function renameReport(id: string, title: string): Promise<TestReport> {
-  const response = await fetch(buildUrl(`/api/test-report/reports/${id}`), {
+  const response = await apiFetch(buildUrl(`/api/test-report/reports/${id}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title }),
@@ -99,7 +99,7 @@ export async function renameReport(id: string, title: string): Promise<TestRepor
 }
 
 export async function deleteReport(id: string): Promise<void> {
-  const response = await fetch(buildUrl(`/api/test-report/reports/${id}`), { method: 'DELETE' })
+  const response = await apiFetch(buildUrl(`/api/test-report/reports/${id}`), { method: 'DELETE' })
   await parseJson(response)
 }
 
@@ -169,10 +169,10 @@ async function consumeReportStream(response: Response, onEvent: (event: ReportSt
 /** 生成报告（SSE）：文本或 CSV 解析 JSON 两类输入统一入口。 */
 export async function generateReportStream(
   body: { reportType: ReportType; sourceType: ReportSourceType; sourceText?: string; csvData?: unknown; title?: string },
-  aiConfig: RuntimeAiConfig,
+  aiConfig: AiConfigSubmitPayload,
   onEvent: (event: ReportStreamEvent) => void,
 ): Promise<TestReport | null> {
-  const response = await fetch(buildUrl('/api/test-report/reports/generate'), {
+  const response = await apiFetch(buildUrl('/api/test-report/reports/generate'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...body, aiConfig }),
@@ -184,10 +184,10 @@ export async function generateReportStream(
 export async function reviseReportStream(
   reportId: string,
   instruction: string,
-  aiConfig: RuntimeAiConfig,
+  aiConfig: AiConfigSubmitPayload,
   onEvent: (event: ReportStreamEvent) => void,
 ): Promise<TestReport | null> {
-  const response = await fetch(buildUrl(`/api/test-report/reports/${reportId}/revise`), {
+  const response = await apiFetch(buildUrl(`/api/test-report/reports/${reportId}/revise`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ instruction, aiConfig }),

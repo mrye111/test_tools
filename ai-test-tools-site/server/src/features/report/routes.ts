@@ -1,7 +1,10 @@
 import type { Express, Request, Response } from "express";
+import { AppError } from "../../app-error.js";
 import { isObject, text } from "../testcase/utils.js";
 import { reportDbMode } from "./migrate.js";
 import { parseAiRequestConfig } from "../testcase/ai.js";
+import type { AiConfigResolver } from "../auth/cloud-config-resolve.js";
+import type { AiRequestConfig, JsonObject } from "../testcase/types.js";
 import { beginSse, emit, endSse } from "../../shared/sse.js";
 import { generateReport, reviseReport, ReportGenerateError, type GenerateReportInput } from "./generate.js";
 import { BrowserNotFoundError, renderReportPdf } from "./pdf.js";
@@ -95,7 +98,14 @@ function parsePageParams(req: Request): { limit: number; offset: number; page: n
   return { limit: pageSize, offset: (page - 1) * pageSize, page, pageSize };
 }
 
-export function registerReportRoutes(app: Express, repo: ReportRepository): void {
+export function registerReportRoutes(app: Express, repo: ReportRepository, resolveAiConfig?: AiConfigResolver): void {
+  /** 解析请求体 AI 配置：云端引用（cloudConfigId）按 req.authUser 实时解析，否则回退现状本地解析。 */
+  const resolveConfig = (req: Request, raw: JsonObject): Promise<AiRequestConfig> => {
+    const userId = req.authUser?.id;
+    if (resolveAiConfig && userId) return resolveAiConfig(userId, raw);
+    return Promise.resolve(parseAiRequestConfig(raw));
+  };
+
   // 存储模式状态（报告页据此提示"数据库不可用不持久保存"）
   app.get("/api/test-report/storage-status", (_req, res) => {
     try {
@@ -222,9 +232,9 @@ export function registerReportRoutes(app: Express, repo: ReportRepository): void
 
     let config;
     try {
-      config = parseAiRequestConfig(raw);
+      config = await resolveConfig(req, raw);
     } catch (error) {
-      fail(res, errorMessage(error));
+      fail(res, errorMessage(error), error instanceof AppError ? error.httpStatus : 400);
       return;
     }
 
@@ -275,9 +285,9 @@ export function registerReportRoutes(app: Express, repo: ReportRepository): void
 
     let config;
     try {
-      config = parseAiRequestConfig(body(req));
+      config = await resolveConfig(req, body(req));
     } catch (error) {
-      fail(res, errorMessage(error));
+      fail(res, errorMessage(error), error instanceof AppError ? error.httpStatus : 400);
       return;
     }
 

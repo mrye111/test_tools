@@ -7,8 +7,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { useErrorDialog } from '../components/ui/ErrorDialogProvider'
 import { parseZentaoReport } from '../lib/zentao-csv-parser'
 import { generateDemoReportData } from '../lib/test-report-demo'
-import { loadStoredModelConfig } from '../lib/model-config-store'
-import { toAiConfig } from '../shared/api-types'
+import { loadActiveAiConfigSelection } from '../lib/active-ai-config'
 import {
   deleteReport,
   generateReportStream,
@@ -131,8 +130,8 @@ export function TestReportPage() {
     }
     if (!source) return
 
-    const stored = loadStoredModelConfig()
-    if (!stored) {
+    const aiSelection = await loadActiveAiConfigSelection()
+    if (!aiSelection) {
       showError(new Error('请先在模型设置中配置统一供应商'), { title: '未配置模型' })
       return
     }
@@ -142,7 +141,7 @@ export function TestReportPage() {
     try {
       const report = await generateReportStream(
         { reportType, ...source },
-        toAiConfig(stored),
+        aiSelection.payload,
         (event) => {
           if (event.type === 'progress') setProgressMessage(event.message)
         },
@@ -159,18 +158,18 @@ export function TestReportPage() {
   }
 
   /** 演示：内置演示数据走真实 AI 管线生成一份测试总结报告。 */
-  const handleDemo = () => {
+  const handleDemo = async () => {
     const data = generateDemoReportData()
     setReportType('summary')
     setFieldError('')
-    const stored = loadStoredModelConfig()
-    if (!stored) {
+    const aiSelection = await loadActiveAiConfigSelection()
+    if (!aiSelection) {
       showError(new Error('请先在模型设置中配置统一供应商'), { title: '未配置模型' })
       return
     }
     setGenerating(true)
     setProgressMessage('正在连接模型…')
-    generateReportStream({ reportType: 'summary', sourceType: 'csv', csvData: data }, toAiConfig(stored), (event) => {
+    generateReportStream({ reportType: 'summary', sourceType: 'csv', csvData: data }, aiSelection.payload, (event) => {
       if (event.type === 'progress') setProgressMessage(event.message)
     })
       .then((report) => {
@@ -319,10 +318,10 @@ export function TestReportPage() {
               type="button"
               onClick={handleGenerate}
               disabled={generating}
-              className="primary-action px-5 py-2.5 text-sm disabled:opacity-50"
+              className="ai-glass-action px-5 py-2.5 text-sm disabled:opacity-50"
             >
               {generating ? (
-                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-accent/25 border-t-accent" />
               ) : (
                 <Sparkles className="h-4 w-4" />
               )}

@@ -1,0 +1,983 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>设计稿 v2 · 测试总结报告（编辑排版版式）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   报告设计稿 v2 —— 语义 token
+   基底：lieflat Mono 纸灰 + 炭黑（明度即数据）
+   语义状态色：仅编码「状态」，永不用作第 N 个系列 / 量的深浅
+   量与序：一律走灰阶明度
+   ═══════════════════════════════════════════════════════════════ */
+:root{
+  --paper:#F0EFEB;
+  --ink:#1C1C1A;
+  --muted:#8F8E88;
+  --faint:#C6C5BF;
+  --grid:#DEDDD6;
+
+  /* 灰阶明度阶梯 = sequential ramp（量 / 序） */
+  --L0:#1C1C1A; --L1:#4A4944; --L2:#8F8E88; --L3:#C6C5BF; --L4:#EDECE6;
+
+  /* 语义状态色（reserved）—— 校验：相邻 CVD ΔE 9.7 / 常视 ΔE 17.5，对 #F0EFEB */
+  --good:#0B7A0B;   /* 通过 · 已修复 */
+  --warn:#C98500;   /* 阻塞 · 处理中 */
+  --crit:#C0392B;   /* 失败 · 激活   */
+  --good-track:rgba(11,122,11,.15);
+  --crit-wash:rgba(192,57,43,.10);
+
+  --f-display:"Newsreader","Songti SC","Source Han Serif SC","Noto Serif CJK SC","SimSun",serif;
+  --f-text:"PingFang SC","Microsoft YaHei","Hiragino Sans GB",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Consolas,monospace;
+
+  --rail:184px;
+  --gap:44px;
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--f-text);
+  font-size:15px;
+  line-height:1.75;
+  padding:0 32px 96px;
+}
+
+/* ── 原型说明（设计稿外壳，非报告本体）────────────────────────── */
+.proto-note{
+  max-width:1080px;margin:0 auto;padding:14px 0 26px;
+  font-family:var(--f-mono);font-size:11.5px;line-height:1.9;color:var(--muted);
+  letter-spacing:.01em;
+}
+.proto-note b{color:var(--ink);font-weight:600}
+.proto-note code{background:#E4E3DD;padding:1px 5px;border-radius:4px;color:var(--ink)}
+
+/* ── 纸张 ────────────────────────────────────────────────────── */
+.sheet{max-width:1080px;margin:0 auto}
+
+/* 编辑栅格：左栏挂章节号与章节名，正文走主栏；图表可破格通栏 */
+.grid{display:grid;grid-template-columns:var(--rail) 1fr;column-gap:var(--gap)}
+.grid > *{grid-column:2}
+.grid > .breakout{grid-column:1 / -1}
+
+/* ── 排字 ────────────────────────────────────────────────────── */
+.kicker{
+  font-family:var(--f-mono);font-size:11px;font-weight:500;
+  letter-spacing:.16em;color:var(--muted);text-transform:uppercase;
+}
+.rule{height:1px;background:var(--grid);border:0}
+.rule-heavy{height:2px;background:var(--ink);border:0}
+
+/* ── 报头 ────────────────────────────────────────────────────── */
+.masthead{padding-bottom:38px;border-bottom:1px solid var(--grid);margin-bottom:44px}
+.masthead-top{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:10px}
+.report-title{
+  font-family:var(--f-text);
+  font-size:clamp(30px,3.6vw,46px);
+  font-weight:700;line-height:1.22;letter-spacing:-.025em;
+  max-width:640px;margin:26px 0 0;
+}
+.report-title em{font-style:normal;color:var(--crit)}
+.verdict{
+  display:flex;align-items:baseline;gap:11px;margin-top:22px;
+  font-family:var(--f-display);font-size:23px;line-height:1.45;color:var(--ink);
+}
+.verdict .stamp{
+  flex:none;font-family:var(--f-mono);font-size:10.5px;font-weight:600;letter-spacing:.12em;
+  color:var(--crit);border:1.5px solid var(--crit);border-radius:3px;
+  padding:3px 8px;transform:translateY(-2px);
+}
+.meta-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:22px 32px;
+  margin-top:34px;padding-top:22px;border-top:1px solid var(--grid);
+}
+.meta-grid dt{font-family:var(--f-mono);font-size:10px;letter-spacing:.13em;color:var(--faint);text-transform:uppercase}
+.meta-grid dd{font-size:13.5px;margin-top:5px;color:var(--ink);font-weight:500}
+
+/* ── 章节 ────────────────────────────────────────────────────── */
+.sec{padding:40px 0;border-top:1px solid var(--grid)}
+.sec:first-of-type{border-top:0}
+.sec-head{grid-column:1;position:sticky;top:24px;align-self:start}
+.sec-num{
+  font-family:var(--f-mono);font-size:11px;font-weight:600;letter-spacing:.14em;color:var(--faint);
+  display:block;margin-bottom:6px;
+}
+.sec-title{
+  font-family:var(--f-display);font-size:25px;font-weight:600;line-height:1.28;
+  letter-spacing:-.01em;color:var(--ink);
+}
+.sec-lede{
+  font-size:15.5px;line-height:1.85;color:var(--ink);
+  max-width:60ch;margin-bottom:30px;
+}
+.sec-lede + .sec-lede{margin-top:-16px}
+
+/* ── 结论条 ──────────────────────────────────────────────────── */
+.findings{list-style:none;counter-reset:f;max-width:64ch}
+.findings li{
+  counter-increment:f;position:relative;padding:16px 0 16px 46px;
+  border-bottom:1px solid var(--grid);font-size:15.5px;line-height:1.8;
+}
+.findings li:last-child{border-bottom:0}
+.findings li::before{
+  content:counter(f,decimal-leading-zero);
+  position:absolute;left:0;top:19px;
+  font-family:var(--f-mono);font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--faint);
+}
+.findings .tag{
+  display:inline-flex;align-items:center;gap:5px;
+  font-family:var(--f-mono);font-size:10.5px;font-weight:600;letter-spacing:.08em;
+  padding:2px 8px;border-radius:3px;margin-right:9px;vertical-align:2px;
+}
+.tag-crit{color:var(--crit);background:var(--crit-wash);border:1px solid rgba(192,57,43,.28)}
+.tag-warn{color:var(--warn);background:rgba(201,133,0,.10);border:1px solid rgba(201,133,0,.3)}
+.tag-good{color:var(--good);background:var(--good-track);border:1px solid rgba(11,122,11,.26)}
+.tag-mute{color:var(--muted);background:#E4E3DD;border:1px solid var(--grid)}
+
+/* ── 指标带：1 hero + 3 stat tiles（非对称，不是等分卡片墙）───── */
+.kpi{display:grid;grid-template-columns:minmax(280px,1fr) 2fr;gap:var(--gap);align-items:start}
+.hero-fig{
+  font-family:var(--f-text);font-size:76px;font-weight:650;line-height:.94;
+  letter-spacing:-.045em;color:var(--ink);
+}
+.hero-fig .pct{font-size:34px;font-weight:500;letter-spacing:-.02em;margin-left:2px}
+.hero-label{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;margin-bottom:14px}
+.hero-sub{font-size:13px;color:var(--muted);margin-top:12px;line-height:1.7}
+
+/* meter：fill = 状态色，track = 同色相浅步 */
+.meter{position:relative;height:12px;border-radius:99px;background:var(--good-track);margin-top:18px;overflow:visible}
+.meter-fill{height:100%;border-radius:99px;background:var(--good)}
+.meter-mark{position:absolute;top:-5px;bottom:-5px;width:0;border-left:1.5px dashed var(--muted)}
+.meter-mark span{
+  position:absolute;left:5px;top:-2px;white-space:nowrap;
+  font-family:var(--f-mono);font-size:9.5px;letter-spacing:.06em;color:var(--muted);
+}
+
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;padding-top:4px}
+.tile{border-top:1px solid var(--ink);padding-top:12px}
+.tile-label{font-family:var(--f-mono);font-size:10px;letter-spacing:.13em;color:var(--muted);text-transform:uppercase}
+.tile-val{font-family:var(--f-text);font-size:38px;font-weight:650;letter-spacing:-.03em;line-height:1.1;margin-top:8px}
+.tile-val small{font-size:15px;font-weight:500;color:var(--muted);letter-spacing:0;margin-left:3px}
+.tile-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:8px}
+.delta{font-family:var(--f-mono);font-size:11px;font-weight:600;letter-spacing:.02em}
+.delta-up-good{color:var(--good)}
+.delta-up-bad{color:var(--crit)}
+.delta-down-good{color:var(--good)}
+.delta-flat{color:var(--muted)}
+
+/* ── 图（figure）─────────────────────────────────────────────── */
+.fig{margin:0 0 8px}
+.fig + .fig{margin-top:46px}
+.fig-head{display:flex;justify-content:space-between;align-items:baseline;gap:24px;margin-bottom:4px}
+.fig-title{font-family:var(--f-display);font-size:21px;font-weight:600;line-height:1.35;letter-spacing:-.005em}
+.fig-sub{font-size:12.5px;color:var(--muted);margin-bottom:20px;line-height:1.65}
+.fig-sub b{color:var(--ink);font-weight:600}
+.fig svg{display:block;width:100%;height:auto;overflow:visible}
+.fig svg text{font-family:var(--f-mono)}
+.fig-foot{
+  display:flex;justify-content:space-between;align-items:baseline;gap:20px;
+  margin-top:14px;padding-top:9px;border-top:1px solid var(--grid);
+}
+.fig-src{font-family:var(--f-mono);font-size:9.5px;letter-spacing:.11em;color:var(--faint);text-transform:uppercase}
+
+/* 图例：≥2 系列必出，且状态色永不错单独承载语义（icon + label + 数值） */
+.legend{display:flex;flex-wrap:wrap;gap:10px 26px;margin-top:16px}
+.legend-item{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink)}
+.legend-item .chip{width:11px;height:11px;border-radius:2.5px;flex:none}
+.legend-item .ico{font-family:var(--f-mono);font-size:10px;font-weight:600;line-height:1}
+.legend-item .n{font-family:var(--f-mono);font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums}
+.legend-item .p{font-family:var(--f-mono);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+/* 数据表孪生（a11y relief：任何色编码都有等价表） */
+.tv{margin-top:14px}
+.tv > summary{
+  cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;
+  font-family:var(--f-mono);font-size:10.5px;letter-spacing:.11em;color:var(--muted);text-transform:uppercase;
+}
+.tv > summary::-webkit-details-marker{display:none}
+.tv > summary::before{content:"▸";font-size:9px;transition:transform .15s ease;display:inline-block}
+.tv[open] > summary::before{transform:rotate(90deg)}
+.tv > summary:hover{color:var(--ink)}
+table.data{
+  width:100%;border-collapse:collapse;margin-top:12px;
+  font-family:var(--f-mono);font-size:11.5px;font-variant-numeric:tabular-nums;
+}
+table.data th{
+  text-align:left;font-weight:600;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);padding:0 14px 7px 0;border-bottom:1px solid var(--ink);
+}
+table.data td{padding:8px 14px 8px 0;border-bottom:1px solid var(--grid);color:var(--ink)}
+table.data td.num{text-align:right;padding-right:22px}
+
+/* ── 明细表 ──────────────────────────────────────────────────── */
+table.defects{width:100%;border-collapse:collapse;font-size:13px}
+table.defects th{
+  text-align:left;font-family:var(--f-mono);font-size:9.5px;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+  padding:0 16px 9px 0;border-bottom:1px solid var(--ink);white-space:nowrap;
+}
+table.defects td{padding:12px 16px 12px 0;border-bottom:1px solid var(--grid);vertical-align:top}
+table.defects tr:hover td{background:rgba(28,28,26,.03)}
+.did{font-family:var(--f-mono);font-size:11.5px;font-weight:600;letter-spacing:.02em;color:var(--muted);white-space:nowrap}
+.dtitle{font-weight:500;line-height:1.55}
+.dmeta{font-family:var(--f-mono);font-size:11px;color:var(--faint);margin-top:3px;letter-spacing:.02em}
+table.defects .num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* 严重度 = 序（致命→提示），走灰阶明度 + 文字标签；不占语义色预算 */
+.sev{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;font-size:12.5px}
+.sev i{width:10px;height:10px;border-radius:2px;flex:none;display:inline-block}
+.sev-b1 i{background:#1C1C1A} .sev-b2 i{background:#4A4944}
+.sev-b3 i{background:#8F8E88} .sev-b4 i{background:#C6C5BF}
+
+/* 状态 = 语义色 + icon + label（永不错单独用色承载语义） */
+.st{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-family:var(--f-mono);font-size:11px;font-weight:600;letter-spacing:.04em}
+.st i{width:8px;height:8px;border-radius:99px;flex:none}
+.st b{font-weight:600}
+
+/* ── 缺数占位卡 ──────────────────────────────────────────────── */
+.placeholder{
+  border:1.5px dashed var(--faint);border-radius:4px;padding:26px 28px;
+  display:grid;grid-template-columns:1fr auto;gap:26px;align-items:center;
+}
+.placeholder h3{font-family:var(--f-display);font-size:19px;font-weight:600;margin-bottom:6px}
+.placeholder .need{font-size:13px;color:var(--muted);line-height:1.85}
+.placeholder .need code{
+  font-family:var(--f-mono);font-size:11.5px;background:#E4E3DD;
+  padding:1px 6px;border-radius:4px;color:var(--ink);
+}
+.btn{
+  font-family:var(--f-mono);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  border:1.5px solid var(--ink);background:none;color:var(--ink);
+  padding:11px 20px;border-radius:3px;cursor:pointer;white-space:nowrap;
+  transition:background .16s ease,color .16s ease;
+}
+.btn:hover{background:var(--ink);color:var(--paper)}
+
+/* ── 附录 / 页脚 ─────────────────────────────────────────────── */
+.dl-note{display:grid;grid-template-columns:130px 1fr;gap:8px 22px;font-size:13px;max-width:78ch}
+.dl-note dt{font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase;padding-top:4px}
+.dl-note dd{color:var(--ink);line-height:1.75}
+.colophon{
+  margin-top:56px;padding-top:18px;border-top:2px solid var(--ink);
+  display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;
+  font-family:var(--f-mono);font-size:10px;letter-spacing:.1em;color:var(--faint);text-transform:uppercase;
+}
+
+/* ── tooltip（hover 层：增强，从不作为读数唯一通路）────────────── */
+.tip{
+  position:fixed;z-index:99;pointer-events:none;opacity:0;
+  transform:translate(-50%,-100%);
+  background:var(--ink);color:var(--paper);
+  font-family:var(--f-mono);font-size:11.5px;line-height:1.55;letter-spacing:.02em;
+  padding:8px 12px;border-radius:5px;white-space:nowrap;
+  transition:opacity .12s ease;
+}
+.tip.on{opacity:1}
+
+/* ── 入场：一次编排好的 stagger，不是满屏乱飘 ───────────────── */
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.rise{animation:rise .78s cubic-bezier(.16,1,.3,1) both}
+@media (prefers-reduced-motion:reduce){.rise{animation:none}}
+
+/* ── 打印 / PDF：A4，卡片不跨页断，色彩强制还原 ───────────────── */
+@page{size:A4;margin:16mm 14mm}
+@media print{
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{padding:0;font-size:10.5pt}
+  .proto-note,.tip{display:none}
+  .sec-head{position:static}
+  .fig,.kpi,table.defects tr,.placeholder{break-inside:avoid}
+  .tv{display:none}
+  .sec{padding:22pt 0}
+}
+
+@media (max-width:860px){
+  .grid{grid-template-columns:1fr}
+  .grid > *,.grid > .breakout{grid-column:1}
+  .sec-head{position:static;margin-bottom:18px}
+  .kpi{grid-template-columns:1fr}
+  .tiles{grid-template-columns:1fr}
+  .meta-grid{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<p class="proto-note">
+  <b>设计稿 v2 · 测试总结报告版式</b>（对应调研文档 <code>docs/research/2026-09-22-test-report-visual-redesign.md</code>）。
+  立场：<b>报告是文档，不是卡片墙</b>——单栏编辑栅格（左栏挂章节号）、纸灰底、衬线章节名、等宽数据、语义色只编码「状态」。
+  图形规格按 dataviz 规范执行；调色已过校验器（相邻 CVD ΔE 9.7 / 常视 17.5，对纸面 <code>#F0EFEB</code>）。
+  <b>琥珀 <code>#C98500</code> 对比度 2.67、灰 <code>#8F8E88</code> 2.86</b>，低于 3:1 → 已按 relief 规则配可见标签与数据表孪生。
+  悬停任意色块可看读数；每张图下的「数据表」是等价通路。
+</p>
+
+<div class="sheet">
+
+  <!-- ══════════ 报头 ══════════ -->
+  <header class="masthead rise">
+    <div class="masthead-top">
+      <span class="kicker">NexusKit · 测试报告</span>
+      <span class="kicker">Summary / 回归测试 · 第 3 轮</span>
+    </div>
+    <hr class="rule-heavy">
+
+    <h1 class="report-title">核心链路达标，<em>支付网关</em>存在阻塞级缺陷，暂不建议发版</h1>
+
+    <p class="verdict">
+      <span class="stamp">有条件通过</span>
+      <span>128 条计划用例执行完毕，通过率 92.2%；卡点集中在支付网关的回调幂等与状态机并发，须先修复 BUG-2417。</span>
+    </p>
+
+    <dl class="meta-grid">
+      <div><dt>Project</dt><dd>商城 V3.2.0</dd></div>
+      <div><dt>Build</dt><dd>3.2.0-rc.3 · f7a91c2</dd></div>
+      <div><dt>窗口</dt><dd>2026-09-11 — 09-18</dd></div>
+      <div><dt>数据源</dt><dd>禅道用例执行 + BUG 导出</dd></div>
+      <div><dt>范围</dt><dd>6 模块 · 冒烟 + 回归</dd></div>
+      <div><dt>执行</dt><dd>QA 4 人 · 5 个工作日</dd></div>
+      <div><dt>负责人</dt><dd>叶旺林</dd></div>
+      <div><dt>生成</dt><dd>2026-09-22 14:07</dd></div>
+    </dl>
+  </header>
+
+  <!-- ══════════ 结论 ══════════ -->
+  <section class="sec grid rise">
+    <div class="sec-head">
+      <span class="sec-num">§ 00</span>
+      <h2 class="sec-title">结论与<br>建议</h2>
+    </div>
+    <ol class="findings">
+      <li><span class="tag tag-crit">● 阻塞</span>支付回调重复签名会触发订单重复扣款（BUG-2417），属资金安全问题，<b>发版前必须清零</b>。</li>
+      <li><span class="tag tag-warn">● 关注</span>支付网关 24 条用例贡献了全部 23 个缺陷中的 9 个，且含 4 条未通过用例，是本轮唯一风险集中区。</li>
+      <li><span class="tag tag-good">● 达标</span>用户中心、商品服务、后台管理三个模块零失败、零阻塞，核心链路可回归通过。</li>
+      <li><span class="tag tag-mute">● 待补</span>缺上一轮的模块级执行明细，无法判断支付网关是新增劣化还是存量问题——见文末缺数占位。</li>
+    </ol>
+  </section>
+
+  <!-- ══════════ 指标带 ══════════ -->
+  <section class="sec grid rise">
+    <div class="sec-head">
+      <span class="sec-num">§ 01</span>
+      <h2 class="sec-title">本轮<br>指标</h2>
+    </div>
+
+    <div class="kpi breakout">
+      <!-- hero figure：全篇唯一（dataviz 规范：一屏只允许一个 hero 数字） -->
+      <div>
+        <div class="hero-label">Pass rate · 通过率</div>
+        <div class="hero-fig">92.2<span class="pct">%</span></div>
+        <div class="meter" data-tip="通过 118 / 计划执行 128 · 发版线 95%">
+          <div class="meter-fill" style="width:92.2%"></div>
+          <div class="meter-mark" style="left:95%"><span>发版线 95%</span></div>
+        </div>
+        <p class="hero-sub">118 通过 / 128 计划执行（另有 0 条未纳入本轮计划）。低于发版线 2.8 个百分点，缺口全部来自支付网关。</p>
+      </div>
+
+      <div class="tiles">
+        <div class="tile">
+          <div class="tile-label">计划执行用例</div>
+          <div class="tile-val">128<small>条</small></div>
+          <div class="tile-foot">
+            <span class="delta delta-up-good">▲ 23 环比上轮</span>
+            <svg viewBox="0 0 96 30" width="96" height="30" aria-hidden="true">
+              <polyline points="2,24 10,22 18,23 26,18 34,17 42,14 50,15 58,11 66,9 74,8 82,6 92,5"
+                fill="none" stroke="#C6C5BF" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+              <circle cx="92" cy="5" r="4" fill="#1C1C1A" stroke="#F0EFEB" stroke-width="2"/>
+            </svg>
+          </div>
+        </div>
+        <div class="tile">
+          <div class="tile-label">缺陷总数</div>
+          <div class="tile-val">23<small>个</small></div>
+          <div class="tile-foot">
+            <span class="delta delta-up-bad">▲ 4 环比上轮</span>
+            <svg viewBox="0 0 96 30" width="96" height="30" aria-hidden="true">
+              <polyline points="2,20 10,18 18,22 26,15 34,17 42,12 50,14 58,10 66,13 74,9 82,11 92,7"
+                fill="none" stroke="#C6C5BF" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+              <circle cx="92" cy="7" r="4" fill="#C0392B" stroke="#F0EFEB" stroke-width="2"/>
+            </svg>
+          </div>
+        </div>
+        <div class="tile">
+          <div class="tile-label">阻塞 / 未通过</div>
+          <div class="tile-val">9<small>条</small></div>
+          <div class="tile-foot">
+            <span class="delta delta-down-good">▼ 2 环比上轮</span>
+            <svg viewBox="0 0 96 30" width="96" height="30" aria-hidden="true">
+              <polyline points="2,7 10,9 18,8 26,12 34,11 42,15 50,13 58,17 66,16 74,19 82,18 92,21"
+                fill="none" stroke="#C6C5BF" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+              <circle cx="92" cy="21" r="4" fill="#C0392B" stroke="#F0EFEB" stroke-width="2"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ §02 执行情况 ══════════ -->
+  <section class="sec grid rise">
+    <div class="sec-head">
+      <span class="sec-num">§ 02</span>
+      <h2 class="sec-title">执行<br>情况</h2>
+    </div>
+
+    <p class="sec-lede">本轮计划执行 128 条，实际执行 127 条（1 条因环境未就绪跳过）。未通过集中在支付网关与订单中心，其余模块本轮零失败。</p>
+
+    <!-- 图 1 · 用例状态构成：part-to-whole → 单条水平堆叠条（不是环形图） -->
+    <figure class="fig breakout">
+      <div class="fig-head"><h3 class="fig-title">128 条里 118 条通过，未通过 9 条全部落在两个模块</h3></div>
+      <p class="fig-sub">口径 <b>计划执行 = 通过 + 阻塞 + 失败 + 跳过</b> · 单位 <b>1 格 = 1 条用例</b> · 范围 <b>3.2.0-rc.3 冒烟 + 回归</b></p>
+      <svg id="fig-mix" viewBox="0 0 1080 62" role="img" aria-label="用例状态构成堆叠条"></svg>
+      <div class="legend" id="legend-mix"></div>
+      <div class="fig-foot">
+        <span class="fig-src">Stacked bar · 状态构成 · 禅道用例执行导出</span>
+        <span class="fig-src">1 段 = 1 条用例</span>
+      </div>
+      <details class="tv">
+        <summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>状态</th><th>条数</th><th>占比</th></tr></thead>
+          <tbody>
+            <tr><td>通过</td><td class="num">118</td><td class="num">92.2%</td></tr>
+            <tr><td>阻塞</td><td class="num">3</td><td class="num">2.3%</td></tr>
+            <tr><td>失败</td><td class="num">6</td><td class="num">4.7%</td></tr>
+            <tr><td>跳过</td><td class="num">1</td><td class="num">0.8%</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+
+    <!-- 图 2 · 模块分布：emphasis（一支高亮，其余去强调灰） -->
+    <figure class="fig breakout">
+      <div class="fig-head"><h3 class="fig-title">支付网关一个模块占了 39% 的缺陷</h3></div>
+      <p class="fig-sub">口径 <b>各模块累计缺陷数（含已修复）</b> · 单位 <b>1 格 = 1 个缺陷</b> · 按缺陷数降序</p>
+      <svg id="fig-modules" viewBox="0 0 1080 300" role="img" aria-label="各模块缺陷数横向条形"></svg>
+      <div class="fig-foot">
+        <span class="fig-src">Emphasis bars · 模块归属 · 禅道 BUG 导出</span>
+        <span class="fig-src">红 = 本轮风险焦点</span>
+      </div>
+      <details class="tv">
+        <summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>模块</th><th>用例</th><th>未通过</th><th>缺陷</th></tr></thead>
+          <tbody>
+            <tr><td>支付网关</td><td class="num">24</td><td class="num">6</td><td class="num">9</td></tr>
+            <tr><td>订单中心</td><td class="num">31</td><td class="num">2</td><td class="num">6</td></tr>
+            <tr><td>用户中心</td><td class="num">28</td><td class="num">1</td><td class="num">3</td></tr>
+            <tr><td>商品服务</td><td class="num">22</td><td class="num">0</td><td class="num">3</td></tr>
+            <tr><td>消息推送</td><td class="num">12</td><td class="num">0</td><td class="num">2</td></tr>
+            <tr><td>后台管理</td><td class="num">11</td><td class="num">0</td><td class="num">0</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+  </section>
+
+  <!-- ══════════ §03 缺陷分析 ══════════ -->
+  <section class="sec grid rise">
+    <div class="sec-head">
+      <span class="sec-num">§ 03</span>
+      <h2 class="sec-title">缺陷<br>分析</h2>
+    </div>
+
+    <p class="sec-lede">23 个缺陷中仅 1 个致命，但它仍处激活态。一般级缺陷共 12 个、修复推进最快，是本轮缺陷结构的主体。</p>
+
+    <!-- 图 3 · 严重度 × 状态 矩阵：grid of counts → 热力矩阵，量走灰阶明度 -->
+    <figure class="fig breakout">
+      <div class="fig-head"><h3 class="fig-title">唯一致命缺陷仍卡在「激活」，是全表唯一红格</h3></div>
+      <p class="fig-sub">口径 <b>严重度 × 当前状态 的缺陷计数</b> · 明度 <b>越黑 = 越多</b> · 范围 <b>3.2.0 累计 23 个</b></p>
+      <svg id="fig-matrix" viewBox="0 0 1080 330" role="img" aria-label="缺陷严重度与状态矩阵热力图"></svg>
+      <div class="legend" id="legend-scale"></div>
+      <div class="fig-foot">
+        <span class="fig-src">Arc matrix · 严重度 × 状态 · 禅道 BUG 导出</span>
+        <span class="fig-src">红圈 = 须发版前清零</span>
+      </div>
+      <details class="tv">
+        <summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>严重度</th><th>激活</th><th>处理中</th><th>已修复</th><th>已关闭</th><th>合计</th></tr></thead>
+          <tbody>
+            <tr><td>致命</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">1</td></tr>
+            <tr><td>严重</td><td class="num">2</td><td class="num">1</td><td class="num">2</td><td class="num">0</td><td class="num">5</td></tr>
+            <tr><td>一般</td><td class="num">3</td><td class="num">2</td><td class="num">5</td><td class="num">2</td><td class="num">12</td></tr>
+            <tr><td>提示</td><td class="num">0</td><td class="num">1</td><td class="num">2</td><td class="num">2</td><td class="num">5</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+
+    <!-- 明细：报告必须能回答「具体是哪几个」，不用回禅道 -->
+    <div class="breakout" style="margin-top:46px">
+      <div class="fig-head"><h3 class="fig-title">缺陷明细（23 条，展示前 8 条）</h3></div>
+      <p class="fig-sub">按严重度 → 创建时间排序 · 完整清单见导出 CSV</p>
+      <table class="defects">
+        <thead>
+          <tr>
+            <th style="width:88px">ID</th>
+            <th>标题</th>
+            <th style="width:96px">严重度</th>
+            <th style="width:104px">状态</th>
+            <th style="width:96px">模块</th>
+            <th style="width:72px">负责人</th>
+            <th style="width:64px">创建</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="did">BUG-2417</td>
+            <td><div class="dtitle">支付回调重复签名导致订单重复扣款</div><div class="dmeta">回调幂等缺失 · 涉及订单 12 笔</div></td>
+            <td><span class="sev sev-b1"><i></i>致命</span></td>
+            <td><span class="st" style="color:#C0392B"><i style="background:#C0392B"></i><b>激活</b></span></td>
+            <td class="num">支付网关</td><td class="num">陈昊</td><td class="num">09-16</td>
+          </tr>
+          <tr>
+            <td class="did">BUG-2402</td>
+            <td><div class="dtitle">退款单状态回滚后未释放占用库存</div><div class="dmeta">并发取消场景 · 可复现</div></td>
+            <td><span class="sev sev-b2"><i></i>严重</span></td>
+            <td><span class="st" style="color:#C0392B"><i style="background:#C0392B"></i><b>激活</b></span></td>
+            <td class="num">订单中心</td><td class="num">林悦</td><td class="num">09-15</td>
+          </tr>
+          <tr>
+            <td class="did">BUG-2398</td>
+            <td><div class="dtitle">跨境支付汇率快照取到 T+1 历史值</div><div class="dmeta">仅多币种商户可见</div></td>
+            <td><span class="sev sev-b2"><i></i>严重</span></td>
+            <td><span class="st" style="color:#C98500"><i style="background:#C98500"></i><b>处理中</b></span></td>
+            <td class="num">支付网关</td><td class="num">陈昊</td><td class="num">09-15</td>
+          </tr>
+          <tr>
+            <td class="did">BUG-2391</td>
+            <td><div class="dtitle">支付超时关单与用户取消并发产生脏状态</div><div class="dmeta">状态机并发 · 已补单测</div></td>
+            <td><span class="sev sev-b2"><i></i>严重</span></td>
+            <td><span class="st" style="color:#0B7A0B"><i style="background:#0B7A0B"></i><b>已修复</b></span></td>
+            <td class="num">支付网关</td><td class="num">王倩</td><td class="num">09-14</td>
+          </tr>
+          <tr>
+            <td class="did">BUG-2377</td>
+            <td><div class="dtitle">优惠券叠加后实付金额四舍五入偏差 1 分</div><div class="dmeta">仅三券叠加场景</div></td>
+            <td><span class="sev sev-b3"><i></i>一般</span></td>
+            <td><span class="st" style="color:#0B7A0B"><i style="background:#0B7A0B"></i><b>已修复</b></span></td>
+            <td class="num">订单中心</td><td class="num">林悦</td><td class="num">09-13</td>
+          </tr>
+          <tr>
+            <td class="did">BUG-2355</td>
+            <td><div class="dtitle">消息推送在免打扰时段仍发送营销短信</div><div class="dmeta">时段边界 22:00 未生效</div></td>
+            <td><span class="sev sev-b3"><i></i>一般</span></td>
+            <td><span class="st" style="color:#C98500"><i style="background:#C98500"></i><b>处理中</b></span></td>
+            <td class="num">消息推送</td><td class="num">周航</td><td class="num">09-12</td>
+          </tr>
+          <tr>
+            <td class="did">BUG-2364</td>
+            <td><div class="dtitle">实名认证图片压缩后关键信息模糊</div><div class="dmeta">仅小图上传路径</div></td>
+            <td><span class="sev sev-b3"><i></i>一般</span></td>
+            <td><span class="st" style="color:#8F8E88"><i style="background:#8F8E88"></i><b>已关闭</b></span></td>
+            <td class="num">用户中心</td><td class="num">赵磊</td><td class="num">09-12</td>
+          </tr>
+          <tr>
+            <td class="did">BUG-2341</td>
+            <td><div class="dtitle">后台导出 Excel 超 1 万行时文件损坏</div><div class="dmeta">低频 · 已有替代导出路径</div></td>
+            <td><span class="sev sev-b4"><i></i>提示</span></td>
+            <td><span class="st" style="color:#8F8E88"><i style="background:#8F8E88"></i><b>已关闭</b></span></td>
+            <td class="num">后台管理</td><td class="num">赵磊</td><td class="num">09-11</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════ §04 趋势 ══════════ -->
+  <section class="sec grid rise">
+    <div class="sec-head">
+      <span class="sec-num">§ 04</span>
+      <h2 class="sec-title">趋势</h2>
+    </div>
+
+    <p class="sec-lede">新增缺陷在 D5 见顶后回落，修复节奏滞后约两天；D10 起新增归零，说明提测侧已收敛。</p>
+
+    <!-- 图 5 · 趋势：emphasis（新增为主角，关闭为语境），绝不双轴 -->
+    <figure class="fig breakout">
+      <div class="fig-head"><h3 class="fig-title">新增缺陷在 D5 见顶 6 个，修复进度落后两天</h3></div>
+      <p class="fig-sub">口径 <b>按创建 / 关闭日期计数的每日缺陷数</b> · 单位 <b>1 点 = 1 个缺陷 / 日</b> · 范围 <b>09-11 — 09-22 共 12 日</b></p>
+      <svg id="fig-trend" viewBox="0 0 1080 330" role="img" aria-label="每日新增与关闭缺陷趋势折线"></svg>
+      <div class="legend" id="legend-trend"></div>
+      <div class="fig-foot">
+        <span class="fig-src">Hairline line · 新增 / 关闭 · 禅道 BUG 导出</span>
+        <span class="fig-src">1 点 = 1 个缺陷</span>
+      </div>
+      <details class="tv">
+        <summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>日</th><th>09-11</th><th>09-12</th><th>09-13</th><th>09-14</th><th>09-15</th><th>09-16</th><th>09-17</th><th>09-18</th><th>09-19</th><th>09-20</th><th>09-21</th><th>09-22</th></tr></thead>
+          <tbody>
+            <tr><td>新增</td><td class="num">2</td><td class="num">3</td><td class="num">1</td><td class="num">4</td><td class="num">6</td><td class="num">5</td><td class="num">3</td><td class="num">2</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr>
+            <tr><td>关闭</td><td class="num">0</td><td class="num">1</td><td class="num">2</td><td class="num">1</td><td class="num">2</td><td class="num">3</td><td class="num">3</td><td class="num">4</td><td class="num">5</td><td class="num">4</td><td class="num">3</td><td class="num">2</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+  </section>
+
+  <!-- ══════════ §05 缺数占位 ══════════ -->
+  <section class="sec grid rise">
+    <div class="sec-head">
+      <span class="sec-num">§ 05</span>
+      <h2 class="sec-title">待补<br>数据</h2>
+    </div>
+
+    <div class="placeholder breakout" data-missing="prev-round-modules">
+      <div>
+        <h3>回归轮次对比（未出图）</h3>
+        <p class="need">
+          素材中没有上一轮的模块级执行明细，无法绘制「本轮 vs 上轮」的分组对比，也无法判断支付网关是新增劣化还是存量问题。<br>
+          补录以下字段即可解锁：<code>上一轮各模块的用例数 / 未通过数 / 缺陷数</code>（或直接上传上一轮的禅道导出）。
+        </p>
+      </div>
+      <button type="button" class="btn" onclick="parent.postMessage({type:'nexus-report-supplement',missing:'prev-round-modules'},'*')">补录数据</button>
+    </div>
+  </section>
+
+  <!-- ══════════ 附录 ══════════ -->
+  <section class="sec grid rise">
+    <div class="sec-head">
+      <span class="sec-num">§ A</span>
+      <h2 class="sec-title">口径与<br>免责</h2>
+    </div>
+    <dl class="dl-note">
+      <dt>通过率</dt><dd>通过 ÷ 计划执行；跳过计入分母但不计入分子，口径与禅道「执行结果」一致。</dd>
+      <dt>缺陷计数</dt><dd>3.2.0 里程碑累计 23 个，含已关闭；「未通过用例」与「缺陷」非一一对应，不作加减。</dd>
+      <dt>严重度</dt><dd>沿用禅道四级（致命 / 严重 / 一般 / 提示），为有序量表，故用明度编码而非色相。</dd>
+      <dt>数据边界</dt><dd>本报告全部数字来自上传的用例执行结果与 BUG 清单；未提供的指标以缺数占位呈现，不作估算。</dd>
+    </dl>
+  </section>
+
+  <footer class="colophon">
+    <span>NexusKit · Test Report · Summary</span>
+    <span>3.2.0-rc.3 · 第 3 轮回归</span>
+    <span>Generated 2026-09-22 14:07</span>
+  </footer>
+
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   与 mono-tokens 同形的 SVG 助手（新图型片段可直接沿用此习惯用法）
+   ═══════════════════════════════════════════════════════════════ */
+const NS = 'http://www.w3.org/2000/svg';
+const el = (p, t, a = {}) => {
+  const n = document.createElementNS(NS, t);
+  for (const k in a) n.setAttribute(k, a[k]);
+  p.appendChild(n);
+  return n;
+};
+const txt = (p, a, s) => { const n = el(p, 'text', a); n.textContent = s; return n; };
+
+/* 横条：基线端方角，数据端 4px 圆角（marks 规范） */
+function barPath(x, y, w, h, r = 4) {
+  if (w <= 0) return '';
+  const rr = Math.min(r, w, h / 2);
+  return `M${x} ${y} H${x + w - rr} Q${x + w} ${y} ${x + w} ${y + rr} V${y + h - rr} Q${x + w} ${y + h} ${x + w - rr} ${y + h} H${x} Z`;
+}
+
+const INK = '#1C1C1A', MUTED = '#8F8E88', FAINT = '#C6C5BF', GRID = '#DEDDD6', PAPER = '#F0EFEB';
+const GOOD = '#0B7A0B', WARN = '#C98500', CRIT = '#C0392B';
+
+/* ── tooltip：增强层，读数另有直标 / 数据表通路 ── */
+const tipEl = document.getElementById('tip');
+function bindTip(node, text) {
+  node.style.cursor = 'default';
+  node.addEventListener('pointerenter', (e) => { tipEl.textContent = text; tipEl.classList.add('on'); moveTip(e); });
+  node.addEventListener('pointermove', moveTip);
+  node.addEventListener('pointerleave', () => tipEl.classList.remove('on'));
+}
+function moveTip(e) {
+  tipEl.style.left = e.clientX + 'px';
+  tipEl.style.top = (e.clientY - 12) + 'px';
+}
+document.querySelectorAll('[data-tip]').forEach((n) => bindTip(n, n.getAttribute('data-tip')));
+
+/* ═══════ 图 1 · 用例状态构成：单条水平堆叠条 ═══════
+   形式：part-to-whole → stacked bar（不是环形图）
+   顺序 通过|阻塞|失败|跳过 —— 绿红不相邻，CVD ΔE 9.7
+   2px 表面间隙分段；段内标签只在放得下时给                          */
+(function mixChart() {
+  const svg = document.getElementById('fig-mix');
+  const W = 1080, GAP = 2, Y = 14, H = 24;
+  const data = [
+    { k: '通过', v: 118, c: GOOD, ico: '✓' },
+    { k: '阻塞', v: 3,   c: WARN, ico: '▲' },
+    { k: '失败', v: 6,   c: CRIT, ico: '✕' },
+    { k: '跳过', v: 1,   c: MUTED, ico: '–' },
+  ];
+  const total = data.reduce((s, d) => s + d.v, 0);
+  const usable = W - GAP * (data.length - 1);
+
+  let x = 0;
+  data.forEach((d, i) => {
+    const w = (d.v / total) * usable;
+    const isLast = i === data.length - 1;
+    // 堆叠条是一个整体标记：基线端（左）方角，数据端（即最后一段的右端）4px 圆角；
+    // 中段两端都方角，段与段之间用 2px 表面间隙分开，不描边。
+    const dAttr = isLast ? barPath(x, Y, w, H, 4) : `M${x} ${Y} H${x + w} V${Y + H} H${x} Z`;
+    const p = el(svg, 'path', { d: dAttr, fill: d.c });
+    bindTip(p, `${d.k} ${d.v} 条 · ${(d.v / total * 100).toFixed(1)}%`);
+    // 段内直标：只有放得下才给（marks 规范：放不下就交给图例/tooltip）
+    if (w > 120) {
+      txt(svg, {
+        x: x + 14, y: Y + 16, 'font-size': 12, 'font-weight': 600,
+        fill: PAPER, 'dominant-baseline': 'middle',
+      }, `${d.k} ${d.v}`);
+    }
+    x += w + GAP;
+  });
+
+  // 图例：≥2 系列必出；状态色必配 icon + label + 数值，不靠颜色单独承载语义
+  const lg = document.getElementById('legend-mix');
+  data.forEach((d) => {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML =
+      `<span class="chip" style="background:${d.c}"></span>` +
+      `<span class="ico" style="color:${d.c}">${d.ico}</span>` +
+      `<span>${d.k}</span><span class="n">${d.v}</span>` +
+      `<span class="p">${(d.v / total * 100).toFixed(1)}%</span>`;
+    lg.appendChild(item);
+  });
+})();
+
+/* ═══════ 图 2 · 模块分布：emphasis 横条 ═══════
+   名义类目 → 绝不用「越大越深」的值色阶（那是双重编码）
+   一支高亮（本轮风险焦点），其余去强调灰                            */
+(function moduleChart() {
+  const svg = document.getElementById('fig-modules');
+  const W = 1080, X0 = 150, X1 = 1000, BAR = 18, ROW = 44, TOP = 34;
+  const data = [
+    { k: '支付网关', v: 9, hot: true, cases: 24, fail: 6 },
+    { k: '订单中心', v: 6, hot: false, cases: 31, fail: 2 },
+    { k: '用户中心', v: 3, hot: false, cases: 28, fail: 1 },
+    { k: '商品服务', v: 3, hot: false, cases: 22, fail: 0 },
+    { k: '消息推送', v: 2, hot: false, cases: 12, fail: 0 },
+    { k: '后台管理', v: 0, hot: false, cases: 11, fail: 0 },
+  ];
+  const max = 10; // 留一档余量，让条端不顶边
+  const scale = (X1 - X0) / max;
+
+  // 发丝网格（实线、1px、退让）
+  [0, 2, 4, 6, 8, 10].forEach((t) => {
+    const gx = X0 + t * scale;
+    el(svg, 'line', { x1: gx, y1: TOP - 12, x2: gx, y2: TOP + ROW * data.length - 8, stroke: GRID, 'stroke-width': 1 });
+    txt(svg, { x: gx, y: TOP - 20, 'font-size': 10, fill: FAINT, 'text-anchor': 'middle', 'letter-spacing': '.06em' }, t);
+  });
+  el(svg, 'line', { x1: X0, y1: TOP - 12, x2: X0, y2: TOP + ROW * data.length - 8, stroke: INK, 'stroke-width': 1 });
+
+  data.forEach((d, i) => {
+    const y = TOP + i * ROW;
+    const w = d.v * scale;
+    txt(svg, {
+      x: X0 - 18, y: y + BAR / 2, 'font-size': 12.5, 'font-weight': d.hot ? 600 : 500,
+      fill: d.hot ? INK : MUTED, 'text-anchor': 'end', 'dominant-baseline': 'middle',
+    }, d.k);
+
+    if (w > 0) {
+      const p = el(svg, 'path', { d: barPath(X0, y, w, BAR), fill: d.hot ? CRIT : MUTED });
+      bindTip(p, `${d.k} · 缺陷 ${d.v} 个 · 用例 ${d.cases} · 未通过 ${d.fail}`);
+    } else {
+      el(svg, 'line', { x1: X0, y1: y + BAR / 2, x2: X0 + 6, y2: y + BAR / 2, stroke: FAINT, 'stroke-width': 2 });
+      bindTip(el(svg, 'rect', { x: X0 - 2, y: y - 3, width: 12, height: BAR + 6, fill: 'transparent' }), `${d.k} · 缺陷 0 个 · 用例 ${d.cases}`);
+    }
+
+    // 只标极值与被强调者，不给每根条都写数字
+    txt(svg, {
+      x: X0 + Math.max(w, 6) + 12, y: y + BAR / 2, 'font-size': 13,
+      'font-weight': d.hot ? 700 : 500, fill: d.hot ? CRIT : INK, 'dominant-baseline': 'middle',
+    }, d.v);
+    if (d.hot) {
+      txt(svg, { x: X0 + w + 34, y: y + BAR / 2, 'font-size': 10, fill: CRIT, 'dominant-baseline': 'middle', 'letter-spacing': '.1em' }, '风险焦点');
+    }
+  });
+})();
+
+/* ═══════ 图 3 · 严重度 × 状态 矩阵 ═══════
+   形式：grid of counts → 热力矩阵；量走灰阶明度（lieflat「明度即数据」）
+   唯一红圈 = emphasis 标出「发版前必须清零」的那格                    */
+(function matrixChart() {
+  const svg = document.getElementById('fig-matrix');
+  const rows = ['致命', '严重', '一般', '提示'];
+  const cols = ['激活', '处理中', '已修复', '已关闭'];
+  const M = [
+    [1, 0, 0, 0],
+    [2, 1, 2, 0],
+    [3, 2, 5, 2],
+    [0, 1, 2, 2],
+  ];
+  // 明度阶梯：越多越黑；0 用近乎纸色 + 发丝描边（区分「0」与「无此格」）
+  const RAMP = { 0: '#EDECE6', 1: '#C6C5BF', 2: '#8F8E88', 3: '#4A4944', 5: '#1C1C1A' };
+  const rampOf = (v) => RAMP[v] ?? RAMP[5];
+  const CW = 210, CH = 54, GAP = 2, X0 = 190, Y0 = 54;
+
+  cols.forEach((c, j) => {
+    txt(svg, {
+      x: X0 + j * (CW + GAP) + CW / 2, y: Y0 - 18, 'font-size': 11,
+      fill: MUTED, 'text-anchor': 'middle', 'letter-spacing': '.12em',
+    }, c);
+  });
+
+  rows.forEach((r, i) => {
+    const y = Y0 + i * (CH + GAP);
+    txt(svg, {
+      x: X0 - 22, y: y + CH / 2, 'font-size': 13, 'font-weight': 600,
+      fill: INK, 'text-anchor': 'end', 'dominant-baseline': 'middle',
+    }, r);
+    // 行合计（右侧，灰阶明度标出「哪一行最重」）
+    const rowSum = M[i].reduce((a, b) => a + b, 0);
+    txt(svg, {
+      x: X0 + cols.length * (CW + GAP) + 24, y: y + CH / 2, 'font-size': 15,
+      'font-weight': 650, fill: INK, 'dominant-baseline': 'middle',
+    }, rowSum);
+    txt(svg, {
+      x: X0 + cols.length * (CW + GAP) + 24, y: y + CH / 2 + 15, 'font-size': 9,
+      fill: FAINT, 'dominant-baseline': 'middle', 'letter-spacing': '.1em',
+    }, 'SUM');
+
+    cols.forEach((_, j) => {
+      const v = M[i][j];
+      const x = X0 + j * (CW + GAP);
+      const g = el(svg, 'g', {});
+      el(g, 'rect', {
+        x, y, width: CW, height: CH, fill: rampOf(v),
+        stroke: v === 0 ? GRID : 'none', 'stroke-width': 1,
+      });
+      txt(g, {
+        x: x + CW / 2, y: y + CH / 2, 'font-size': 20, 'font-weight': 700,
+        fill: v >= 3 ? PAPER : INK, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+        style: 'font-family:var(--f-text)',
+      }, v);
+      bindTip(g, `${r} × ${cols[j]} · ${v} 个缺陷`);
+
+      // emphasis：致命 × 激活 = 发版前必须清零的那格
+      if (i === 0 && j === 0) {
+        el(svg, 'rect', {
+          x: x - 3, y: y - 3, width: CW + 6, height: CH + 6,
+          fill: 'none', stroke: CRIT, 'stroke-width': 2.5, rx: 3,
+        });
+        txt(svg, {
+          x: x + CW / 2, y: y - 14, 'font-size': 10, fill: CRIT,
+          'text-anchor': 'middle', 'letter-spacing': '.12em', 'font-weight': 600,
+        }, '发版前必须清零');
+      }
+    });
+  });
+
+  // 列合计
+  const yBot = Y0 + rows.length * (CH + GAP) + 8;
+  txt(svg, { x: X0 - 22, y: yBot + 12, 'font-size': 9, fill: FAINT, 'text-anchor': 'end', 'letter-spacing': '.1em' }, 'SUM');
+  cols.forEach((_, j) => {
+    const colSum = M.reduce((a, row) => a + row[j], 0);
+    txt(svg, {
+      x: X0 + j * (CW + GAP) + CW / 2, y: yBot + 16, 'font-size': 15, 'font-weight': 650,
+      fill: INK, 'text-anchor': 'middle',
+    }, colSum);
+  });
+
+  // 明度标尺（连续量的 scale legend 是必备项）
+  const lg = document.getElementById('legend-scale');
+  const order = [0, 1, 2, 3, 5];
+  lg.innerHTML = '<span class="legend-item"><span class="p">少</span></span>';
+  order.forEach((v) => {
+    const s = document.createElement('span');
+    s.className = 'legend-item';
+    s.innerHTML = `<span class="chip" style="background:${rampOf(v)};border:1px solid ${v === 0 ? GRID : 'transparent'}"></span><span class="n">${v}</span>`;
+    lg.appendChild(s);
+  });
+  const more = document.createElement('span');
+  more.className = 'legend-item';
+  more.innerHTML = '<span class="p">多（明度 = 数量）</span>';
+  lg.appendChild(more);
+})();
+
+/* ═══════ 图 5 · 趋势：emphasis 折线（新增为主角，关闭为语境）═══════
+   绝不双轴：两条线同单位（个/日），共用一根纵轴
+   2px 线，端点 ≥8px 且带 2px 表面环；只标峰值与端点                    */
+(function trendChart() {
+  const svg = document.getElementById('fig-trend');
+  const days = ['09-11', '09-12', '09-13', '09-14', '09-15', '09-16', '09-17', '09-18', '09-19', '09-20', '09-21', '09-22'];
+  const add = [2, 3, 1, 4, 6, 5, 3, 2, 1, 0, 0, 0];
+  const close = [0, 1, 2, 1, 2, 3, 3, 4, 5, 4, 3, 2];
+
+  const X0 = 72, X1 = 980, Y0 = 34, Y1 = 244, YMAX = 7;
+  const px = (i) => X0 + (i / (days.length - 1)) * (X1 - X0);
+  const py = (v) => Y1 - (v / YMAX) * (Y1 - Y0);
+
+  // 发丝网格：实线、1px、单色退让（不用虚线 —— 虚线只留给阈值）
+  [0, 2, 4, 6].forEach((t) => {
+    el(svg, 'line', { x1: X0, y1: py(t), x2: X1, y2: py(t), stroke: GRID, 'stroke-width': 1 });
+    txt(svg, { x: X0 - 16, y: py(t) + 4, 'font-size': 10, fill: FAINT, 'text-anchor': 'end' }, t);
+  });
+  el(svg, 'line', { x1: X0, y1: py(0), x2: X1, y2: py(0), stroke: INK, 'stroke-width': 1 });
+
+  days.forEach((d, i) => {
+    txt(svg, { x: px(i), y: py(0) + 24, 'font-size': 9.5, fill: FAINT, 'text-anchor': 'middle', 'letter-spacing': '.04em' }, d);
+  });
+  txt(svg, { x: X0 - 16, y: Y0 - 12, 'font-size': 9, fill: FAINT, 'text-anchor': 'end', 'letter-spacing': '.12em' }, '个/日');
+
+  const poly = (arr) => arr.map((v, i) => `${px(i)},${py(v)}`).join(' ');
+
+  // 语境线（去强调灰）
+  el(svg, 'polyline', {
+    points: poly(close), fill: 'none', stroke: MUTED,
+    'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+  });
+  // 主角线（墨）
+  el(svg, 'polyline', {
+    points: poly(add), fill: 'none', stroke: INK,
+    'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+  });
+
+  // 端点标记：≥8px + 2px 表面环
+  [[add, INK, '新增'], [close, MUTED, '关闭']].forEach(([arr, c, name]) => {
+    arr.forEach((v, i) => {
+      const g = el(svg, 'g', {});
+      el(g, 'circle', { cx: px(i), cy: py(v), r: 4, fill: c, stroke: PAPER, 'stroke-width': 2 });
+      // 命中区放大到 ~24px（规范：hover 目标大于标记本身）
+      el(g, 'circle', { cx: px(i), cy: py(v), r: 12, fill: 'transparent' });
+      bindTip(g, `${days[i]} · ${name} ${v} 个`);
+    });
+  });
+
+  // 直标：只标峰值与两端，不给每个点写数字
+  const peak = add.indexOf(Math.max(...add));
+  el(svg, 'line', { x1: px(peak), y1: py(add[peak]) - 12, x2: px(peak), y2: py(add[peak]) - 30, stroke: CRIT, 'stroke-width': 1.5 });
+  txt(svg, {
+    x: px(peak), y: py(add[peak]) - 38, 'font-size': 13, 'font-weight': 700,
+    fill: CRIT, 'text-anchor': 'middle',
+  }, `峰值 ${add[peak]}`);
+  txt(svg, {
+    x: px(days.length - 1) + 2, y: py(add[add.length - 1]) - 12, 'font-size': 11,
+    fill: INK, 'text-anchor': 'end', 'font-weight': 600,
+  }, '新增');
+  txt(svg, {
+    x: px(days.length - 1) + 2, y: py(close[close.length - 1]) + 18, 'font-size': 11,
+    fill: MUTED, 'text-anchor': 'end', 'font-weight': 600,
+  }, '关闭');
+
+  // 图例：2 系列必出
+  const lg = document.getElementById('legend-trend');
+  [[INK, '新增缺陷', '本轮风险主角'], [MUTED, '关闭缺陷', '语境 · 滞后约 2 天']].forEach(([c, k, note]) => {
+    const s = document.createElement('span');
+    s.className = 'legend-item';
+    s.innerHTML =
+      `<span class="chip" style="background:${c};width:18px;height:3px;border-radius:2px"></span>` +
+      `<span>${k}</span><span class="p">${note}</span>`;
+    lg.appendChild(s);
+  });
+})();
+</script>
+</body>
+</html>

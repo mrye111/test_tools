@@ -1,50 +1,78 @@
 // ═══════════════════════════════════════════════════════════
-// 图型片段 L4 · Eight products land in twelve cities
-// 数据契约：分类×分类+量，小数据（≤100 格）
+// 图型片段 L4 · Ink Matrix 明度矩阵（重绘版 · 全出血）
+// 数据契约：分类 × 分类 + 量（≤100 格）；典型为严重度 × 状态的缺陷计数。
+// 形式依据：网格里的量 → 热力矩阵；量走灰阶明度（lieflat「明度即数据」），
+//           不上彩虹色、不用色相编码密度。
+// emphasis：唯一红圈标出「发版前必须清零」那格 —— 一支高亮，其余纯明度。
+// 文字按单元明度取纸/墨（填充内唯一例外），其余一律墨色 token。
 // 引擎：手写 SVG（零依赖，可离线）
-// 来源：lieflat-charts（PolyForm Noncommercial 1.0.0），由 extract-chart-fragments.mjs 抽取
-// 用法：参考实现——替换数据与元素 id，保留几何、编码方式与动效节奏；禁止脱离骨架另画
 // ═══════════════════════════════════════════════════════════
-// ════ 3 · arc bubble matrix ════
+// 数据槽位：__DATA__ 由服务端注入 JSON（{rows:[…], cols:[…], cells:[[…],…]}）。
 (()=>{
-const PROD=['Editor','Boards','Docs','Flows','Chat','Vault','Pages','Sync'];
-const CITY=['SF','NYC','LON','BER','TOK','SYD','SIN','PAR','AMS','TOR','SEO','SAO'];
-const W=[9,8,7,7,6,5,5,4,4,3,3,2];             // market weight
+const ROWS=__DATA__.rows,COLS=__DATA__.cols,M=__DATA__.cells;
+const RAMP=['#EDECE6','#C6C5BF','#8F8E88','#4A4944','#1C1C1A'];
+const rampOf=v=>({0:RAMP[0],1:RAMP[1],2:RAMP[2],3:RAMP[3],5:RAMP[4]})[v]??RAMP[4];
 obsReveal('arcmatrix',s=>{
-  const rowY=i=>74+i*29, colX=j=>92+j*27, dy=j=>-16*Math.sin(Math.PI*j/11);
-  const v=(i,j)=>{
-    if(rnd(i*13+1,j*7+3)<.09)return 0;                 // a few true absences
-    const age=1-i*.085;                                // older rows reach further
-    return Math.min(40,Math.round(W[j]*3.4*age*(.45+rnd(i+1,j+1)*.85)));
-  };
-  // find top-4 cells for labels
-  const all=[];
-  PROD.forEach((_,i)=>CITY.forEach((_,j)=>all.push([v(i,j),i,j])));
-  const top=all.sort((a,b)=>b[0]-a[0]).slice(0,4).map(d=>d[1]*100+d[2]);
-  PROD.forEach((p,i)=>{
-    // the horizon arc
-    const d='M'+CITY.map((_,j)=>`${colX(j)} ${rowY(i)+dy(j)}`).join(' L ');
-    el(s,'path',{d,fill:'none',stroke:'#E3E2DB','stroke-width':1,pathLength:1,
-      class:'draw',style:`animation-delay:${i*.08}s`});
-    txt(s,{x:84,y:rowY(i)+3,'font-size':8,'font-weight':600,fill:'#6A6963','text-anchor':'end',
-      class:'fade',style:`animation-delay:${i*.08}s`},p);
-    CITY.forEach((c,j)=>{
-      const x=colX(j),y=rowY(i)+dy(j),vv=v(i,j);
-      if(!vv){el(s,'circle',{cx:x,cy:y,r:.9,fill:'#D8D6CE',
-        class:'pop',style:`animation-delay:${.2+i*.08+j*.02}s`});return}
-      const fill=vv>=25?INK:vv>=12?'#6A6963':'#B0AFA9';
-      const dot=el(s,'circle',{cx:x,cy:y,r:Math.sqrt(vv)*1.3,fill,
-        class:'pop',style:`animation-delay:${.2+i*.08+j*.02}s`});
-      tip(dot,`${p} · ${c} — ${vv} accounts`);
-      if(top.includes(i*100+j))
-        txt(s,{x,y:y-Math.sqrt(vv)*1.3-4,'font-size':7,'font-weight':800,fill:INK,
-          'text-anchor':'middle',class:'fade',style:`animation-delay:${.6}s`},vv);
+  const CW=186,CH=58,GAP=2,X0=190,Y0=70;
+  COLS.forEach((c,j)=>{
+    txt(s,{x:X0+j*(CW+GAP)+CW/2,y:Y0-18,'font-size':13,fill:MUTED,'text-anchor':'middle',
+      'letter-spacing':'.12em',class:'fade',style:`animation-delay:${j*.04}s`},c);
+  });
+  ROWS.forEach((r,i)=>{
+    const y=Y0+i*(CH+GAP);
+    txt(s,{x:X0-24,y:y+CH/2,'font-size':15,'font-weight':600,fill:INK,'text-anchor':'end',
+      'dominant-baseline':'middle',class:'fade',style:`animation-delay:${i*.05}s`},r);
+    const rowSum=M[i].reduce((a,b)=>a+b,0);
+    const rx=X0+COLS.length*(CW+GAP)+28;
+    txt(s,{x:rx,y:y+CH/2-7,'font-size':20,'font-weight':700,fill:INK,'text-anchor':'middle',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${.4+i*.05}s`},rowSum);
+    txt(s,{x:rx,y:y+CH/2+13,'font-size':10,fill:FAINT,'text-anchor':'middle','letter-spacing':'.12em',
+      class:'fade',style:`animation-delay:${.4+i*.05}s`},'SUM');
+
+    COLS.forEach((c,j)=>{
+      const v=M[i][j],x=X0+j*(CW+GAP);
+      const g=el(s,'g',{});
+      el(g,'rect',{x,y,width:CW,height:CH,fill:rampOf(v),
+        stroke:v===0?GRID:'none','stroke-width':1});
+      // 文字按单元明度取纸/墨，绝不穿数据色
+      txt(g,{x:x+CW/2,y:y+CH/2,'font-size':24,'font-weight':700,
+        fill:v>=3?PAPER:INK,'text-anchor':'middle','dominant-baseline':'central',
+        'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${.2+(i*4+j)*.02}s`},v);
+      tip(g,`${r} × ${c} — ${v} 个缺陷`);
+
+      // emphasis：致命 × 激活 = 发版前必须清零的那格
+      if(i===0&&j===0){
+        el(s,'rect',{x:x-4,y:y-4,width:CW+8,height:CH+8,fill:'none',
+          stroke:STATUS.crit,'stroke-width':2.5,rx:3,class:'fade',style:'animation-delay:.8s'});
+        txt(s,{x:x+CW/2,y:y-14,'font-size':12,'font-weight':600,fill:STATUS.crit,
+          'text-anchor':'middle','letter-spacing':'.12em',
+          class:'fade',style:'animation-delay:.85s'},'发版前必须清零');
+      }
     });
   });
-  CITY.forEach((c,j)=>{
-    const x=colX(j),y=74+dy(j)-24;
-    txt(s,{x,y,'font-size':7,'font-weight':700,fill:MUTED,'letter-spacing':'.08em',
-      transform:`rotate(-55 ${x} ${y})`,class:'fade',style:`animation-delay:${j*.03}s`},c);
+
+  // 列合计
+  const yBot=Y0+ROWS.length*(CH+GAP)+10;
+  txt(s,{x:X0-24,y:yBot+18,'font-size':10,fill:FAINT,'text-anchor':'end','letter-spacing':'.12em',
+    class:'fade'},'SUM');
+  COLS.forEach((_,j)=>{
+    const colSum=M.reduce((a,row)=>a+row[j],0);
+    txt(s,{x:X0+j*(CW+GAP)+CW/2,y:yBot+22,'font-size':20,'font-weight':700,fill:INK,
+      'text-anchor':'middle','font-variant-numeric':'tabular-nums',
+      class:'fade',style:`animation-delay:${.5+j*.04}s`},colSum);
   });
+
+  // 明度标尺：连续量必须配 scale legend
+  let lx=0;
+  txt(s,{x:0,y:yBot+62,'font-size':12,fill:MUTED,class:'fade',style:'animation-delay:.7s'},'少');
+  lx=34;
+  [0,1,2,3,5].forEach((v,k)=>{
+    el(s,'rect',{x:lx+k*34,y:yBot+50,width:28,height:16,fill:rampOf(v),
+      stroke:v===0?GRID:'none','stroke-width':1,class:'fade',style:`animation-delay:${.7+k*.04}s`});
+    txt(s,{x:lx+k*34+14,y:yBot+80,'font-size':11,fill:MUTED,'text-anchor':'middle',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${.7+k*.04}s`},v);
+  });
+  txt(s,{x:lx+5*34+16,y:yBot+62,'font-size':12,fill:MUTED,class:'fade',style:'animation-delay:.9s'},
+    '多（明度 = 缺陷数）');
 });
 })();

@@ -4,8 +4,7 @@ import { ArrowLeft, Download, FileDown, SendHorizonal, LoaderCircle } from 'luci
 import { Tooltip } from '../components/ui/Tooltip'
 import { ModalShell } from '../components/ui/ModalShell'
 import { useErrorDialog } from '../components/ui/ErrorDialogProvider'
-import { loadStoredModelConfig } from '../lib/model-config-store'
-import { toAiConfig } from '../shared/api-types'
+import { loadActiveAiConfigSelection } from '../lib/active-ai-config'
 import {
   downloadReportHtml,
   getReport,
@@ -68,15 +67,15 @@ export function ReportViewPage() {
   const runRevise = useCallback(
     async (finalInstruction: string) => {
       if (!report) return
-      const stored = loadStoredModelConfig()
-      if (!stored) {
+      const aiSelection = await loadActiveAiConfigSelection()
+      if (!aiSelection) {
         showError(new Error('请先在模型设置中配置统一供应商'), { title: '未配置模型' })
         return
       }
       setRevising(true)
       setProgressMessage('正在连接模型…')
       try {
-        const updated = await reviseReportStream(report.id, finalInstruction, toAiConfig(stored), (event) => {
+        const updated = await reviseReportStream(report.id, finalInstruction, aiSelection.payload, (event) => {
           if (event.type === 'progress') setProgressMessage(event.message)
         })
         if (updated) {

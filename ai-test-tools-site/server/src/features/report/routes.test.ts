@@ -229,15 +229,20 @@ describe("AI 报告生成路由（SSE）", () => {
 
   const SELECTION = JSON.stringify({
     title: "登录测试简报",
+    findings: [{ tag: "good", label: "达标", text: "两个测试重点均可测" }],
     charts: [
-      { code: "F5", title: "重点条目", sub: "1 tick = 1 条", source: "TICK ROWS", data: { items: ["启动", "上限"] } },
+      {
+        code: "F5",
+        title: "重点条目",
+        sub: "1 格 = 1 条",
+        source: "焦点横条 · 测试重点",
+        data: { rows: [["启动", 2, true], ["上限", 1, false]] },
+        table: { columns: ["重点", "条数"], rows: [["启动", 2], ["上限", 1]] },
+      },
     ],
+    sections: [{ num: "§ 02", title: "测试重点", figureIndexes: [0] }],
+    colophon: ["NexusKit · 测试报告", "登录测试简报", "Generated 2026-09-22"],
   });
-  const HTML = `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>登录测试简报</title></head>
-<body><div class="grid2">
-<div class="card"><h2>重点条目</h2><div class="sub">1 tick = 1 条</div><svg id="c1"></svg><div class="src">TICK ROWS</div></div>
-</div><script>const D=[2];</script></body></html>`;
 
   function scriptResponses(...responses: string[]) {
     for (const text of responses) {
@@ -253,7 +258,7 @@ describe("AI 报告生成路由（SSE）", () => {
   });
 
   it("生成成功：SSE 事件序列完整且报告落库", async () => {
-    scriptResponses(SELECTION, HTML);
+    scriptResponses(SELECTION);
     const res = await requestRaw(app, "POST", "/api/test-report/reports/generate", {
       ...aiConfigFields,
       reportType: "brief",
@@ -318,7 +323,7 @@ describe("AI 报告生成路由（SSE）", () => {
       chartKinds: null,
       html: "<html>v1</html>",
     });
-    scriptResponses(SELECTION, HTML);
+    scriptResponses(SELECTION);
 
     const res = await requestRaw(app, "POST", `/api/test-report/reports/${created.id}/revise`, {
       ...aiConfigFields,

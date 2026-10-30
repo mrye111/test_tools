@@ -12,8 +12,14 @@ vi.mock('../features/test-report/report-api', () => ({
   downloadReportHtml: vi.fn(),
 }))
 
-vi.mock('../lib/model-config-store', () => ({
-  loadStoredModelConfig: vi.fn(() => ({ baseUrl: 'http://ai.test/v1', apiKey: 'test-key', model: 'test-model', apiFormat: 'openai_chat' })),
+vi.mock('../lib/active-ai-config', () => ({
+  loadActiveAiConfigSelection: vi.fn(async () => ({
+    storage: 'local',
+    payload: { provider: 'codex', endpointType: 'openai_chat', baseUrl: 'http://ai.test/v1', apiKey: 'test-key', model: 'test-model' },
+    name: 'test-model',
+    model: 'test-model',
+    apiFormat: 'openai_chat',
+  })),
 }))
 
 const mockGetReport = vi.mocked(reportApi.getReport)

@@ -1,40 +1,52 @@
 // ═══════════════════════════════════════════════════════════
-// 图型片段 F6 · This year against last, plan by plan
-// 数据契约：分组对比（每类 2 系列，如今昔）
+// 图型片段 F6 · Paired Columns 并柱对比（重绘版 · 全出血）
+// 数据契约：分组对比，每类 2 系列（本轮 vs 上轮）。viewBox 1080 宽。
+// 形式依据：「一支是主角、其余是语境」→ emphasis（1 色 + 灰），不是 categorical 双色。
+// 标记规格：柱厚 24px；同组两柱之间 2px 表面间隙，不描边；数据端圆角、基线端方角。
+// 文字一律穿墨色 token。≥2 系列必出图例。
 // 引擎：手写 SVG（零依赖，可离线）
-// 来源：lieflat-charts（PolyForm Noncommercial 1.0.0），由 extract-chart-fragments.mjs 抽取
-// 用法：参考实现——替换数据与元素 id，保留几何、编码方式与动效节奏；禁止脱离骨架另画
 // ═══════════════════════════════════════════════════════════
-// ════ C2 · paired rungs ════
-// 分组柱：每类两把梯子并肩，今年实档、去年淡档。差值一眼可数。
+// 数据槽位：__DATA__ 由服务端注入 JSON（[[名称, 上轮, 本轮], …]，≤8 行）。
 (()=>{
-const D=[['FREE',31,38],['STARTER',22,27],['PRO',16,22],['TEAM',13,16],['ENT',6,9]];
+const D=__DATA__;
 obsReveal('pairrungs',s=>{
-  const x0=i=>64+i*66,base=258,step=5.4,HW=10;
+  const BASE=292,BW=24,GAP=2,MAX=40,PLOT=210;
+  const STEP=BW*2+GAP+34;                 // 组内 24+2+24，组间再留 34
+  const X=i=>(1080-(D.length-1)*STEP-BW*2-GAP)/2+i*STEP;
+  const py=v=>BASE-v/MAX*PLOT;
+  for(let t=0;t<=MAX;t+=10){
+    el(s,'line',{x1:60,y1:py(t),x2:1020,y2:py(t),stroke:t===0?INK:GRID,'stroke-width':1,
+      class:'fade',style:`animation-delay:${t*.02}s`});
+    txt(s,{x:46,y:py(t)+5,'font-size':12,fill:FAINT,'text-anchor':'end',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${t*.02}s`},t);
+  }
   D.forEach(([name,was,now],i)=>{
-    const xa=x0(i)-13,xb=x0(i)+13;
-    for(let k=0;k<was;k++){
-      const y=base-k*step,w=HW-1.2+rnd(k+1,i+2)*2.4;
-      el(s,'line',{x1:xa-w,y1:y,x2:xa+w,y2:y,stroke:'#B0AFA9','stroke-width':1,
-        opacity:.5+rnd(k+2,i+3)*.4,class:'fade',style:`animation-delay:${i*.08+k*.01}s`});
-    }
-    for(let k=0;k<now;k++){
-      const y=base-k*step,w=HW-1.2+rnd(k+1,i+7)*2.4;
-      el(s,'line',{x1:xb-w,y1:y,x2:xb+w,y2:y,stroke:INK,'stroke-width':1,
-        opacity:.6+rnd(k+2,i+8)*.4,class:'fade',style:`animation-delay:${.15+i*.08+k*.01}s`});
-    }
-    const topB=base-(now-1)*step;
-    const num=txt(s,{x:xb,y:topB-9,'font-size':10.5,'font-weight':800,fill:INK,'text-anchor':'middle',
-      class:'fade',style:`animation-delay:${.5+i*.08}s`},now);
-    tip(num,`${name} — $${was}k → $${now}k`);
-    txt(s,{x:xa,y:base-(was-1)*step-9,'font-size':8.5,'font-weight':700,fill:'#B0AFA9','text-anchor':'middle',
-      class:'fade',style:`animation-delay:${.5+i*.08}s`},was);
-    txt(s,{x:x0(i),y:base+18,'font-size':7.5,'font-weight':700,fill:MUTED,'text-anchor':'middle',
-      'letter-spacing':'.08em',class:'fade',style:`animation-delay:${i*.08}s`},name);
+    const xa=X(i),xb=xa+BW+GAP;
+    // 语境（上轮）在左，主角（本轮）在右
+    const pa=el(s,'path',{d:barV(xa,py(was),BW,BASE-py(was)),fill:STATUS.mute,
+      class:'fade',style:`animation-delay:${.1+i*.08}s`});
+    const pb=el(s,'path',{d:barV(xb,py(now),BW,BASE-py(now)),fill:INK,
+      class:'fade',style:`animation-delay:${.2+i*.08}s`});
+    tip(pa,`${name} — 上轮 ${was} 条`);
+    tip(pb,`${name} — 本轮 ${now} 条`);
+    txt(s,{x:xa+BW/2,y:py(was)-12,'font-size':14,fill:MUTED,'text-anchor':'middle',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${.3+i*.08}s`},was);
+    txt(s,{x:xb+BW/2,y:py(now)-14,'font-size':18,'font-weight':700,fill:INK,'text-anchor':'middle',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${.35+i*.08}s`},now);
+    txt(s,{x:xa+BW+GAP/2,y:BASE+30,'font-size':14,fill:MUTED,'text-anchor':'middle',
+      class:'fade',style:`animation-delay:${.4+i*.08}s`},name);
   });
-  el(s,'line',{x1:30,y1:base+4,x2:370,y2:base+4,stroke:GRID,'stroke-width':.8,class:'fade'});
-  txt(s,{x:200,y:306,'font-size':7,'font-weight':600,fill:'#B0AFA9','text-anchor':'middle',
-    'letter-spacing':'.12em',class:'fade',style:'animation-delay:1s'},
-    'FAINT = 2025 · INK = 2026 · ONE RUNG = $1K');
+  // 图例：2 系列必出；文字穿墨色，靠色块承载身份
+  const LY=BASE+74;
+  [[STATUS.mute,'上轮','语境'],[INK,'本轮','主角']].forEach(([c,k,note],i)=>{
+    const lx=60+i*220;
+    el(s,'rect',{x:lx,y:LY-11,width:12,height:12,rx:2,fill:c,
+      class:'fade',style:`animation-delay:${.7+i*.05}s`});
+    txt(s,{x:lx+22,y:LY,'font-size':14,fill:INK,class:'fade',style:`animation-delay:${.7+i*.05}s`},k);
+    txt(s,{x:lx+22+k.length*15+10,y:LY,'font-size':12,fill:MUTED,
+      class:'fade',style:`animation-delay:${.7+i*.05}s`},note);
+  });
+  txt(s,{x:600,y:LY,'font-size':11,'font-weight':500,fill:FAINT,'letter-spacing':'.12em',
+    class:'fade',style:'animation-delay:.8s'},'纵轴 = 用例数（条）· 1 色 + 灰 = emphasis');
 });
 })();

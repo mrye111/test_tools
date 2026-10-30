@@ -1,0 +1,1691 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>核心链路达标，支付网关存在阻塞级缺陷，暂不建议发版</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@6/dist/echarts.min.js"></script>
+</head>
+<body>
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="masthead-top">
+      <span class="kicker">NexusKit · 测试报告</span>
+      <span class="kicker">测试总结 / 回归第 3 轮</span>
+    </div>
+    <hr class="rule-heavy" />
+    <h1 class="report-title">核心链路达标，支付网关存在阻塞级缺陷，暂不建议发版</h1>
+    <p class="verdict">
+      <span class="stamp stamp-crit">有条件通过</span>
+      <span>128 条计划用例执行完毕，通过率 92.2%；卡点集中在支付网关的回调幂等与状态机并发。</span>
+    </p>
+    <dl class="meta-grid">
+      <div><dt>Project</dt><dd>商城 V3.2.0</dd></div>
+      <div><dt>Build</dt><dd>3.2.0-rc.3 · f7a91c2</dd></div>
+      <div><dt>窗口</dt><dd>2026-09-11 — 09-18</dd></div>
+      <div><dt>数据源</dt><dd>禅道用例执行 + BUG 导出</dd></div>
+      <div><dt>范围</dt><dd>6 模块 · 冒烟 + 回归</dd></div>
+      <div><dt>执行</dt><dd>QA 4 人 · 5 个工作日</dd></div>
+      <div><dt>负责人</dt><dd>叶旺林</dd></div>
+      <div><dt>生成</dt><dd>2026-09-22 14:07</dd></div>
+    </dl>
+  </header>
+
+  <section class="sec">
+    <span class="sec-num">§ 00</span>
+    <h2 class="sec-title">结论与建议</h2>
+    <ol class="findings">
+      <li><span class="tag tag-crit">● 阻塞</span>支付回调重复签名会触发订单重复扣款（BUG-2417），发版前必须清零。</li>
+      <li><span class="tag tag-warn">● 关注</span>支付网关 24 条用例贡献了 23 个缺陷中的 9 个，是本轮唯一风险集中区。</li>
+      <li><span class="tag tag-good">● 达标</span>用户中心、商品服务、后台管理三个模块零失败、零阻塞。</li>
+      <li><span class="tag tag-mute">● 待补</span>缺上一轮模块级执行明细，无法判断支付网关是新增劣化还是存量问题。</li>
+    </ol>
+  </section>
+
+  <section class="sec">
+    <span class="sec-num">§ 01</span>
+    <h2 class="sec-title">本轮指标</h2>
+    <div class="kpi">
+      <div>
+        <div class="hero-label">通过率 · Pass rate</div>
+        <div class="hero-fig">92.2<span class="pct">%</span></div>
+        <div class="meter">
+          <div class="meter-fill" style="width:92.2%"></div>
+          <div class="meter-mark" style="left:95%"><span>发版线 95%</span></div>
+        </div>
+        <p class="hero-sub">118 通过 / 128 计划执行。低于发版线 2.8 个百分点，缺口全部来自支付网关。</p>
+      </div>
+      <div class="tiles">
+        <div class="tile">
+          <div class="tile-label">计划执行用例</div>
+          <div class="tile-val">128<small>条</small></div>
+          <div class="tile-foot"><span class="delta delta-good">▲ 23 环比上轮</span></div>
+        </div>
+        <div class="tile">
+          <div class="tile-label">缺陷总数</div>
+          <div class="tile-val">23<small>个</small></div>
+          <div class="tile-foot"><span class="delta delta-bad">▲ 4 环比上轮</span></div>
+        </div>
+        <div class="tile">
+          <div class="tile-label">阻塞 / 未通过</div>
+          <div class="tile-val">9<small>条</small></div>
+          <div class="tile-foot"><span class="delta delta-good">▼ 2 环比上轮</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <span class="sec-num">§ 02</span>
+    <h2 class="sec-title">执行情况</h2>
+    <p class="sec-lede">本轮计划执行 128 条，未通过集中在支付网关与订单中心，其余模块零失败。</p>
+    <figure class="fig">
+      <h2>四个模块里只有三个过了 95% 发版线，支付网关 75% 是唯一缺口</h2>
+      <div class="sub">轨长 = 0–100% · 虚线 = 阈值 · 各模块通过率</div>
+      <svg id="ch0" viewBox="0 0 1080 340"></svg>
+      <div class="src">进度轨 · 各模块通过率 · 禅道用例执行导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>模块</th><th>通过率</th><th>阈值</th><th>状态</th></tr></thead>
+          <tbody>
+            <tr><td class="num">用户中心</td><td class="num">98%</td><td class="num">95%</td><td class="num">达标</td></tr>
+            <tr><td class="num">订单中心</td><td class="num">96%</td><td class="num">95%</td><td class="num">达标</td></tr>
+            <tr><td class="num">商品服务</td><td class="num">91%</td><td class="num">95%</td><td class="num">逼近</td></tr>
+            <tr><td class="num">支付网关</td><td class="num">75%</td><td class="num">95%</td><td class="num">未达</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>128 条里 118 条通过，未通过 9 条全部落在两个模块</h2>
+      <div class="sub">口径 计划执行 = 通过 + 阻塞 + 失败 + 跳过 · 1 段 = 1 条用例</div>
+      <svg id="ch1" viewBox="0 0 1080 150"></svg>
+      <div class="src">状态构成条 · 用例状态 · 禅道用例执行导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>状态</th><th>条数</th><th>占比</th></tr></thead>
+          <tbody>
+            <tr><td class="num">通过</td><td class="num">118</td><td class="num">92.2%</td></tr>
+            <tr><td class="num">阻塞</td><td class="num">3</td><td class="num">2.3%</td></tr>
+            <tr><td class="num">失败</td><td class="num">6</td><td class="num">4.7%</td></tr>
+            <tr><td class="num">跳过</td><td class="num">1</td><td class="num">0.8%</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>支付网关一个模块占了四成缺陷</h2>
+      <div class="sub">横轴 = 缺陷数（个）· 红 = 本轮风险焦点 · 按缺陷数降序</div>
+      <svg id="ch2" viewBox="0 0 1080 350"></svg>
+      <div class="src">焦点横条 · 各模块缺陷数 · 禅道 BUG 导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>模块</th><th>缺陷</th></tr></thead>
+          <tbody>
+            <tr><td class="num">支付网关</td><td class="num">9</td></tr>
+            <tr><td class="num">订单中心</td><td class="num">6</td></tr>
+            <tr><td class="num">用户中心</td><td class="num">3</td></tr>
+            <tr><td class="num">商品服务</td><td class="num">3</td></tr>
+            <tr><td class="num">消息推送</td><td class="num">2</td></tr>
+            <tr><td class="num">后台管理</td><td class="num">0</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>用户中心与订单中心占了六成用例</h2>
+      <div class="sub">纵轴 = 用例数（条）· 单系列同一墨色</div>
+      <svg id="ch6" viewBox="0 0 1080 380"></svg>
+      <div class="src">竖柱 · 各模块用例数 · 禅道用例执行导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>模块</th><th>用例</th></tr></thead>
+          <tbody>
+            <tr><td class="num">用户中心</td><td class="num">38</td></tr>
+            <tr><td class="num">订单中心</td><td class="num">27</td></tr>
+            <tr><td class="num">支付网关</td><td class="num">22</td></tr>
+            <tr><td class="num">商品服务</td><td class="num">16</td></tr>
+            <tr><td class="num">消息推送</td><td class="num">11</td></tr>
+            <tr><td class="num">后台管理</td><td class="num">7</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>本轮比上轮多跑了 23 条用例</h2>
+      <div class="sub">纵轴 = 用例数（条）· 墨 = 本轮 / 灰 = 上轮</div>
+      <svg id="ch7" viewBox="0 0 1080 380"></svg>
+      <div class="src">并柱对比 · 轮次用例数 · 禅道用例执行导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>模块</th><th>上轮</th><th>本轮</th></tr></thead>
+          <tbody>
+            <tr><td class="num">用户中心</td><td class="num">31</td><td class="num">38</td></tr>
+            <tr><td class="num">订单中心</td><td class="num">22</td><td class="num">27</td></tr>
+            <tr><td class="num">支付网关</td><td class="num">16</td><td class="num">22</td></tr>
+            <tr><td class="num">商品服务</td><td class="num">13</td><td class="num">16</td></tr>
+            <tr><td class="num">消息推送</td><td class="num">6</td><td class="num">9</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>P1 用例最多，且通过率最差</h2>
+      <div class="sub">纵轴 = 用例数（条）· 段序 通过 | 阻塞 | 失败</div>
+      <svg id="ch8" viewBox="0 0 1080 380"></svg>
+      <div class="src">堆叠柱 · 优先级 × 状态 · 禅道用例执行导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>优先级</th><th>通过</th><th>阻塞</th><th>失败</th></tr></thead>
+          <tbody>
+            <tr><td class="num">P0</td><td class="num">28</td><td class="num">3</td><td class="num">2</td></tr>
+            <tr><td class="num">P1</td><td class="num">41</td><td class="num">5</td><td class="num">3</td></tr>
+            <tr><td class="num">P2</td><td class="num">33</td><td class="num">4</td><td class="num">2</td></tr>
+            <tr><td class="num">P3</td><td class="num">16</td><td class="num">2</td><td class="num">1</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>从 128 条走到 111 条通过，损失三级</h2>
+      <div class="sub">纵轴 = 用例数（条）· 墨 = 加项/总量 / 灰 = 减项</div>
+      <svg id="ch9" viewBox="0 0 1080 380"></svg>
+      <div class="src">瀑布 · 执行漏斗分解 · 禅道用例执行导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>级</th><th>取值</th></tr></thead>
+          <tbody>
+            <tr><td class="num">计划执行</td><td class="num">128</td></tr>
+            <tr><td class="num">漏执行</td><td class="num">-8</td></tr>
+            <tr><td class="num">阻塞</td><td class="num">-3</td></tr>
+            <tr><td class="num">失败</td><td class="num">-6</td></tr>
+            <tr><td class="num">通过</td><td class="num">111</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+  </section>
+
+  <section class="sec">
+    <span class="sec-num">§ 03</span>
+    <h2 class="sec-title">缺陷分析</h2>
+    <p class="sec-lede">23 个缺陷中仅 1 个致命，但它仍处激活态——是全表唯一红格。</p>
+    <figure class="fig">
+      <h2>唯一致命缺陷仍卡在「激活」，发版前必须清零</h2>
+      <div class="sub">明度 = 缺陷数 · 严重度 × 当前状态 · 累计 23 个</div>
+      <svg id="ch3" viewBox="0 0 1080 400"></svg>
+      <div class="src">明度矩阵 · 严重度 × 状态 · 禅道 BUG 导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>严重度</th><th>激活</th><th>处理中</th><th>已修复</th><th>已关闭</th><th>合计</th></tr></thead>
+          <tbody>
+            <tr><td class="num">致命</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">1</td></tr>
+            <tr><td class="num">严重</td><td class="num">2</td><td class="num">1</td><td class="num">2</td><td class="num">0</td><td class="num">5</td></tr>
+            <tr><td class="num">一般</td><td class="num">3</td><td class="num">2</td><td class="num">5</td><td class="num">2</td><td class="num">12</td></tr>
+            <tr><td class="num">提示</td><td class="num">0</td><td class="num">1</td><td class="num">2</td><td class="num">2</td><td class="num">5</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>23 个缺陷逐格可数，一般级占了一半</h2>
+      <div class="sub">1 格 = 1 个缺陷 · 按类型构成 · 逐格可数</div>
+      <svg id="ch4" viewBox="0 0 1080 340"></svg>
+      <div class="src">百格场 · 缺陷按类型 · 禅道 BUG 导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>类型</th><th>个数</th></tr></thead>
+          <tbody>
+            <tr><td class="num">功能</td><td class="num">12</td></tr>
+            <tr><td class="num">接口</td><td class="num">6</td></tr>
+            <tr><td class="num">兼容</td><td class="num">3</td></tr>
+            <tr><td class="num">性能</td><td class="num">2</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>新增缺陷在 D5 见顶 6 个，修复进度落后两天</h2>
+      <div class="sub">个 / 日 · 每日新增与关闭 · 09-11 — 09-22 共 12 日</div>
+      <svg id="ch5" viewBox="0 0 1080 340"></svg>
+      <div class="src">焦点折线 · 每日新增/关闭 · 禅道 BUG 导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>系列</th><th>D1</th><th>D5</th><th>D12</th></tr></thead>
+          <tbody>
+            <tr><td class="num">新增</td><td class="num">2</td><td class="num">6</td><td class="num">0</td></tr>
+            <tr><td class="num">关闭</td><td class="num">0</td><td class="num">2</td><td class="num">2</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>缺陷在周二上午最吵</h2>
+      <div class="sub">点面积 = 缺陷数 · 明度 = 密度 · 星期 × 小时</div>
+      <svg id="ch10" viewBox="0 0 1080 440"></svg>
+      <div class="src">点阵热力 · 缺陷爆发时段 · 禅道 BUG 导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>星期</th><th>峰值</th></tr></thead>
+          <tbody>
+            <tr><td class="num">周一</td><td class="num">22</td></tr>
+            <tr><td class="num">周二</td><td class="num">27</td></tr>
+            <tr><td class="num">周三</td><td class="num">29</td></tr>
+            <tr><td class="num">周四</td><td class="num">27</td></tr>
+            <tr><td class="num">周五</td><td class="num">28</td></tr>
+            <tr><td class="num">周六</td><td class="num">10</td></tr>
+            <tr><td class="num">周日</td><td class="num">9</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>九十天执行量，峰值只标前三</h2>
+      <div class="sub">纵轴 = 执行量（条）· 条码地板 = 每一天</div>
+      <svg id="ch11" viewBox="0 0 1080 360"></svg>
+      <div class="src">条码棒棒糖 · 逐日执行量 · 禅道用例执行导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>统计</th><th>值</th></tr></thead>
+          <tbody>
+            <tr><td class="num">天数</td><td class="num">90</td></tr>
+            <tr><td class="num">峰值</td><td class="num">208</td></tr>
+            <tr><td class="num">谷值</td><td class="num">28</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>48 个缺陷汇聚到五个模块</h2>
+      <div class="sub">外圈 1 点 = 1 个缺陷 · 中心点面积 = 归属条数</div>
+      <svg id="ch12" viewBox="0 0 1080 580"></svg>
+      <div class="src">辐射汇聚 · 缺陷 → 模块 · 禅道 BUG 导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>模块</th><th>缺陷</th></tr></thead>
+          <tbody>
+            <tr><td class="num">支付网关</td><td class="num">15</td></tr>
+            <tr><td class="num">订单中心</td><td class="num">10</td></tr>
+            <tr><td class="num">用户中心</td><td class="num">9</td></tr>
+            <tr><td class="num">商品服务</td><td class="num">8</td></tr>
+            <tr><td class="num">消息推送</td><td class="num">6</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>44 条条目归到十个维度</h2>
+      <div class="sub">左 = 逐条名录 · 发丝 = 归属关系</div>
+      <svg id="ch13" viewBox="0 0 1080 420"></svg>
+      <div class="src">名录柱廊 · 条目 → 维度 · 禅道 BUG 导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>维度</th><th>条目</th></tr></thead>
+          <tbody>
+            <tr><td class="num">支付组</td><td class="num">14</td></tr>
+            <tr><td class="num">订单组</td><td class="num">8</td></tr>
+            <tr><td class="num">用户组</td><td class="num">8</td></tr>
+            <tr><td class="num">商品组</td><td class="num">3</td></tr>
+            <tr><td class="num">消息组</td><td class="num">3</td></tr>
+            <tr><td class="num">平台组</td><td class="num">1</td></tr>
+            <tr><td class="num">数据组</td><td class="num">3</td></tr>
+            <tr><td class="num">安全组</td><td class="num">1</td></tr>
+            <tr><td class="num">移动端</td><td class="num">1</td></tr>
+            <tr><td class="num">前端组</td><td class="num">2</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>这轮测了哪些范围</h2>
+      <div class="sub">层级 2–3 层 · 明度 = 分支</div>
+      <div class="ch" id="ch14"></div>
+      <div class="src">左右树 · 测试范围 → 重点条目 · 本轮范围</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>分支</th><th>子项</th></tr></thead>
+          <tbody>
+            <tr><td class="num">支付</td><td class="num">4</td></tr>
+            <tr><td class="num">订单</td><td class="num">3</td></tr>
+            <tr><td class="num">用户</td><td class="num">3</td></tr>
+            <tr><td class="num">商品</td><td class="num">3</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+    <figure class="fig">
+      <h2>各严重度的解决时长摊开看</h2>
+      <div class="sub">横轴 = 解决耗时（小时）· 点明度 = 严重度</div>
+      <div class="ch" id="ch15"></div>
+      <div class="src">抖动条带 · 逐条解决时长 · 禅道 BUG 导出</div>
+      <details class="tv"><summary>数据表</summary>
+        <table class="data">
+          <thead><tr><th>严重度</th><th>条数</th></tr></thead>
+          <tbody>
+            <tr><td class="num">P0 致命</td><td class="num">38</td></tr>
+            <tr><td class="num">P1 严重</td><td class="num">64</td></tr>
+            <tr><td class="num">P2 一般</td><td class="num">110</td></tr>
+            <tr><td class="num">P3 提示</td><td class="num">72</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figure>
+  </section>
+  
+  <section class="sec">
+    <span class="sec-num">§ 04</span>
+    <h2 class="sec-title">缺陷明细</h2>
+    <p class="sec-lede">按严重度 → 创建时间排序 · 共 23 条，展示前 8 条</p>
+    <table class="data">
+          <thead><tr><th>ID</th><th>标题</th><th>严重度</th><th>状态</th><th>模块</th><th>负责人</th><th>日期</th></tr></thead>
+          <tbody>
+            <tr><td class="num">BUG-2417</td><td class="num">支付回调重复签名导致订单重复扣款</td><td class="num">致命</td><td class="num">激活</td><td class="num">支付网关</td><td class="num">陈昊</td><td class="num">09-16</td></tr>
+            <tr><td class="num">BUG-2402</td><td class="num">退款单状态回滚后未释放占用库存</td><td class="num">严重</td><td class="num">激活</td><td class="num">订单中心</td><td class="num">林悦</td><td class="num">09-15</td></tr>
+            <tr><td class="num">BUG-2398</td><td class="num">跨境支付汇率快照取到 T+1 历史值</td><td class="num">严重</td><td class="num">处理中</td><td class="num">支付网关</td><td class="num">陈昊</td><td class="num">09-15</td></tr>
+            <tr><td class="num">BUG-2391</td><td class="num">支付超时关单与用户取消并发产生脏状态</td><td class="num">严重</td><td class="num">已修复</td><td class="num">支付网关</td><td class="num">王倩</td><td class="num">09-14</td></tr>
+            <tr><td class="num">BUG-2377</td><td class="num">优惠券叠加后实付金额四舍五入偏差 1 分</td><td class="num">一般</td><td class="num">已修复</td><td class="num">订单中心</td><td class="num">林悦</td><td class="num">09-13</td></tr>
+            <tr><td class="num">BUG-2355</td><td class="num">消息推送在免打扰时段仍发送营销短信</td><td class="num">一般</td><td class="num">处理中</td><td class="num">消息推送</td><td class="num">周航</td><td class="num">09-12</td></tr>
+            <tr><td class="num">BUG-2364</td><td class="num">实名认证图片压缩后关键信息模糊</td><td class="num">一般</td><td class="num">已关闭</td><td class="num">用户中心</td><td class="num">赵磊</td><td class="num">09-12</td></tr>
+            <tr><td class="num">BUG-2341</td><td class="num">后台导出 Excel 超 1 万行时文件损坏</td><td class="num">提示</td><td class="num">已关闭</td><td class="num">后台管理</td><td class="num">赵磊</td><td class="num">09-11</td></tr>
+          </tbody>
+        </table>
+  </section>
+  <section class="sec">
+    <div class="placeholder" data-missing="prev-round-modules">
+      <div>
+        <h3>回归轮次对比（未出图）</h3>
+        <p class="placeholder-need">缺上一轮各模块的用例数 / 未通过数 / 缺陷数 · 补齐后可画本轮 vs 上轮并柱对比</p>
+      </div>
+      <button type="button" class="btn" onclick="parent.postMessage({type:'nexus-report-supplement',missing:'prev-round-modules'},'*')">补录数据</button>
+    </div>
+  </section>
+  <section class="sec">
+    <span class="sec-num">§ A</span>
+    <h2 class="sec-title">口径与免责</h2>
+    <dl class="dl-note">
+      <dt>通过率</dt><dd>通过 ÷ 计划执行；跳过计入分母但不计入分子，口径与禅道「执行结果」一致。</dd>
+      <dt>缺陷计数</dt><dd>3.2.0 里程碑累计 23 个，含已关闭；「未通过用例」与「缺陷」非一一对应，不作加减。</dd>
+      <dt>严重度</dt><dd>沿用禅道四级（致命 / 严重 / 一般 / 提示），为有序量表，故用明度编码而非色相。</dd>
+      <dt>数据边界</dt><dd>全部数字来自上传的用例执行结果与 BUG 清单；未提供的指标以缺数占位呈现，不作估算。</dd>
+    </dl>
+  </section>
+
+  <footer class="colophon">
+    <span>NexusKit · 测试报告 · 测试总结</span>
+    <span>3.2.0-rc.3 · 第 3 轮回归</span>
+    <span>Generated 2026-09-22 14:07</span>
+  </footer>
+
+</div>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   MONO TOKENS — 风格的唯一正本
+   所有 mono 图表（Chart.js / ECharts / 手写 SVG）共享这一份。
+   任何文件里出现与本文件冲突的颜色、字体、动画参数，以本文件为准。
+   用法：作为 <script src="mono-tokens.js"> 外链引入（标签按标准写全），全部挂在 window.MONO 上；
+   也可以直接把本文件内容内联进单文件 HTML（开源分发时推荐内联）。
+   ⚠ 本文件会被原样内联进报告的 <script> 块：注释里不得出现 script 的
+   闭合序列（写成 </scr"+"ipt> 拆开即可）。HTML 解析器不认 JS 注释，
+   一遇到闭合序列就提前截断脚本，报告里的图会全部画不出来。
+   ═══════════════════════════════════════════════════════════════ */
+(function (global) {
+  'use strict';
+
+  /* ── 1 · 色板 ──────────────────────────────────────────────
+     纸灰底 + 炭黑墨。没有彩色。明度即数据：最重要 = 最黑。   */
+  const INK   = '#1C1C1A';   // 墨：主数据、标题、强调
+  const PAPER = '#F0EFEB';   // 纸：页面底色 = 浅卡底色（卡片无边框，靠留白分卡）
+  const MUTED = '#8F8E88';   // 次级文字、副标题
+  const FAINT = '#C6C5BF';   // 来源行、辅助刻度
+  const GRID  = '#DEDDD6';   // 网格线、发丝线
+
+  // 7 级灰阶 ladder：多系列时按重要性从黑到浅分配
+  const L   = ['#1C1C1A', '#4A4944', '#6A6963', '#8F8E88', '#B0AFA9', '#C6C5BF', '#D8D7D1'];
+  // 5 级简版（waffle 等少系列场景）
+  const LAD = ['#1C1C1A', '#4A4944', '#8F8E88', '#B0AFA9', '#D8D7D1'];
+
+  // 暗卡（dark card）专用：底 #1C1C1A，其上的"墨"反转为纸色
+  const DARK = {
+    bg: '#1C1C1A',
+    ink: '#F0EFEB',          // 暗卡上的主数据色
+    muted: '#8F8E88',
+    faint: '#55554F',        // 暗卡来源行
+    grid: '#2E2D29',         // 暗卡网格 / 发丝线
+    gridSoft: '#2A2925',
+    ladder: ['#F0EFEB', '#DCDAD2', '#C9C7BD', '#B3B0A4', '#8F8E88', '#6A6963', '#4A4944'],
+  };
+
+  /* ── 1b · 语义状态色（reserved）────────────────────────────
+     分工铁律：一切「量」（计数/密度）与「序」（严重度致命→提示）
+     走上面的灰阶明度；状态色只编码「状态」，永不用作「第 N 个系列」
+     或量的深浅。状态色必配 icon + label，不靠颜色单独承载语义。
+     段序约束：通过 | 阻塞 | 失败 | 跳过 —— 绿红不得相邻
+     （绿|红 相邻在红绿色盲下 ΔE 仅 4.1；此序为 9.7，常视 17.5）。
+     琥珀 #C98500 对纸面对比 2.67、灰 2.86，低于 3:1 → 必须配可见直标。 */
+  const STATUS = {
+    good: '#0B7A0B',   // 通过 · 已修复
+    warn: '#C98500',   // 阻塞 · 处理中
+    crit: '#C0392B',   // 失败 · 激活
+    mute: '#8F8E88',   // 跳过 · 已关闭（缺席/归档，非色相）
+    // 状态序列（堆叠/图例的固定次序，勿重排）
+    order: ['good', 'warn', 'crit', 'mute'],
+  };
+
+  // 量与序的明度阶梯（sequential：越深 = 越多 / 越重）
+  const RAMP = ['#EDECE6', '#C6C5BF', '#8F8E88', '#4A4944', '#1C1C1A'];
+
+  /* ── 2 · 字体 ──────────────────────────────────────────────
+     两个 webfont 家族（性能预算上限）：衬线做章节/图标题的文档性格，
+     等宽做眉题/数据/轴的档案性格。中文不走 webfont —— 中文字库太重，
+     与单文件交付物冲突，由系统栈承担。                            */
+  const FONT = {
+    display: "'Newsreader','Songti SC','Source Han Serif SC','Noto Serif CJK SC','SimSun',serif",
+    text: "'PingFang SC','Microsoft YaHei','Hiragino Sans GB',system-ui,-apple-system,'Segoe UI',sans-serif",
+    mono: "'IBM Plex Mono',ui-monospace,SFMono-Regular,Consolas,monospace",
+    // Google Fonts 引入行（放 <head>）：
+    link: 'https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap',
+    // 文档级字号阶梯：靠尺度对比（46 ↔ 9.5）建立层级，不靠加粗堆叠
+    title:    { size: 46,   weight: 700, spacing: '-.025em' }, // 报告大标题（CJK 黑体粗）
+    verdict:  { size: 22,   weight: 400 },                     // 一句话结论（衬线）
+    sec:      { size: 25,   weight: 600 },                     // 章节名（衬线）
+    fig:      { size: 19,   weight: 600 },                     // 图标题（衬线，写结论不写图型名）
+    body:     { size: 15,   weight: 400 },                     // 正文 / 导语
+    sub:      { size: 12.5, weight: 400 },                     // 图副标（单位口径 · 图例 · 范围）
+    src:      { size: 9.5,  weight: 500, spacing: '.12em' },   // 来源行 / 眉题，等宽大写
+    value:    { weight: 650 },                                 // hero 与 stat tile 数值（比例数字）
+    axis:     { size: 10,  weight: 500 },                      // 轴标签（tabular-nums）
+    // SVG 内最小字号下限：半宽卡 6.5px，通栏/大图 5.5px。低于下限改 hover 出。
+    minHalf: 6.5, minWide: 5.5,
+  };
+
+  /* ── 3 · 形状 ────────────────────────────────────────────── */
+  const SHAPE = {
+    cardRadius: 4,           // 图卡圆角（文档感，不再是 24px 胶囊）
+    cardPad: '18px 0 8px',   // 卡片只留上规线下的呼吸，不套盒
+    barRadius: 99,           // 柱端胶囊圆角（竖柱只圆上端，横柱只圆外端）
+    tooltipRadius: 12,
+  };
+
+  /* ── 4 · 动画性格 ────────────────────────────────────────
+     快进快停，quarticOut / cubicOut，不弹跳（elasticOut 只给波浪入场）。 */
+  const MOTION = {
+    enter: 900,              // 常规入场 ms
+    enterSlow: 1200,         // 大元素 / 关系图
+    easing: 'quarticOut',
+    staggerDot: 12,          // 点阵逐个延迟 ms（8–15 区间）
+    staggerBar: 100,         // 条形逐根延迟 ms（80–130 区间）
+    // CSS 动画类（手写 SVG 用）：pop 缩放入场 / fade 淡入 / draw 描线
+    css: `
+  .pop{transform-box:fill-box;transform-origin:center;animation:pop .5s cubic-bezier(.2,.7,.3,1.3) both}
+  @keyframes pop{from{transform:scale(0)}to{transform:none}}
+  .fade{animation:fade .9s ease both}
+  @keyframes fade{from{opacity:0}}
+  .draw{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1s cubic-bezier(.4,0,.2,1) both}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  @media (prefers-reduced-motion:reduce){
+    .pop,.fade{animation:none}
+    .draw{animation:none;stroke-dasharray:none;stroke-dashoffset:0}
+  }`,
+  };
+
+  /* ── 5 · Tooltip ─────────────────────────────────────────
+     浅卡用黑底纸字，暗卡用纸底黑字。ECharts 直接展开这两个对象。 */
+  const tipLight = { backgroundColor: INK, borderWidth: 0, padding: [10, 14],
+    textStyle: { color: PAPER, fontFamily: 'Inter', fontSize: 12 } };
+  const tipDark  = { backgroundColor: PAPER, borderWidth: 0, padding: [10, 14],
+    textStyle: { color: INK, fontFamily: 'Inter', fontSize: 12 } };
+
+  /* ── 6 · 确定性伪随机 ────────────────────────────────────
+     演示数据一律用它，不用 Math.random()——刷新必须长一样，
+     否则截图 / 录屏 / 回归对比全部失效。                       */
+  const rnd = (i, k) => Math.abs(((i * 73856093) ^ (k * 19349663)) % 1000) / 1000;
+
+  /* ── 7 · 几何 ────────────────────────────────────────────── */
+  const D2R = Math.PI / 180;
+  const pol = (cx, cy, r, deg) => [cx + r * Math.cos(deg * D2R), cy + r * Math.sin(deg * D2R)];
+  // 环形扇区 path（cornerRadius 自己在调用处用 ECharts sector 或手动倒角）
+  const sect = (cx, cy, r0, r1, a0, a1) => {
+    const big = a1 - a0 > 180 ? 1 : 0;
+    const [xa, ya] = pol(cx, cy, r1, a0), [xb, yb] = pol(cx, cy, r1, a1);
+    const [xc, yc] = pol(cx, cy, r0, a1), [xd, yd] = pol(cx, cy, r0, a0);
+    return `M${xa} ${ya} A${r1} ${r1} 0 ${big} 1 ${xb} ${yb} L${xc} ${yc} A${r0} ${r0} 0 ${big} 0 ${xd} ${yd} Z`;
+  };
+  // 手绘感圆（editorial 系气泡用）：圆周叠两个慢波 + 噪声，seed 定形
+  const blob = (x, y, r, seed) => {
+    const n = Math.max(14, Math.round(r * 1.6)), pts = [];
+    for (let t = 0; t < n; t++) {
+      const a = t / n * Math.PI * 2;
+      const w = 1 + .055 * Math.sin(a * 2 + seed * 7) + .04 * Math.sin(a * 3 + seed * 13)
+              + (rnd(seed + t, 3) - .5) * .03;
+      pts.push([x + Math.cos(a) * r * w, y + Math.sin(a) * r * w]);
+    }
+    let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+    for (let t = 0; t < n; t++) {
+      const p = pts[t], q = pts[(t + 1) % n];
+      d += ` Q${p[0].toFixed(1)} ${p[1].toFixed(1)} ${((p[0]+q[0])/2).toFixed(1)} ${((p[1]+q[1])/2).toFixed(1)}`;
+    }
+    return d + ' Z';
+  };
+
+  // 横条 path：基线端（左）方角，数据端（右）4px 圆角。
+  // 标记规格：条厚 ≤24px；条与条之间用 2px 表面间隙分开，绝不描边。
+  const barH = (x, y, w, h, r = 4) => {
+    if (w <= 0) return '';
+    const rr = Math.min(r, w, h / 2);
+    return `M${x} ${y} H${x + w - rr} Q${x + w} ${y} ${x + w} ${y + rr} V${y + h - rr} Q${x + w} ${y + h} ${x + w - rr} ${y + h} H${x} Z`;
+  };
+  // 竖柱 path：基线端（下）方角，数据端（上）4px 圆角。(x,y) 为柱顶左角，h 为柱高。
+  const barV = (x, y, w, h, r = 4) => {
+    if (h <= 0) return '';
+    const rr = Math.min(r, h, w / 2);
+    return `M${x} ${y + h} V${y + rr} Q${x} ${y} ${x + rr} ${y} H${x + w - rr} Q${x + w} ${y} ${x + w} ${y + rr} V${y + h} Z`;
+  };
+
+  /* ── 8 · SVG 快捷 ────────────────────────────────────────── */
+  const NS = 'http://www.w3.org/2000/svg';
+  const el  = (p, t, a) => { const n = document.createElementNS(NS, t);
+    for (const k in a) n.setAttribute(k, a[k]); p.appendChild(n); return n; };
+  const txt = (p, a, s) => { const n = el(p, 'text', a); n.textContent = s; return n; };
+  const tip = (n, s) => { const t = document.createElementNS(NS, 'title');
+    t.textContent = s; n.appendChild(t); };
+
+  /* ── 9 · 统一 reveal：滚入视野才播，点击重播 ──────────────
+     带 timer 登记（keep），重播前清干净，防动画叠加。          */
+  const timers = {};
+  const keep = (id, t) => { (timers[id] = timers[id] || []).push(t); };
+  const obsReveal = (id, fn) => {
+    const n = document.getElementById(id);
+    const go = () => {
+      (timers[id] || []).forEach(clearInterval); timers[id] = [];
+      if (n.tagName === 'svg' || n.tagName === 'SVG') n.innerHTML = '';
+      fn(n);
+    };
+    const io = new IntersectionObserver(es => {
+      if (es[0].isIntersecting) { go(); io.disconnect(); }
+    }, { threshold: .3 });
+    io.observe(n);
+    n.style.cursor = 'pointer';
+    n.addEventListener('click', go);
+  };
+  // ECharts 版 reveal
+  const eReveal = (id, opt) => obsReveal(id, elDom => {
+    const g = echarts.getInstanceByDom(elDom) || echarts.init(elDom);
+    g.clear(); g.setOption(opt);
+  });
+
+  /* ── 10 · 文档骨架（生成新报告时照抄这个结构） ────────────
+     立场：报告是文档，不是卡片墙。五段式竖向叙事流：
+     ① <header class="masthead"> 眉题 / h1.report-title / .verdict / dl.meta-grid
+     ② <section class="sec"> 结论与建议 → ol.findings
+     ③ <section class="sec"> 本轮指标 → .kpi（1 个 .hero-fig + .meter + .tiles）
+     ④ <section class="sec"> 分章叙事 → h2.sec-title + p.sec-lede + .grid2 > .card
+     ⑤ 明细 table.data · 缺数 .placeholder · 页脚 footer.colophon
+     图卡四件套：
+     <div class="card">
+       <h2>结论式标题</h2>
+       <div class="sub">单位口径 · 图例 · 范围</div>
+       <svg id="xx" viewBox="0 0 400 320"></svg>
+       <div class="src">图型名 · 系列 · 数据来源</div>
+     </div>
+     图卡保持 400×320 viewBox 原生比例（.grid2 双列 ≈529px → 缩放 ≈1.3，
+     片段内 5.5–11px 的字号落在可读区间）。                        */
+  const DOC_CSS = `
+  :root{--bg:${PAPER};--dark:${DARK.bg};--ink:${INK};--muted:${MUTED};--faint:${FAINT};--grid:${GRID};
+    --good:${STATUS.good};--warn:${STATUS.warn};--crit:${STATUS.crit};--mute:${STATUS.mute}}
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  body{background:var(--bg);color:var(--ink);font-family:${FONT.text};font-size:${FONT.body.size}px;
+    line-height:1.75;padding:0 32px 96px}
+  .sheet{max-width:1080px;margin:0 auto}
+
+  /* ── 报头 ── */
+  .kicker{font-family:${FONT.mono};font-size:11px;font-weight:500;letter-spacing:.16em;
+    color:var(--muted);text-transform:uppercase}
+  .rule-heavy{height:2px;background:var(--ink);border:0}
+  .masthead{padding-bottom:38px;border-bottom:1px solid var(--grid);margin-bottom:8px}
+  .masthead-top{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:10px}
+  h1.report-title{font-family:${FONT.text};font-size:clamp(30px,3.6vw,${FONT.title.size}px);
+    font-weight:${FONT.title.weight};line-height:1.22;letter-spacing:${FONT.title.spacing};
+    max-width:640px;margin:26px 0 0}
+  h1.report-title em{font-style:normal;color:var(--crit)}
+  .verdict{display:flex;align-items:baseline;gap:11px;margin-top:22px;
+    font-family:${FONT.display};font-size:${FONT.verdict.size}px;line-height:1.5}
+  .verdict .stamp{flex:none;font-family:${FONT.mono};font-size:10.5px;font-weight:600;letter-spacing:.12em;
+    padding:3px 8px;border-radius:3px;transform:translateY(-2px);border:1.5px solid currentColor}
+  .stamp-crit{color:var(--crit)} .stamp-warn{color:var(--warn)} .stamp-good{color:var(--good)}
+  .meta-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:22px 32px;
+    margin-top:34px;padding-top:22px;border-top:1px solid var(--grid)}
+  .meta-grid dt{font-family:${FONT.mono};font-size:10px;letter-spacing:.13em;color:var(--faint);text-transform:uppercase}
+  .meta-grid dd{font-size:13.5px;margin-top:5px;font-weight:500}
+
+  /* ── 章节 ── */
+  .sec{padding:40px 0;border-top:1px solid var(--grid)}
+  h2.sec-title{font-family:${FONT.display};font-size:${FONT.sec.size}px;font-weight:${FONT.sec.weight};
+    line-height:1.3;letter-spacing:-.01em;margin-bottom:14px}
+  .sec-num{font-family:${FONT.mono};font-size:11px;font-weight:600;letter-spacing:.14em;
+    color:var(--faint);display:block;margin-bottom:6px}
+  .sec-lede{font-size:${FONT.body.size}px;line-height:1.85;max-width:60ch;margin-bottom:30px}
+
+  /* ── 结论要点 ── */
+  ol.findings{list-style:none;counter-reset:f;max-width:64ch}
+  ol.findings li{counter-increment:f;position:relative;padding:16px 0 16px 46px;
+    border-bottom:1px solid var(--grid);font-size:${FONT.body.size}px;line-height:1.8}
+  ol.findings li:last-child{border-bottom:0}
+  ol.findings li::before{content:counter(f,decimal-leading-zero);position:absolute;left:0;top:19px;
+    font-family:${FONT.mono};font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--faint)}
+  .tag{display:inline-flex;align-items:center;gap:5px;font-family:${FONT.mono};font-size:10.5px;
+    font-weight:600;letter-spacing:.08em;padding:2px 8px;border-radius:3px;margin-right:9px;vertical-align:2px}
+  .tag-crit{color:var(--crit);background:rgba(192,57,43,.10);border:1px solid rgba(192,57,43,.28)}
+  .tag-warn{color:var(--warn);background:rgba(201,133,0,.10);border:1px solid rgba(201,133,0,.30)}
+  .tag-good{color:var(--good);background:rgba(11,122,11,.15);border:1px solid rgba(11,122,11,.26)}
+  .tag-mute{color:var(--muted);background:#EDECE6;border:1px solid var(--grid)}
+
+  /* ── 指标带：1 hero + stat tiles（非对称，不是等分卡片墙）── */
+  .kpi{display:grid;grid-template-columns:minmax(280px,1fr) 2fr;gap:44px;align-items:start}
+  .hero-label{font-family:${FONT.mono};font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+    text-transform:uppercase;margin-bottom:14px}
+  .hero-fig{font-family:${FONT.text};font-size:76px;font-weight:${FONT.value.weight};
+    line-height:.94;letter-spacing:-.045em}
+  .hero-fig .pct{font-size:34px;font-weight:500;letter-spacing:-.02em;margin-left:2px}
+  .hero-sub{font-size:13px;color:var(--muted);margin-top:12px;line-height:1.7}
+  /* meter：fill = 状态色，track = 同色相浅步（状态能跨整条读出） */
+  .meter{position:relative;height:12px;border-radius:99px;background:rgba(11,122,11,.15);margin-top:18px}
+  .meter-fill{height:100%;border-radius:99px;background:var(--good)}
+  .meter-mark{position:absolute;top:-5px;bottom:-5px;width:0;border-left:1.5px dashed var(--muted)}
+  .meter-mark span{position:absolute;left:5px;top:-2px;white-space:nowrap;
+    font-family:${FONT.mono};font-size:9.5px;letter-spacing:.06em;color:var(--muted)}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;padding-top:4px}
+  .tile{border-top:1px solid var(--ink);padding-top:12px}
+  .tile-label{font-family:${FONT.mono};font-size:10px;letter-spacing:.13em;color:var(--muted);text-transform:uppercase}
+  .tile-val{font-family:${FONT.text};font-size:38px;font-weight:${FONT.value.weight};
+    letter-spacing:-.03em;line-height:1.1;margin-top:8px}
+  .tile-val small{font-size:15px;font-weight:500;color:var(--muted);letter-spacing:0;margin-left:3px}
+  .tile-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:8px}
+  .delta{font-family:${FONT.mono};font-size:11px;font-weight:600}
+  .delta-good{color:var(--good)} .delta-bad{color:var(--crit)} .delta-flat{color:var(--muted)}
+
+  /* ── 图卡：上规线分卡（纸面同底，不套盒；规线负责可辨识）── */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px 40px}
+  .card{background:var(--bg);border-top:1px solid var(--ink);border-radius:${SHAPE.cardRadius}px;
+    padding:${SHAPE.cardPad}}
+  .card.wide{grid-column:1/-1}
+  h2{font-family:${FONT.display};font-weight:${FONT.fig.weight};font-size:${FONT.fig.size}px;
+    letter-spacing:-.005em;margin-bottom:4px;line-height:1.35}
+  .sub{font-size:${FONT.sub.size}px;color:var(--muted);margin-bottom:14px;line-height:1.65}
+  .src{font-size:${FONT.src.size}px;color:var(--faint);margin-top:10px;letter-spacing:${FONT.src.spacing};
+    font-weight:${FONT.src.weight};font-family:${FONT.mono};text-transform:uppercase}
+  .ch{height:320px}
+  /* 400×320 旧图型（半宽卡）：宽度必须锁住，否则通栏会把缩放推到 2.7x、
+     7px 说明放大成 19px。560px → 缩放 ≈1.4x，最小字号渲染后约 8–10px。 */
+  svg{width:100%;height:auto;display:block;overflow:visible}
+  .card svg{max-width:560px;margin-inline:auto}
+  svg text{font-family:${FONT.mono}}
+
+  /* ── 全出血图（1080 宽新图型用）────────────────────────────
+     新图型按 1080 viewBox 作图，字号即最终渲染字号，不得再被放大。
+     旧图型走 .grid2 > .card，新图型走 .fig。                          */
+  .fig{border-top:1px solid var(--ink);padding:18px 0 8px;margin:0 0 46px}
+  .fig:last-child{margin-bottom:0}
+  .fig h2{margin-bottom:4px}
+  .fig svg{max-width:none}
+  /* ECharts 图型用 .ch 容器（不是 svg）；全出血下给足高度 */
+  .fig .ch{height:520px}
+  .fig-legend{display:flex;flex-wrap:wrap;gap:10px 26px;margin-top:16px}
+  .fig-legend .item{display:flex;align-items:center;gap:8px;font-size:12.5px}
+  .fig-legend .chip{width:11px;height:11px;border-radius:2.5px;flex:none}
+  .fig-legend .ico{font-family:${FONT.mono};font-size:10px;font-weight:600;line-height:1}
+  .fig-legend .n{font-family:${FONT.mono};font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums}
+  .fig-legend .p{font-family:${FONT.mono};font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  /* 数据表孪生：任何色编码都必须有等价的可读通路（默认折叠） */
+  .tv{margin-top:14px}
+  .tv > summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;
+    font-family:${FONT.mono};font-size:10.5px;letter-spacing:.11em;color:var(--muted);text-transform:uppercase}
+  .tv > summary::-webkit-details-marker{display:none}
+  .tv > summary::before{content:"▸";font-size:9px;transition:transform .15s ease;display:inline-block}
+  .tv[open] > summary::before{transform:rotate(90deg)}
+  .tv > summary:hover{color:var(--ink)}
+
+  /* ── 状态 / 严重度标记：色永不单独承载语义，必带 icon + label ── */
+  .st{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+    font-family:${FONT.mono};font-size:11px;font-weight:600;letter-spacing:.04em}
+  .st i{width:8px;height:8px;border-radius:99px;flex:none;display:inline-block}
+  .sev{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;font-size:12.5px}
+  .sev i{width:10px;height:10px;border-radius:2px;flex:none;display:inline-block}
+
+  /* ── 明细表：正文用阅读字号，数值列用等宽对齐 ── */
+  table.data{width:100%;border-collapse:collapse;font-family:${FONT.text};font-size:13px}
+  table.data th{text-align:left;font-family:${FONT.mono};font-weight:600;font-size:9.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--muted);padding:0 16px 9px 0;border-bottom:1px solid var(--ink);white-space:nowrap}
+  table.data td{padding:12px 16px 12px 0;border-bottom:1px solid var(--grid);vertical-align:top;line-height:1.55}
+  table.data tr:hover td{background:rgba(28,28,26,.03)}
+  table.data .num{font-family:${FONT.mono};font-variant-numeric:tabular-nums;white-space:nowrap}
+  table.data .did{font-family:${FONT.mono};font-size:11.5px;font-weight:600;color:var(--muted);white-space:nowrap}
+
+  /* ── 缺数占位卡 ── */
+  .placeholder{border:1.5px dashed var(--faint);border-radius:${SHAPE.cardRadius}px;padding:26px 28px;
+    display:grid;grid-template-columns:1fr auto;gap:26px;align-items:center}
+  .placeholder h3{font-family:${FONT.display};font-size:19px;font-weight:600;margin-bottom:6px}
+  .placeholder-need{font-size:13px;color:var(--muted);line-height:1.85}
+  .btn{font-family:${FONT.mono};font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+    border:1.5px solid var(--ink);background:none;color:var(--ink);padding:11px 20px;border-radius:3px;
+    cursor:pointer;white-space:nowrap;transition:background .16s ease,color .16s ease}
+  .btn:hover{background:var(--ink);color:var(--bg)}
+
+  /* ── 附录 / 页脚 ── */
+  dl.dl-note{display:grid;grid-template-columns:130px 1fr;gap:8px 22px;font-size:13px;max-width:78ch}
+  dl.dl-note dt{font-family:${FONT.mono};font-size:10px;letter-spacing:.12em;color:var(--faint);
+    text-transform:uppercase;padding-top:4px}
+  dl.dl-note dd{line-height:1.75}
+  .colophon{margin-top:56px;padding-top:18px;border-top:2px solid var(--ink);
+    display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;
+    font-family:${FONT.mono};font-size:10px;letter-spacing:.1em;color:var(--faint);text-transform:uppercase}
+
+  /* ── 打印 / PDF：A4，块不跨页断，色彩强制还原 ── */
+  @page{size:A4;margin:16mm 14mm}
+  @media print{
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{padding:0;font-size:10.5pt}
+    .card,.kpi,table.data tr,.placeholder{break-inside:avoid}
+    .sec{padding:22pt 0}
+  }
+  @media (max-width:860px){
+    .grid2{grid-template-columns:1fr}
+    .kpi{grid-template-columns:1fr}
+    .tiles{grid-template-columns:1fr}
+    .meta-grid{grid-template-columns:repeat(2,1fr)}
+    .placeholder{grid-template-columns:1fr}
+  }
+  ` + MOTION.css;
+
+  global.MONO = { INK, PAPER, MUTED, FAINT, GRID, L, LAD, DARK, STATUS, RAMP,
+    FONT, SHAPE, MOTION, tipLight, tipDark,
+    D2R, rnd, pol, sect, blob, barH, barV, el, txt, tip, obsReveal, eReveal, keep, DOC_CSS };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+const {INK,PAPER,MUTED,FAINT,GRID,L,LAD,DARK,STATUS,RAMP,FONT,SHAPE,MOTION,tipLight,tipDark,
+  D2R,rnd,pol,sect,blob,barH,barV,el,txt,tip,obsReveal,eReveal,keep} = MONO;
+document.head.appendChild(Object.assign(document.createElement('link'), { rel:'stylesheet', href: MONO.FONT.link }));
+document.head.appendChild(Object.assign(document.createElement('style'), { textContent: MONO.DOC_CSS }));
+// ═══════════════════════════════════════════════════════════
+// 图型片段 F11 · Meter Rails 进度轨（重绘版 · 全出血）
+// 数据契约：单值进度 0–100%，1–6 条并排（各模块通过率 / 各质量门禁）；
+//           每条带阈值刻度。viewBox 1080 宽，字号即最终渲染字号。
+// 形式依据：单一比率对目标 → meter（不是饼图、不是单柱柱状图）。
+// 色彩：fill 承载状态（STATUS 三色），track 用同色相浅步，让状态跨整条可读。
+// 文字一律穿墨色 token，绝不穿数据色。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：{"rows":[["用户中心",98,95,"good"],["订单中心",96,95,"good"],["商品服务",91,95,"warn"],["支付网关",75,95,"crit"]]} 由服务端注入 JSON（{rows:[[名称, 值0-100, 阈值, 状态键],…]}，1–6 行）。
+(()=>{
+const FILL={good:STATUS.good,warn:STATUS.warn,crit:STATUS.crit};
+const TRACK={good:'rgba(11,122,11,.15)',warn:'rgba(201,133,0,.15)',crit:'rgba(192,57,43,.12)'};
+const D={"rows":[["用户中心",98,95,"good"],["订单中心",96,95,"good"],["商品服务",91,95,"warn"],["支付网关",75,95,"crit"]]}.rows.map(([n,v,t,st])=>[n,v,t,FILL[st]?st:'crit']);
+obsReveal('ch0',s=>{
+  const X0=250,X1=930,W=X1-X0,BAR=20,ROW=62,Y0=34;
+  D.forEach(([name,v,target,st],i)=>{
+    const y=Y0+i*ROW;
+    // 名称（左栏，墨色）
+    txt(s,{x:X0-24,y:y+BAR/2,'font-size':15,'font-weight':600,fill:INK,
+      'text-anchor':'end','dominant-baseline':'middle',class:'fade',style:`animation-delay:${i*.08}s`},name);
+    // track（同色相浅步）+ fill（状态色）
+    el(s,'rect',{x:X0,y,width:W,height:BAR,rx:BAR/2,fill:TRACK[st],
+      class:'fade',style:`animation-delay:${i*.08}s`});
+    const fw=W*v/100;
+    const fill=el(s,'rect',{x:X0,y,width:fw,height:BAR,rx:BAR/2,fill:FILL[st],
+      class:'fade',style:`animation-delay:${.15+i*.08}s`});
+    tip(fill,`${name} — ${v}%（阈值 ${target}%）`);
+    // 阈值刻度：虚线只留给阈值
+    const tx=X0+W*target/100;
+    el(s,'line',{x1:tx,y1:y-7,x2:tx,y2:y+BAR+7,stroke:MUTED,'stroke-width':1.5,
+      'stroke-dasharray':'3 3',class:'fade',style:`animation-delay:${.35+i*.08}s`});
+    // 数值（墨色，不穿数据色）
+    const num=txt(s,{x:X1+26,y:y+BAR/2,'font-size':22,'font-weight':700,fill:INK,
+      'dominant-baseline':'middle',class:'fade',style:`animation-delay:${.3+i*.08}s`},v+'%');
+    tip(num,`${name} — 通过 ${v}%，距阈值 ${v-target>0?'+':''}${v-target} 个百分点`);
+  });
+  // 阈值刻度只在首条标注一次，避免每行重复
+  txt(s,{x:X0+W*.95,y:Y0-14,'font-size':11,'font-weight':600,fill:MUTED,
+    'text-anchor':'middle','letter-spacing':'.08em',class:'fade',style:'animation-delay:.5s'},'发版线 95%');
+  // 单位说明（发丝线之下）
+  el(s,'line',{x1:0,y1:Y0+D.length*ROW-14,x2:1080,y2:Y0+D.length*ROW-14,
+    stroke:GRID,'stroke-width':1,class:'fade',style:'animation-delay:.6s'});
+  txt(s,{x:0,y:Y0+D.length*ROW+8,'font-size':11,'font-weight':500,fill:FAINT,
+    'letter-spacing':'.12em',class:'fade',style:'animation-delay:.7s'},
+    '轨长 = 0–100% · 虚线 = 阈值 · 色相 = 达标状态（绿达标 / 琥珀逼近 / 红未达）');
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 F4 · Stacked Share 状态构成条（重绘版 · 全出血）
+// 数据契约：100% 构成（≤6 段）；状态构成用 STATUS 三色，段序固定
+//           通过 | 阻塞 | 失败 | 跳过 —— 绿红不得相邻（红绿色盲下 ΔE 仅 4.1）。
+// 形式依据：part-to-whole → 单条水平堆叠条（不是环形图 / 饼图）。
+// 标记规格：条厚 24px；段间 2px 表面间隙、不描边；基线端方角、数据端 4px 圆角；
+//           段内直标只在放得下时给，否则交给图例 + tooltip。
+// 文字穿墨色 token；段内标签按填充明度取纸/墨（唯一例外）。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：[["通过",118,"good","✓"],["阻塞",3,"warn","▲"],["失败",6,"crit","✕"],["跳过",1,"mute","–"]] 由服务端注入 JSON（[[名称, 条数, 状态键, 标记], …]，≤6 段）。
+// 状态键 ∈ good | warn | crit | mute，色值由 STATUS 取，**数据里不带颜色**。
+(()=>{
+const D=[["通过",118,"good","✓"],["阻塞",3,"warn","▲"],["失败",6,"crit","✕"],["跳过",1,"mute","–"]].map(([n,v,k,ico])=>[n,v,STATUS[k]||STATUS.mute,ico]);
+obsReveal('ch1',s=>{
+  const W=1080,GAP=2,BAR=24,Y=34;
+  const total=D.reduce((a,d)=>a+d[1],0);
+  const usable=W-GAP*(D.length-1);
+  let x=0;
+  D.forEach(([name,v,shade,ico],i)=>{
+    const w=v/total*usable;
+    const isLast=i===D.length-1;
+    // 整条是一个标记：左端（基线）方角，右端（数据端）4px 圆角；中段两端方角
+    const p=el(s,'path',{d:isLast?barH(x,Y,w,BAR,4):`M${x} ${Y} H${x+w} V${Y+BAR} H${x} Z`,fill:shade});
+    tip(p,`${name} ${v} 条 · ${(v/total*100).toFixed(1)}%`);
+    // 段内直标：放得下才给（≥150px），文字按填充明度取纸/墨
+    if(w>=150){
+      const pale=shade===STATUS.mute||shade==='#B0AFA9';
+      txt(s,{x:x+16,y:Y+BAR/2,'font-size':14,'font-weight':600,
+        fill:pale?INK:PAPER,'dominant-baseline':'middle',
+        class:'fade',style:`animation-delay:${.3+i*.06}s`},`${name} ${v}`);
+    }
+    x+=w+GAP;
+  });
+
+  // 图例：≥2 系列必出；状态色必配 icon + label + 数值，绝不单靠颜色承载语义
+  const LY=112;
+  let lx=0;
+  D.forEach(([name,v,shade,ico],i)=>{
+    const g=el(s,'g',{class:'fade',style:`animation-delay:${.5+i*.06}s`});
+    el(g,'rect',{x:lx,y:LY-9,width:11,height:11,rx:2.5,fill:shade});
+    txt(g,{x:lx+20,y:LY,'font-size':13,'font-weight':700,fill:shade,'dominant-baseline':'middle'},ico);
+    txt(g,{x:lx+38,y:LY,'font-size':14,fill:INK,'dominant-baseline':'middle'},name);
+    txt(g,{x:lx+38+name.length*15,y:LY,'font-size':14,'font-weight':700,fill:INK,
+      'dominant-baseline':'middle','font-variant-numeric':'tabular-nums'},String(v));
+    txt(g,{x:lx+38+name.length*15+34,y:LY,'font-size':12,fill:MUTED,
+      'dominant-baseline':'middle','font-variant-numeric':'tabular-nums'},(v/total*100).toFixed(1)+'%');
+    tip(g,`${name} ${v} 条 · 占 ${(v/total*100).toFixed(1)}%`);
+    lx+=270;
+  });
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 F5 · Emphasis Bars 焦点横条（重绘版 · 全出血）
+// 数据契约：名义类目排名比较（≤8 行），单位可数。
+// 形式依据：名义类目 → 一支高亮（本轮风险焦点），其余去强调灰。
+//           严禁「越大越深」的值色阶 —— 那是拿唯一空闲通道去重复编码条长。
+// 标记规格：条厚 20px（≤24）；基线端方角、数据端 4px 圆角；条端标值。
+// 文字一律穿墨色 token，绝不穿数据色。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：{"rows":[["支付网关",9,true],["订单中心",6,false],["用户中心",3,false],["商品服务",3,false],["消息推送",2,false],["后台管理",0,false]]} 由服务端注入 JSON（{rows:[[名称, 值, 是否风险焦点],…]}，≤8 行）。
+(()=>{
+const D={"rows":[["支付网关",9,true],["订单中心",6,false],["用户中心",3,false],["商品服务",3,false],["消息推送",2,false],["后台管理",0,false]]}.rows;
+obsReveal('ch2',s=>{
+  const X0=190,X1=960,BAR=20,ROW=48,Y0=34,MAX=10;
+  const px=v=>(X1-X0)*v/MAX;
+  // 发丝网格：实线、1px、单色退让（虚线只留给阈值）
+  for(let t=0;t<=MAX;t+=2){
+    const gx=X0+px(t);
+    el(s,'line',{x1:gx,y1:Y0-14,x2:gx,y2:Y0+D.length*ROW-14,stroke:t===0?INK:GRID,'stroke-width':1,
+      class:'fade',style:`animation-delay:${t*.02}s`});
+    txt(s,{x:gx,y:Y0-24,'font-size':12,fill:FAINT,'text-anchor':'middle',
+      'letter-spacing':'.06em','font-variant-numeric':'tabular-nums',
+      class:'fade',style:`animation-delay:${t*.02}s`},t);
+  }
+  D.forEach(([name,v,hot],i)=>{
+    const y=Y0+i*ROW;
+    txt(s,{x:X0-24,y:y+BAR/2,'font-size':15,'font-weight':hot?700:500,
+      fill:hot?INK:MUTED,'text-anchor':'end','dominant-baseline':'middle',
+      class:'fade',style:`animation-delay:${i*.07}s`},name);
+    if(v>0){
+      const w=px(v);
+      // 唯一高亮 = 本轮风险焦点；其余去强调灰。不是值色阶。
+      const p=el(s,'path',{d:barH(X0,y,w,BAR),fill:hot?STATUS.crit:STATUS.mute,
+        class:'fade',style:`animation-delay:${.1+i*.07}s`});
+      tip(p,`${name} — ${v} 个缺陷`);
+    }else{
+      // 0 值不画条，只给短标，避免「一根空条」被误读成有值
+      el(s,'line',{x1:X0,y1:y+BAR/2,x2:X0+10,y2:y+BAR/2,stroke:FAINT,'stroke-width':2,
+        class:'fade',style:`animation-delay:${.1+i*.07}s`});
+    }
+    // 条端标值（每条一个，不是逐点铺数）
+    txt(s,{x:X0+Math.max(px(v),10)+14,y:y+BAR/2,'font-size':17,'font-weight':700,
+      fill:hot?STATUS.crit:INK,'dominant-baseline':'middle','font-variant-numeric':'tabular-nums',
+      class:'fade',style:`animation-delay:${.25+i*.07}s`},v);
+    if(hot)txt(s,{x:X0+px(v)+52,y:y+BAR/2,'font-size':12,'font-weight':600,fill:STATUS.crit,
+      'dominant-baseline':'middle','letter-spacing':'.1em',
+      class:'fade',style:`animation-delay:${.35+i*.07}s`},'风险焦点');
+  });
+  txt(s,{x:0,y:Y0+D.length*ROW+16,'font-size':11,'font-weight':500,fill:FAINT,
+    'letter-spacing':'.12em',class:'fade',style:'animation-delay:.6s'},
+    '横轴 = 缺陷数（个）· 红 = 本轮风险焦点 · 灰 = 其余模块');
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 L4 · Ink Matrix 明度矩阵（重绘版 · 全出血）
+// 数据契约：分类 × 分类 + 量（≤100 格）；典型为严重度 × 状态的缺陷计数。
+// 形式依据：网格里的量 → 热力矩阵；量走灰阶明度（lieflat「明度即数据」），
+//           不上彩虹色、不用色相编码密度。
+// emphasis：唯一红圈标出「发版前必须清零」那格 —— 一支高亮，其余纯明度。
+// 文字按单元明度取纸/墨（填充内唯一例外），其余一律墨色 token。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：{"rows":["致命","严重","一般","提示"],"cols":["激活","处理中","已修复","已关闭"],"cells":[[1,0,0,0],[2,1,2,0],[3,2,5,2],[0,1,2,2]]} 由服务端注入 JSON（{rows:[…], cols:[…], cells:[[…],…]}）。
+(()=>{
+const ROWS={"rows":["致命","严重","一般","提示"],"cols":["激活","处理中","已修复","已关闭"],"cells":[[1,0,0,0],[2,1,2,0],[3,2,5,2],[0,1,2,2]]}.rows,COLS={"rows":["致命","严重","一般","提示"],"cols":["激活","处理中","已修复","已关闭"],"cells":[[1,0,0,0],[2,1,2,0],[3,2,5,2],[0,1,2,2]]}.cols,M={"rows":["致命","严重","一般","提示"],"cols":["激活","处理中","已修复","已关闭"],"cells":[[1,0,0,0],[2,1,2,0],[3,2,5,2],[0,1,2,2]]}.cells;
+const RAMP=['#EDECE6','#C6C5BF','#8F8E88','#4A4944','#1C1C1A'];
+const rampOf=v=>({0:RAMP[0],1:RAMP[1],2:RAMP[2],3:RAMP[3],5:RAMP[4]})[v]??RAMP[4];
+obsReveal('ch3',s=>{
+  const CW=186,CH=58,GAP=2,X0=190,Y0=70;
+  COLS.forEach((c,j)=>{
+    txt(s,{x:X0+j*(CW+GAP)+CW/2,y:Y0-18,'font-size':13,fill:MUTED,'text-anchor':'middle',
+      'letter-spacing':'.12em',class:'fade',style:`animation-delay:${j*.04}s`},c);
+  });
+  ROWS.forEach((r,i)=>{
+    const y=Y0+i*(CH+GAP);
+    txt(s,{x:X0-24,y:y+CH/2,'font-size':15,'font-weight':600,fill:INK,'text-anchor':'end',
+      'dominant-baseline':'middle',class:'fade',style:`animation-delay:${i*.05}s`},r);
+    const rowSum=M[i].reduce((a,b)=>a+b,0);
+    const rx=X0+COLS.length*(CW+GAP)+28;
+    txt(s,{x:rx,y:y+CH/2-7,'font-size':20,'font-weight':700,fill:INK,'text-anchor':'middle',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${.4+i*.05}s`},rowSum);
+    txt(s,{x:rx,y:y+CH/2+13,'font-size':10,fill:FAINT,'text-anchor':'middle','letter-spacing':'.12em',
+      class:'fade',style:`animation-delay:${.4+i*.05}s`},'SUM');
+
+    COLS.forEach((c,j)=>{
+      const v=M[i][j],x=X0+j*(CW+GAP);
+      const g=el(s,'g',{});
+      el(g,'rect',{x,y,width:CW,height:CH,fill:rampOf(v),
+        stroke:v===0?GRID:'none','stroke-width':1});
+      // 文字按单元明度取纸/墨，绝不穿数据色
+      txt(g,{x:x+CW/2,y:y+CH/2,'font-size':24,'font-weight':700,
+        fill:v>=3?PAPER:INK,'text-anchor':'middle','dominant-baseline':'central',
+        'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${.2+(i*4+j)*.02}s`},v);
+      tip(g,`${r} × ${c} — ${v} 个缺陷`);
+
+      // emphasis：致命 × 激活 = 发版前必须清零的那格
+      if(i===0&&j===0){
+        el(s,'rect',{x:x-4,y:y-4,width:CW+8,height:CH+8,fill:'none',
+          stroke:STATUS.crit,'stroke-width':2.5,rx:3,class:'fade',style:'animation-delay:.8s'});
+        txt(s,{x:x+CW/2,y:y-14,'font-size':12,'font-weight':600,fill:STATUS.crit,
+          'text-anchor':'middle','letter-spacing':'.12em',
+          class:'fade',style:'animation-delay:.85s'},'发版前必须清零');
+      }
+    });
+  });
+
+  // 列合计
+  const yBot=Y0+ROWS.length*(CH+GAP)+10;
+  txt(s,{x:X0-24,y:yBot+18,'font-size':10,fill:FAINT,'text-anchor':'end','letter-spacing':'.12em',
+    class:'fade'},'SUM');
+  COLS.forEach((_,j)=>{
+    const colSum=M.reduce((a,row)=>a+row[j],0);
+    txt(s,{x:X0+j*(CW+GAP)+CW/2,y:yBot+22,'font-size':20,'font-weight':700,fill:INK,
+      'text-anchor':'middle','font-variant-numeric':'tabular-nums',
+      class:'fade',style:`animation-delay:${.5+j*.04}s`},colSum);
+  });
+
+  // 明度标尺：连续量必须配 scale legend
+  let lx=0;
+  txt(s,{x:0,y:yBot+62,'font-size':12,fill:MUTED,class:'fade',style:'animation-delay:.7s'},'少');
+  lx=34;
+  [0,1,2,3,5].forEach((v,k)=>{
+    el(s,'rect',{x:lx+k*34,y:yBot+50,width:28,height:16,fill:rampOf(v),
+      stroke:v===0?GRID:'none','stroke-width':1,class:'fade',style:`animation-delay:${.7+k*.04}s`});
+    txt(s,{x:lx+k*34+14,y:yBot+80,'font-size':11,fill:MUTED,'text-anchor':'middle',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${.7+k*.04}s`},v);
+  });
+  txt(s,{x:lx+5*34+16,y:yBot+62,'font-size':12,fill:MUTED,class:'fade',style:'animation-delay:.9s'},
+    '多（明度 = 缺陷数）');
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 L14 · Hundred Field 百格场（重绘版 · 全出血）
+// 数据契约：构成（占比）；1 点 = 1 个单位，点数即真实条目数，可数。
+//           ≤6 类小数据。状态构成用 STATUS 三色（顺序 STATUS.order），
+//           非状态构成用灰阶明度阶梯。
+// 形式依据：part-to-whole 且要求「可数」→ 单位分解点阵（对比 F4 堆叠条只读占比）。
+// 标记规格：格间 2px 表面间隙、不描边；格圆角 3px。
+// 文字一律穿墨色 token，绝不穿数据色。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：[["功能",12,"good","✓"],["接口",6,"crit","✕"],["兼容",3,"warn","▲"],["性能",2,"mute","–"]] 由服务端注入 JSON（[[名称, 单位数, 状态键, 标记], …]，≤6 类）。
+(()=>{
+const D=[["功能",12,"good","✓"],["接口",6,"crit","✕"],["兼容",3,"warn","▲"],["性能",2,"mute","–"]].map(([n,v,k,ico])=>[n,v,STATUS[k]||STATUS.mute,ico]);
+obsReveal('ch4',s=>{
+  const COLS=25,GAP=5,W=900;
+  const CELL=(W-(COLS-1)*GAP)/COLS;
+  const total=D.reduce((a,d)=>a+d[1],0);
+  const ROWS=Math.ceil(total/COLS);
+  const X0=30,Y0=26;
+  // 点数可变，图自适应高度（写回 viewBox，别让格子被压扁）
+  const H=Y0+ROWS*(CELL+GAP)+110;
+  s.setAttribute('viewBox',`0 0 1080 ${H}`);
+
+  // 铺点：按段顺序填充，行优先，可数
+  let n=0;
+  D.forEach(([name,v,shade,ico],si)=>{
+    for(let k=0;k<v;k++,n++){
+      const cx=X0+(n%COLS)*(CELL+GAP),cy=Y0+Math.floor(n/COLS)*(CELL+GAP);
+      const g=el(s,'g',{});
+      el(g,'rect',{x:cx,y:cy,width:CELL,height:CELL,rx:3,fill:shade,opacity:.92,
+        class:'pop',style:`animation-delay:${si*.08+n*.006}s`});
+      tip(g,`${name} — 第 ${n+1} 个，共 ${v} 个`);
+    }
+  });
+  // 末行余格：极淡占位，让「总数不是整行」看得出来（沉默可见）
+  for(;n<ROWS*COLS;n++){
+    const cx=X0+(n%COLS)*(CELL+GAP),cy=Y0+Math.floor(n/COLS)*(CELL+GAP);
+    el(s,'rect',{x:cx,y:cy,width:CELL,height:CELL,rx:3,fill:'#EDECE6',
+      class:'fade',style:`animation-delay:${.5+n*.004}s`});
+  }
+
+  // 图例：状态色必配 icon + label + 数值；文字穿墨色 token
+  const LY=Y0+ROWS*(CELL+GAP)+44;
+  D.forEach(([name,v,shade,ico],i)=>{
+    const lx=i*250;
+    const g=el(s,'g',{class:'fade',style:`animation-delay:${.6+i*.05}s`});
+    el(g,'rect',{x:lx,y:LY-10,width:12,height:12,rx:3,fill:shade});
+    txt(g,{x:lx+22,y:LY+1,'font-size':13,'font-weight':700,fill:shade,'dominant-baseline':'middle'},ico);
+    txt(g,{x:lx+40,y:LY+1,'font-size':14,fill:INK,'dominant-baseline':'middle'},name);
+    txt(g,{x:lx+40+name.length*15,y:LY+1,'font-size':14,'font-weight':700,fill:INK,
+      'dominant-baseline':'middle','font-variant-numeric':'tabular-nums'},String(v));
+    txt(g,{x:lx+40+name.length*15+34,y:LY+1,'font-size':12,fill:MUTED,
+      'dominant-baseline':'middle','font-variant-numeric':'tabular-nums'},
+      (v/total*100).toFixed(1)+'%');
+    tip(g,`${name} ${v} 个 · 占 ${(v/total*100).toFixed(1)}%`);
+  });
+  txt(s,{x:0,y:LY+40,'font-size':11,'font-weight':500,fill:FAINT,'letter-spacing':'.12em',
+    class:'fade',style:'animation-delay:.9s'},
+    `1 格 = 1 个单位 · 共 ${total} 格，逐格可数 · 末行淡格 = 非整行余量`);
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 F2 · Emphasis Lines 焦点折线（重绘版 · 全出血）
+// 数据契约：日序列（≤30 天，逐日读数）；1–2 系列同单位，共用一根纵轴。
+// 形式依据：变化趋势 → 折线；「一支是主角、其余是语境」→ emphasis（1 色 + 灰）。
+//           绝不双轴 —— 两个量纲不同就拆成两张图，别发明相关性。
+// 标记规格：线 2px；端点 r=4（≥8px）+ 2px 表面环；hover 命中区放大到 r=12。
+// 直标只给峰值与两端，不给每个点写数字。文字穿墨色 token。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：{"days":["09-11","09-12","09-13","09-14","09-15","09-16","09-17","09-18","09-19","09-20","09-21","09-22"],"add":[2,3,1,4,6,5,3,2,1,0,0,0],"close":[0,1,2,1,2,3,3,4,5,4,3,2]} 由服务端注入 JSON（{days:[…], add:[…], close:[…]}，≤30 天）。
+(()=>{
+const DAYS={"days":["09-11","09-12","09-13","09-14","09-15","09-16","09-17","09-18","09-19","09-20","09-21","09-22"],"add":[2,3,1,4,6,5,3,2,1,0,0,0],"close":[0,1,2,1,2,3,3,4,5,4,3,2]}.days,ADD={"days":["09-11","09-12","09-13","09-14","09-15","09-16","09-17","09-18","09-19","09-20","09-21","09-22"],"add":[2,3,1,4,6,5,3,2,1,0,0,0],"close":[0,1,2,1,2,3,3,4,5,4,3,2]}.add,CLOSE={"days":["09-11","09-12","09-13","09-14","09-15","09-16","09-17","09-18","09-19","09-20","09-21","09-22"],"add":[2,3,1,4,6,5,3,2,1,0,0,0],"close":[0,1,2,1,2,3,3,4,5,4,3,2]}.close;
+obsReveal('ch5',s=>{
+  const X0=90,X1=980,Y0=50,Y1=250,YMAX=7;
+  const px=i=>X0+(i/(DAYS.length-1))*(X1-X0);
+  const py=v=>Y1-(v/YMAX)*(Y1-Y0);
+
+  // 发丝网格：实线、1px、退让。虚线只留给阈值。
+  [0,2,4,6].forEach(t=>{
+    el(s,'line',{x1:X0,y1:py(t),x2:X1,y2:py(t),stroke:t===0?INK:GRID,'stroke-width':1,
+      class:'fade',style:`animation-delay:${t*.03}s`});
+    txt(s,{x:X0-18,y:py(t)+5,'font-size':12,fill:FAINT,'text-anchor':'end',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${t*.03}s`},t);
+  });
+  txt(s,{x:X0-18,y:Y0-18,'font-size':11,fill:FAINT,'text-anchor':'end','letter-spacing':'.12em',
+    class:'fade'},'个 / 日');
+  DAYS.forEach((d,i)=>{
+    txt(s,{x:px(i),y:Y1+28,'font-size':12,fill:FAINT,'text-anchor':'middle',
+      'letter-spacing':'.04em','font-variant-numeric':'tabular-nums',
+      class:'fade',style:`animation-delay:${i*.02}s`},d);
+  });
+
+  const poly=arr=>arr.map((v,i)=>`${px(i)},${py(v)}`).join(' ');
+  // 语境线（去强调灰）在下，主角线（墨）在上
+  el(s,'polyline',{points:poly(CLOSE),fill:'none',stroke:STATUS.mute,'stroke-width':2,
+    'stroke-linejoin':'round','stroke-linecap':'round',class:'fade',style:'animation-delay:.2s'});
+  el(s,'polyline',{points:poly(ADD),fill:'none',stroke:INK,'stroke-width':2,
+    'stroke-linejoin':'round','stroke-linecap':'round',class:'fade',style:'animation-delay:.35s'});
+
+  // 端点：≥8px + 2px 表面环；命中区 r=12（规范要求 hover 目标大于标记本身）
+  [[ADD,INK,'新增'],[CLOSE,STATUS.mute,'关闭']].forEach(([arr,c,name])=>{
+    arr.forEach((v,i)=>{
+      const g=el(s,'g',{});
+      el(g,'circle',{cx:px(i),cy:py(v),r:4,fill:c,stroke:PAPER,'stroke-width':2,
+        class:'pop',style:`animation-delay:${.4+i*.025}s`});
+      el(g,'circle',{cx:px(i),cy:py(v),r:12,fill:'transparent'});
+      tip(g,`${DAYS[i]} · ${name} ${v} 个`);
+    });
+  });
+
+  // 直标：只给峰值与两端
+  const peak=ADD.indexOf(Math.max(...ADD));
+  el(s,'line',{x1:px(peak),y1:py(ADD[peak])-12,x2:px(peak),y2:py(ADD[peak])-32,
+    stroke:STATUS.crit,'stroke-width':1.5,class:'fade',style:'animation-delay:.7s'});
+  txt(s,{x:px(peak),y:py(ADD[peak])-42,'font-size':16,'font-weight':700,fill:INK,
+    'text-anchor':'middle',class:'fade',style:'animation-delay:.75s'},`峰值 ${ADD[peak]}`);
+  txt(s,{x:px(DAYS.length-1)+6,y:py(ADD[ADD.length-1])-14,'font-size':13,'font-weight':600,
+    fill:INK,class:'fade',style:'animation-delay:.8s'},'新增');
+  txt(s,{x:px(DAYS.length-1)+6,y:py(CLOSE[CLOSE.length-1])+20,'font-size':13,'font-weight':600,
+    fill:MUTED,class:'fade',style:'animation-delay:.8s'},'关闭');
+
+  // ≥2 系列必出图例；单系列不设图例框（标题已说明画的是什么）
+  const LY=310;
+  [[INK,'每日新增缺陷','本轮主角'],[STATUS.mute,'每日关闭缺陷','语境 · 滞后约 2 天']].forEach(([c,k,note],i)=>{
+    const lx=i*300;
+    el(s,'line',{x1:lx,y1:LY-1,x2:lx+22,y2:LY-1,stroke:c,'stroke-width':3,
+      'stroke-linecap':'round',class:'fade',style:`animation-delay:${.85+i*.05}s`});
+    txt(s,{x:lx+34,y:LY+4,'font-size':14,fill:INK,class:'fade',style:`animation-delay:${.85+i*.05}s`},k);
+    txt(s,{x:lx+34+k.length*15+12,y:LY+4,'font-size':12,fill:MUTED,
+      class:'fade',style:`animation-delay:${.85+i*.05}s`},note);
+  });
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 F1 · Columns 竖柱（重绘版 · 全出血）
+// 数据契约：少类目比较（≤8），单位可数。viewBox 1080 宽，字号即最终渲染字号。
+// 形式依据：比较量级 → 柱状。名义类目 → 每根同一个色（单系列不设图例框，
+//           标题已说明画的是什么）；**严禁「越大越深」的值色阶** —— 那是把
+//           条长再编码一遍，白烧唯一的空闲通道。
+// 标记规格：柱厚 24px（≤24，留白给带宽）；数据端（上）4px 圆角、基线端（下）方角。
+// 文字一律穿墨色 token，绝不穿数据色。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：[["用户中心",38],["订单中心",27],["支付网关",22],["商品服务",16],["消息推送",11],["后台管理",7]] 由服务端注入 JSON（[[名称, 值], …]，≤8 行）。
+(()=>{
+const D=[["用户中心",38],["订单中心",27],["支付网关",22],["商品服务",16],["消息推送",11],["后台管理",7]];
+obsReveal('ch6',s=>{
+  const BASE=300,BW=24,MAX=40,PLOT=220;
+  const X=i=>(1080-(D.length-1)*150-BW)/2+i*150;
+  const py=v=>BASE-v/MAX*PLOT;
+  // 发丝网格：实线、1px、退让
+  for(let t=0;t<=MAX;t+=10){
+    el(s,'line',{x1:70,y1:py(t),x2:1010,y2:py(t),stroke:t===0?INK:GRID,'stroke-width':1,
+      class:'fade',style:`animation-delay:${t*.02}s`});
+    txt(s,{x:56,y:py(t)+5,'font-size':12,fill:FAINT,'text-anchor':'end',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${t*.02}s`},t);
+  }
+  D.forEach(([name,v],i)=>{
+    const x=X(i),h=BASE-py(v);
+    const p=el(s,'path',{d:barV(x,py(v),BW,h),fill:INK,
+      class:'fade',style:`animation-delay:${.1+i*.08}s`});
+    tip(p,`${name} — ${v} 条用例`);
+    // 柱顶标值（不是逐点铺数：每柱一个）
+    txt(s,{x:x+BW/2,y:py(v)-14,'font-size':18,'font-weight':700,fill:INK,'text-anchor':'middle',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${.25+i*.08}s`},v);
+    txt(s,{x:x+BW/2,y:BASE+30,'font-size':14,fill:MUTED,'text-anchor':'middle',
+      class:'fade',style:`animation-delay:${.3+i*.08}s`},name);
+  });
+  txt(s,{x:70,y:BASE+74,'font-size':11,'font-weight':500,fill:FAINT,'letter-spacing':'.12em',
+    class:'fade',style:'animation-delay:.7s'},'纵轴 = 用例数（条）· 单系列同一墨色，不用值色阶');
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 F6 · Paired Columns 并柱对比（重绘版 · 全出血）
+// 数据契约：分组对比，每类 2 系列（本轮 vs 上轮）。viewBox 1080 宽。
+// 形式依据：「一支是主角、其余是语境」→ emphasis（1 色 + 灰），不是 categorical 双色。
+// 标记规格：柱厚 24px；同组两柱之间 2px 表面间隙，不描边；数据端圆角、基线端方角。
+// 文字一律穿墨色 token。≥2 系列必出图例。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：[["用户中心",31,38],["订单中心",22,27],["支付网关",16,22],["商品服务",13,16],["消息推送",6,9]] 由服务端注入 JSON（[[名称, 上轮, 本轮], …]，≤8 行）。
+(()=>{
+const D=[["用户中心",31,38],["订单中心",22,27],["支付网关",16,22],["商品服务",13,16],["消息推送",6,9]];
+obsReveal('ch7',s=>{
+  const BASE=292,BW=24,GAP=2,MAX=40,PLOT=210;
+  const STEP=BW*2+GAP+34;                 // 组内 24+2+24，组间再留 34
+  const X=i=>(1080-(D.length-1)*STEP-BW*2-GAP)/2+i*STEP;
+  const py=v=>BASE-v/MAX*PLOT;
+  for(let t=0;t<=MAX;t+=10){
+    el(s,'line',{x1:60,y1:py(t),x2:1020,y2:py(t),stroke:t===0?INK:GRID,'stroke-width':1,
+      class:'fade',style:`animation-delay:${t*.02}s`});
+    txt(s,{x:46,y:py(t)+5,'font-size':12,fill:FAINT,'text-anchor':'end',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${t*.02}s`},t);
+  }
+  D.forEach(([name,was,now],i)=>{
+    const xa=X(i),xb=xa+BW+GAP;
+    // 语境（上轮）在左，主角（本轮）在右
+    const pa=el(s,'path',{d:barV(xa,py(was),BW,BASE-py(was)),fill:STATUS.mute,
+      class:'fade',style:`animation-delay:${.1+i*.08}s`});
+    const pb=el(s,'path',{d:barV(xb,py(now),BW,BASE-py(now)),fill:INK,
+      class:'fade',style:`animation-delay:${.2+i*.08}s`});
+    tip(pa,`${name} — 上轮 ${was} 条`);
+    tip(pb,`${name} — 本轮 ${now} 条`);
+    txt(s,{x:xa+BW/2,y:py(was)-12,'font-size':14,fill:MUTED,'text-anchor':'middle',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${.3+i*.08}s`},was);
+    txt(s,{x:xb+BW/2,y:py(now)-14,'font-size':18,'font-weight':700,fill:INK,'text-anchor':'middle',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${.35+i*.08}s`},now);
+    txt(s,{x:xa+BW+GAP/2,y:BASE+30,'font-size':14,fill:MUTED,'text-anchor':'middle',
+      class:'fade',style:`animation-delay:${.4+i*.08}s`},name);
+  });
+  // 图例：2 系列必出；文字穿墨色，靠色块承载身份
+  const LY=BASE+74;
+  [[STATUS.mute,'上轮','语境'],[INK,'本轮','主角']].forEach(([c,k,note],i)=>{
+    const lx=60+i*220;
+    el(s,'rect',{x:lx,y:LY-11,width:12,height:12,rx:2,fill:c,
+      class:'fade',style:`animation-delay:${.7+i*.05}s`});
+    txt(s,{x:lx+22,y:LY,'font-size':14,fill:INK,class:'fade',style:`animation-delay:${.7+i*.05}s`},k);
+    txt(s,{x:lx+22+k.length*15+10,y:LY,'font-size':12,fill:MUTED,
+      class:'fade',style:`animation-delay:${.7+i*.05}s`},note);
+  });
+  txt(s,{x:600,y:LY,'font-size':11,'font-weight':500,fill:FAINT,'letter-spacing':'.12em',
+    class:'fade',style:'animation-delay:.8s'},'纵轴 = 用例数（条）· 1 色 + 灰 = emphasis');
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 F7 · Stacked Columns 堆叠柱（重绘版 · 全出血）
+// 数据契约：堆叠构成（≤4 类 × ≤3 段）。viewBox 1080 宽。
+// 形式依据：part-to-whole 且要按类目拆 → 堆叠柱。段是**状态**时用 STATUS 三色，
+//           段序固定 通过 | 阻塞 | 失败（绿红不得相邻）；段是量/序时改用灰阶明度。
+// 标记规格：柱厚 24px；段与段之间 2px 表面间隙、不描边（靠白缝分段，不描轮廓）。
+// 段内直标只在放得下时给。文字一律穿墨色 token。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：{"rows":[["P0",[28,3,2]],["P1",[41,5,3]],["P2",[33,4,2]],["P3",[16,2,1]]],"segs":[["通过","good"],["阻塞","warn"],["失败","crit"]]} 由服务端注入 JSON
+//   {rows:[[类目,[段1,段2,段3]],…]（≤4 类）, segs:[[段名, 色键],…]（≤3 段）}
+// 色键 ∈ good|warn|crit|mute|ink|mid|pale；**数据里不带颜色字面量**，色值一律由 token 取。
+(()=>{
+const D={"rows":[["P0",[28,3,2]],["P1",[41,5,3]],["P2",[33,4,2]],["P3",[16,2,1]]],"segs":[["通过","good"],["阻塞","warn"],["失败","crit"]]}.rows;
+const TONE={good:STATUS.good,warn:STATUS.warn,crit:STATUS.crit,mute:STATUS.mute,ink:INK,mid:'#8F8E88',pale:'#C6C5BF'};
+const SEG={"rows":[["P0",[28,3,2]],["P1",[41,5,3]],["P2",[33,4,2]],["P3",[16,2,1]]],"segs":[["通过","good"],["阻塞","warn"],["失败","crit"]]}.segs.map(([n,k])=>[n,TONE[k]||STATUS.mute]);
+obsReveal('ch8',s=>{
+  const BASE=300,BW=24,GAP=2,MAX=55,PLOT=220;
+  const X=i=>(1080-(D.length-1)*180-BW)/2+i*180;
+  const py=v=>BASE-v/MAX*PLOT;
+  for(let t=0;t<=50;t+=10){
+    el(s,'line',{x1:80,y1:py(t),x2:1000,y2:py(t),stroke:t===0?INK:GRID,'stroke-width':1,
+      class:'fade',style:`animation-delay:${t*.02}s`});
+    txt(s,{x:66,y:py(t)+5,'font-size':12,fill:FAINT,'text-anchor':'end',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${t*.02}s`},t);
+  }
+  D.forEach(([name,segs],i)=>{
+    const x=X(i);let acc=0;
+    segs.forEach((v,si)=>{
+      if(v<=0){acc+=v;return}
+      const h=py(acc)-py(acc+v)-GAP;      // 段间 2px 表面间隙
+      const y=py(acc+v);
+      const p=el(s,'path',{d:barV(x,y,BW,Math.max(h,2),si===segs.length-1?4:0),fill:SEG[si][1],
+        class:'fade',style:`animation-delay:${.1+(i*3+si)*.05}s`});
+      tip(p,`${name} ${SEG[si][0]} — ${v} 条`);
+      // 段内直标：放得下（≥28px 高）才给，文字按填充明度取纸/墨
+      if(h>=28){
+        const pale=SEG[si][1]===STATUS.mute||SEG[si][1]===STATUS.warn;
+        txt(s,{x:x+BW/2,y:y+h/2,'font-size':13,'font-weight':600,'text-anchor':'middle',
+          'dominant-baseline':'central',fill:pale?INK:PAPER,'font-variant-numeric':'tabular-nums',
+          class:'fade',style:`animation-delay:${.3+(i*3+si)*.05}s`},v);
+      }
+      acc+=v;
+    });
+    txt(s,{x:x+BW/2,y:py(acc)-14,'font-size':18,'font-weight':700,fill:INK,'text-anchor':'middle',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${.4+i*.08}s`},acc);
+    txt(s,{x:x+BW/2,y:BASE+30,'font-size':14,fill:MUTED,'text-anchor':'middle',
+      class:'fade',style:`animation-delay:${.45+i*.08}s`},name);
+  });
+  // 图例：状态色必配 icon + label；文字穿墨色 token
+  const LY=BASE+74;
+  SEG.forEach(([k,c],i)=>{
+    const lx=80+i*200;
+    el(s,'rect',{x:lx,y:LY-11,width:12,height:12,rx:2,fill:c,
+      class:'fade',style:`animation-delay:${.7+i*.05}s`});
+    txt(s,{x:lx+22,y:LY,'font-size':14,fill:INK,class:'fade',style:`animation-delay:${.7+i*.05}s`},k);
+  });
+  txt(s,{x:700,y:LY,'font-size':11,'font-weight':500,fill:FAINT,'letter-spacing':'.12em',
+    class:'fade',style:'animation-delay:.85s'},'纵轴 = 用例数（条）· 段序 通过 | 阻塞 | 失败');
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 F9 · Waterfall 瀑布（重绘版 · 全出血）
+// 数据契约：瀑布 / 增减分解（≤6 级）。viewBox 1080 宽。
+// 数据形状：[类目, 取值, 标记]；标记 'start' = 起始总量，'total' = 收尾总量，
+//           其余为增减步。首尾用标记判定，不要靠类目名匹配。
+// 形式依据：增减分解 → 瀑布（浮动柱）。加项墨色、减项去强调灰，靠符号与图例区分，
+//           不靠描边。层与层之间发丝台阶承接（台阶是语境，不是数据）。
+// 标记规格：柱厚 24px；数据端圆角、基线端方角。文字一律穿墨色 token。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：[["计划执行",128,"start"],["漏执行",-8,null],["阻塞",-3,null],["失败",-6,null],["通过",111,"total"]] 由服务端注入 JSON（[[类目, 取值, 标记], …]，≤6 级）。
+(()=>{
+const D=[["计划执行",128,"start"],["漏执行",-8,null],["阻塞",-3,null],["失败",-6,null],["通过",111,"total"]];
+obsReveal('ch9',s=>{
+  const BASE=300,BW=24,MAX=140,PLOT=220;
+  const X=i=>(1080-(D.length-1)*180-BW)/2+i*180;
+  const py=v=>BASE-v/MAX*PLOT;
+  // 先算浮动区间
+  let lv=0;const rows=[];
+  D.forEach(([name,v,mark])=>{
+    if(mark==='start'){rows.push([name,v,0,v]);lv=v}
+    else if(mark==='total'){rows.push([name,lv,0,lv])}
+    else{rows.push([name,v,lv+v,lv]);lv=lv+v}
+  });
+  for(let t=0;t<=140;t+=35){
+    el(s,'line',{x1:80,y1:py(t),x2:1000,y2:py(t),stroke:t===0?INK:GRID,'stroke-width':1,
+      class:'fade',style:`animation-delay:${t*.01}s`});
+    txt(s,{x:66,y:py(t)+5,'font-size':12,fill:FAINT,'text-anchor':'end',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${t*.01}s`},t);
+  }
+  rows.forEach(([name,v,lo,hi],i)=>{
+    const mark=D[i][2],isTotal=mark==='start'||mark==='total',neg=v<0&&!isTotal;
+    const from=isTotal?0:lo,to=isTotal?v:hi;
+    const y=py(Math.max(from,to)),h=Math.abs(py(from)-py(to));
+    const p=el(s,'path',{d:barV(X(i),y,BW,Math.max(h,2)),fill:neg?STATUS.mute:INK,
+      class:'fade',style:`animation-delay:${.15+i*.12}s`});
+    tip(p,`${name} — ${neg?'−':''}${Math.abs(v)} 条`);
+    // 台阶承接：发丝线连到下一级的起始位（语境线，非数据）
+    if(i<rows.length-1){
+      const lvl=isTotal?v:(neg?lo:hi);
+      el(s,'line',{x1:X(i)+BW+2,y1:py(lvl),x2:X(i+1)-2,y2:py(lvl),stroke:FAINT,
+        'stroke-width':1,'stroke-dasharray':'3 4',class:'fade',style:`animation-delay:${.4+i*.12}s`});
+    }
+    txt(s,{x:X(i)+BW/2,y:y-14,'font-size':18,'font-weight':700,fill:INK,'text-anchor':'middle',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${.3+i*.12}s`},
+      (neg?'−':'')+Math.abs(v));
+    txt(s,{x:X(i)+BW/2,y:BASE+30,'font-size':14,fill:MUTED,'text-anchor':'middle',
+      class:'fade',style:`animation-delay:${.45+i*.12}s`},name);
+  });
+  const LY=BASE+74;
+  [[INK,'加项 / 总量','起点与终点'],[STATUS.mute,'减项','− 号标记']].forEach(([c,k,note],i)=>{
+    const lx=80+i*240;
+    el(s,'rect',{x:lx,y:LY-11,width:12,height:12,rx:2,fill:c,
+      class:'fade',style:`animation-delay:${.8+i*.05}s`});
+    txt(s,{x:lx+22,y:LY,'font-size':14,fill:INK,class:'fade',style:`animation-delay:${.8+i*.05}s`},k);
+    txt(s,{x:lx+22+k.length*15+10,y:LY,'font-size':12,fill:MUTED,
+      class:'fade',style:`animation-delay:${.8+i*.05}s`},note);
+  });
+  txt(s,{x:640,y:LY,'font-size':11,'font-weight':500,fill:FAINT,'letter-spacing':'.12em',
+    class:'fade',style:'animation-delay:.9s'},'纵轴 = 用例数（条）· 虚线 = 级间接力');
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 F10 · Dot Heat 点阵热力（重绘版 · 全出血）
+// 数据契约：星期 × 小时 × 量（小热力）。viewBox 1080 宽。
+// 形式依据：网格里的量 → 热力。这里用**点面积**编码（1 点 = 可读的量），
+//           密度走灰阶明度阶梯，不上彩虹、不用色相做连续量。
+// 标记规格：点 ≥8px 才可点（r≥4）；静默格留一粒极小点，让「沉默可见」。
+// emphasis：峰值格加一圈环。文字一律穿墨色 token。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：{"days":["周一","周二","周三","周四","周五","周六","周日"],"cells":[[1,4,11,12,20,22,19,19,18,19,13,4],[1,5,8,14,20,27,18,18,17,12,12,5],[1,3,12,13,17,29,21,21,20,10,13,2],[1,4,7,10,15,14,18,27,21,21,12,4],[1,4,8,20,14,28,25,22,21,11,12,5],[0,1,3,7,9,10,5,7,5,4,3,1],[0,1,2,5,5,9,9,4,6,3,4,1]]} 由服务端注入 JSON（{days:[…], cells:[[…],…]}，7 行 × 12 列）。
+(()=>{
+const DAY={"days":["周一","周二","周三","周四","周五","周六","周日"],"cells":[[1,4,11,12,20,22,19,19,18,19,13,4],[1,5,8,14,20,27,18,18,17,12,12,5],[1,3,12,13,17,29,21,21,20,10,13,2],[1,4,7,10,15,14,18,27,21,21,12,4],[1,4,8,20,14,28,25,22,21,11,12,5],[0,1,3,7,9,10,5,7,5,4,3,1],[0,1,2,5,5,9,9,4,6,3,4,1]]}.days,CELLS={"days":["周一","周二","周三","周四","周五","周六","周日"],"cells":[[1,4,11,12,20,22,19,19,18,19,13,4],[1,5,8,14,20,27,18,18,17,12,12,5],[1,3,12,13,17,29,21,21,20,10,13,2],[1,4,7,10,15,14,18,27,21,21,12,4],[1,4,8,20,14,28,25,22,21,11,12,5],[0,1,3,7,9,10,5,7,5,4,3,1],[0,1,2,5,5,9,9,4,6,3,4,1]]}.cells;
+obsReveal('ch10',s=>{
+  const X0=150,DX=72,Y0=72,DY=38;
+  const v=(i,j)=>CELLS[i][j];
+  let max=0,mi=0,mj=0;
+  for(let i=0;i<DAY.length;i++)for(let j=0;j<CELLS[i].length;j++){const t=v(i,j);if(t>max){max=t;mi=i;mj=j}}
+  for(let i=0;i<7;i++){
+    txt(s,{x:X0-26,y:Y0+i*DY+5,'font-size':13,fill:MUTED,'text-anchor':'end',
+      class:'fade',style:`animation-delay:${i*.05}s`},DAY[i]);
+    for(let j=0;j<12;j++){
+      const t=v(i,j),x=X0+j*DX,y=Y0+i*DY;
+      if(!t){el(s,'circle',{cx:x,cy:y,r:2,fill:'#D8D6CE',
+        class:'pop',style:`animation-delay:${i*.05+j*.015}s`});continue}
+      // 面积编码用 sqrt 换算半径：数值与视觉严格成正比
+      const r=4+Math.sqrt(t)*5.2;
+      const dot=el(s,'circle',{cx:x,cy:y,r,
+        fill:t>max*.66?INK:t>max*.33?'#6A6963':'#B0AFA9',
+        class:'pop',style:`animation-delay:${i*.05+j*.015}s`});
+      tip(dot,`${DAY[i]} ${8+j}:00 — ${t} 个缺陷`);
+      if(i===mi&&j===mj)
+        el(s,'circle',{cx:x,cy:y,r:r+7,fill:'none',stroke:INK,'stroke-width':1.5,
+          'stroke-dasharray':'4 4',class:'fade',style:'animation-delay:1s'});
+    }
+  }
+  for(let j=0;j<12;j+=2)
+    txt(s,{x:X0+j*DX,y:Y0+6*DY+34,'font-size':12,fill:FAINT,'text-anchor':'middle',
+      'font-variant-numeric':'tabular-nums',class:'fade',style:`animation-delay:${j*.02}s`},(8+j)+':00');
+  // 明度/面积标尺：连续量必须配 scale legend
+  const LY=Y0+6*DY+82;
+  txt(s,{x:150,y:LY+5,'font-size':12,fill:MUTED,class:'fade',style:'animation-delay:.8s'},'少');
+  [['#B0AFA9',4],['#6A6963',8],['INK',12]].forEach(([c,r],k)=>{
+    el(s,'circle',{cx:200+k*70,cy:LY,r,fill:c,class:'fade',style:`animation-delay:${.8+k*.05}s`});
+    txt(s,{x:200+k*70,y:LY+34,'font-size':11,fill:FAINT,'text-anchor':'middle',
+      class:'fade',style:`animation-delay:${.8+k*.05}s`},{4:'轻',8:'中',12:'重'}[r]);
+  });
+  txt(s,{x:440,y:LY+5,'font-size':11,'font-weight':500,fill:FAINT,'letter-spacing':'.12em',
+    class:'fade',style:'animation-delay:.95s'},
+    `点面积 = 缺陷数 · 虚线圈 = 峰值 ${max} · 极小点 = 静默时段`);
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 L3 · Barcode Lollipop 条码棒棒糖（重绘版 · 全出血）
+// 数据契约：每天一个读数的日序列（90 天级，要肌理）。viewBox 1080 宽。
+// 形式依据：变化趋势 + 要「日历肌理」→ 条码地板（每天一根发丝，无论有没有事）
+//           + 棒棒糖读数。日历地板让序列不被误读成连续均匀间隔。
+// 标记规格：线 2px；端点 r≥4 + 2px 表面环；直标只给峰值（本图取前 3，且互相隔开）。
+// 文字一律穿墨色 token，绝不穿数据色。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：[134,132,155,163,173,161,172,172,199,187,159,153,155,175,147,161,152,139,122,143,135,129,133,161,145,156,176,170,158,168,145,130,127,104,100,77,80,62,44,46,50,43,28,52,35,44,67,52,70,68,92,108,110,97,111,124,114,115,108,96,110,107,114,105,108,119,139,133,142,143,178,189,195,208,193,202,208,193,171,197,165,162,167,139,141,132,114,99,106,89] 由服务端注入 JSON（[每日读数, …]，90 天级）。
+(()=>{
+const vs=[134,132,155,163,173,161,172,172,199,187,159,153,155,175,147,161,152,139,122,143,135,129,133,161,145,156,176,170,158,168,145,130,127,104,100,77,80,62,44,46,50,43,28,52,35,44,67,52,70,68,92,108,110,97,111,124,114,115,108,96,110,107,114,105,108,119,139,133,142,143,178,189,195,208,193,202,208,193,171,197,165,162,167,139,141,132,114,99,106,89];
+const N=vs.length;
+obsReveal('ch11',s=>{
+  const X0=40,DX=(1040-40)/(N-1),BASE=280,SCALE=.75;
+  // 条码地板：每天一根发丝，无论有没有事
+  for(let d=0;d<N;d++){
+    const x=X0+d*DX;
+    el(s,'line',{x1:x,y1:20,x2:x,y2:BASE,stroke:GRID,'stroke-width':1,
+      class:'fade',style:`animation-delay:${d*.004}s`});
+  }
+  el(s,'line',{x1:40,y1:BASE,x2:1040,y2:BASE,stroke:INK,'stroke-width':1,class:'fade'});
+  // 前 3 峰值，且互相至少隔 6 天，保证标签不撞
+  const top=[];
+  for(const d of [...vs.keys()].sort((a,b)=>vs[b]-vs[a])){
+    if(top.every(t=>Math.abs(t-d)>=6))top.push(d);
+    if(top.length===3)break;
+  }
+  for(let d=0;d<N;d++){
+    const x=X0+d*DX,v=vs[d],y=BASE-v*SCALE;
+    const weekend=d%7===5||d%7===6,big=top.includes(d);
+    // 棒
+    el(s,'line',{x1:x,y1:y,x2:x,y2:BASE,stroke:INK,'stroke-width':2,
+      class:'fade',style:`animation-delay:${.25+d*.007}s`});
+    // 棒糖头：≥8px + 2px 表面环；周末空心（次要编码，不靠颜色）
+    const dot=el(s,'circle',{cx:x,cy:y,r:big?6:4,
+      fill:weekend?PAPER:INK,stroke:INK,'stroke-width':weekend?2:0,
+      class:'pop',style:`animation-delay:${.25+d*.007}s`});
+    tip(dot,`第 ${d+1} 天 — 执行 ${Math.round(v)} 条`);
+    if(big)txt(s,{x,y:y-16,'font-size':15,'font-weight':700,fill:INK,'text-anchor':'middle',
+      'font-variant-numeric':'tabular-nums',
+      style:`paint-order:stroke;stroke:${PAPER};stroke-width:4px`,
+      class:'fade',style:`animation-delay:${.8+d*.004}s`},Math.round(v));
+  }
+  [[0,'第 1 天'],[30,'第 31 天'],[60,'第 61 天'],[89,'第 90 天']].forEach(([d,m])=>
+    txt(s,{x:X0+d*DX,y:BASE+34,'font-size':13,fill:MUTED,'text-anchor':'middle',
+      class:'fade'},m));
+  txt(s,{x:40,y:BASE+74,'font-size':11,'font-weight':500,fill:FAINT,'letter-spacing':'.12em',
+    class:'fade',style:'animation-delay:1.1s'},
+    '纵轴 = 执行量（条）· 地板发丝 = 每一天 · 空心头 = 周末 · 只标前 3 峰值');
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 L5 · Radial Convergence 辐射汇聚（重绘版 · 全出血）
+// 数据契约：多对一归属，不丢明细（≤60 条）。viewBox 1080 宽、580 高。
+// 形式依据：多对一归属且**要保留逐条明细** → 辐射汇聚：外圈每条一根丝，
+//           内圈汇到归属中心。这是 graph 形式，中心点面积 = 归属条数（sqrt 换算）。
+// 色彩：丝与点走灰阶明度；中心（主角）用墨色。文字一律穿墨色 token。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：{"hubs":[["支付网关",15,-75],["订单中心",10,-3],["用户中心",9,69],["商品服务",8,141],["消息推送",6,213]]} 由服务端注入 JSON（{hubs:[[名称, 条数, 角度], …]}，≤5 个归属中心）。
+(()=>{
+const CX=540,CY=285,R=212;
+const THEME={"hubs":[["支付网关",15,-75],["订单中心",10,-3],["用户中心",9,69],["商品服务",8,141],["消息推送",6,213]]}.hubs;
+const N=THEME.reduce((a,t)=>a+t[1],0);
+obsReveal('ch12',s=>{
+  const blocks=THEME.flatMap(([,n],h)=>Array(n).fill(h));
+  const hubOf=i=>rnd(i+1,11)>.92?(blocks[i]+2)%5:blocks[i];   // 少量自然溢出
+  const hubPt=h=>pol(CX,CY,72,THEME[h][2]);
+  const counts=[0,0,0,0,0];
+  for(let i=0;i<N;i++)counts[hubOf(i)]++;
+  for(let i=0;i<N;i++){
+    const deg=i/N*360-90,[px,py]=pol(CX,CY,R,deg);
+    const h=hubOf(i),[hx,hy]=hubPt(h);
+    const c1x=CX+(px-CX)*.42,c1y=CY+(py-CY)*.42;
+    const c2x=CX+(hx-CX)*.3,c2y=CY+(hy-CY)*.3;
+    el(s,'path',{d:`M${px} ${py} C${c1x} ${c1y} ${c2x} ${c2y} ${hx} ${hy}`,
+      fill:'none',stroke:'#A8A7A0','stroke-width':1,opacity:.55,pathLength:1,
+      class:'draw',style:`animation-delay:${i*.018}s`});
+    el(s,'circle',{cx:px,cy:py,r:3,fill:'#6A6963',stroke:PAPER,'stroke-width':2,
+      class:'pop',style:`animation-delay:${i*.018}s`});
+    // 外圈编号：左半翻转保证可读
+    const flip=deg>90&&deg<270,[lx,ly]=pol(CX,CY,R+14,deg);
+    txt(s,{x:lx,y:ly,'font-size':10,fill:MUTED,
+      'text-anchor':flip?'end':'start','dominant-baseline':'middle',
+      transform:`rotate(${flip?deg+180:deg} ${lx} ${ly})`,
+      class:'fade',style:`animation-delay:${.2+i*.01}s`},'#'+String(i+1).padStart(2,'0'));
+  }
+  THEME.forEach(([name,,deg],h)=>{
+    const [hx,hy]=hubPt(h);
+    // 中心点面积 = 归属条数（sqrt 换算半径，数值与视觉严格成正比）
+    const hub=el(s,'circle',{cx:hx,cy:hy,r:6+Math.sqrt(counts[h])*7,fill:INK,
+      stroke:PAPER,'stroke-width':2,class:'pop',style:`animation-delay:${.5+h*.08}s`});
+    tip(hub,`${name} — ${counts[h]} 个缺陷`);
+    // 标签外置，与中心用发丝虚线牵连
+    const [tx,ty]=pol(CX,CY,R+52,deg);
+    txt(s,{x:tx,y:ty-6,'font-size':16,'font-weight':700,fill:INK,'text-anchor':'middle',
+      'dominant-baseline':'middle',
+      class:'fade',style:`animation-delay:${.6+h*.08}s`},name);
+    txt(s,{x:tx,y:ty+16,'font-size':14,fill:MUTED,'text-anchor':'middle',
+      'dominant-baseline':'middle','font-variant-numeric':'tabular-nums',
+      class:'fade',style:`animation-delay:${.65+h*.08}s`},counts[h]+' 个');
+    const [gx,gy]=pol(CX,CY,R+30,deg);
+    el(s,'line',{x1:hx,y1:hy,x2:gx,y2:gy,stroke:FAINT,'stroke-width':1,
+      'stroke-dasharray':'2 4',class:'fade',style:`animation-delay:${.7+h*.08}s`});
+  });
+  txt(s,{x:40,y:566,'font-size':11,'font-weight':500,fill:FAINT,'letter-spacing':'.12em',
+    class:'fade',style:'animation-delay:1.1s'},
+    `外圈 1 点 = 1 个缺陷（共 ${N} 条，逐条可点）· 中心点面积 = 归属条数 · 编号即明细 ID`);
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 L12 · Type Colonnade 名录柱廊（重绘版 · 全出血）
+// 数据契约：多对一归属 + 逐条名单（≤50 条）。viewBox 1080 宽。
+// 形式依据：要「归属 + 逐条名单」→ 名录柱廊：左列逐条名录，右列归属中心，
+//           发丝连线不丢明细。中心点面积 = 归属条数（sqrt 换算）。
+// 色彩：连线与名录走灰阶明度；归属中心用墨色。文字一律穿墨色 token。
+// 引擎：手写 SVG（零依赖，可离线）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：{"items":["订单-权限","用户-主流程","支付-异常","商品-异常","消息-异常","后台-并发","营销-主流程","风控-幂等","结算-权限","库存-并发","权限-兼容","订单-兼容","用户-主流程","支付-边界","商品-兼容","消息-边界","后台-主流程","营销-权限","风控-兼容","结算-数据","库存-兼容","权限-主流程","订单-幂等-v2","用户-数据-v2","支付-幂等-v2","商品-主流程-v2","消息-并发-v2","后台-数据-v2","营销-兼容-v2","风控-数据-v2","结算-边界-v2","库存-权限-v2","权限-兼容-v2","订单-边界-v2","用户-数据-v2","支付-边界-v2","商品-主流程-v2","消息-兼容-v2","后台-边界-v2","营销-兼容-v2","风控-权限-v2","结算-主流程-v2","库存-兼容-v2","权限-边界-v2"],"teams":["支付组","订单组","用户组","商品组","消息组","平台组","数据组","安全组","移动端","前端组"],"assign":[1,2,0,1,6,0,1,0,4,5,3,0,0,0,2,0,1,2,1,1,4,0,0,3,0,9,6,1,2,4,2,2,2,6,0,0,2,1,7,8,0,0,3,9]} 由服务端注入 JSON（{items:[逐条名称,…], teams:[归属名,…], assign:[归属下标,…]}）。
+(()=>{
+const ITEMS={"items":["订单-权限","用户-主流程","支付-异常","商品-异常","消息-异常","后台-并发","营销-主流程","风控-幂等","结算-权限","库存-并发","权限-兼容","订单-兼容","用户-主流程","支付-边界","商品-兼容","消息-边界","后台-主流程","营销-权限","风控-兼容","结算-数据","库存-兼容","权限-主流程","订单-幂等-v2","用户-数据-v2","支付-幂等-v2","商品-主流程-v2","消息-并发-v2","后台-数据-v2","营销-兼容-v2","风控-数据-v2","结算-边界-v2","库存-权限-v2","权限-兼容-v2","订单-边界-v2","用户-数据-v2","支付-边界-v2","商品-主流程-v2","消息-兼容-v2","后台-边界-v2","营销-兼容-v2","风控-权限-v2","结算-主流程-v2","库存-兼容-v2","权限-边界-v2"],"teams":["支付组","订单组","用户组","商品组","消息组","平台组","数据组","安全组","移动端","前端组"],"assign":[1,2,0,1,6,0,1,0,4,5,3,0,0,0,2,0,1,2,1,1,4,0,0,3,0,9,6,1,2,4,2,2,2,6,0,0,2,1,7,8,0,0,3,9]}.items,TEAM={"items":["订单-权限","用户-主流程","支付-异常","商品-异常","消息-异常","后台-并发","营销-主流程","风控-幂等","结算-权限","库存-并发","权限-兼容","订单-兼容","用户-主流程","支付-边界","商品-兼容","消息-边界","后台-主流程","营销-权限","风控-兼容","结算-数据","库存-兼容","权限-主流程","订单-幂等-v2","用户-数据-v2","支付-幂等-v2","商品-主流程-v2","消息-并发-v2","后台-数据-v2","营销-兼容-v2","风控-数据-v2","结算-边界-v2","库存-权限-v2","权限-兼容-v2","订单-边界-v2","用户-数据-v2","支付-边界-v2","商品-主流程-v2","消息-兼容-v2","后台-边界-v2","营销-兼容-v2","风控-权限-v2","结算-主流程-v2","库存-兼容-v2","权限-边界-v2"],"teams":["支付组","订单组","用户组","商品组","消息组","平台组","数据组","安全组","移动端","前端组"],"assign":[1,2,0,1,6,0,1,0,4,5,3,0,0,0,2,0,1,2,1,1,4,0,0,3,0,9,6,1,2,4,2,2,2,6,0,0,2,1,7,8,0,0,3,9]}.teams,ASSIGN={"items":["订单-权限","用户-主流程","支付-异常","商品-异常","消息-异常","后台-并发","营销-主流程","风控-幂等","结算-权限","库存-并发","权限-兼容","订单-兼容","用户-主流程","支付-边界","商品-兼容","消息-边界","后台-主流程","营销-权限","风控-兼容","结算-数据","库存-兼容","权限-主流程","订单-幂等-v2","用户-数据-v2","支付-幂等-v2","商品-主流程-v2","消息-并发-v2","后台-数据-v2","营销-兼容-v2","风控-数据-v2","结算-边界-v2","库存-权限-v2","权限-兼容-v2","订单-边界-v2","用户-数据-v2","支付-边界-v2","商品-主流程-v2","消息-兼容-v2","后台-边界-v2","营销-兼容-v2","风控-权限-v2","结算-主流程-v2","库存-兼容-v2","权限-边界-v2"],"teams":["支付组","订单组","用户组","商品组","消息组","平台组","数据组","安全组","移动端","前端组"],"assign":[1,2,0,1,6,0,1,0,4,5,3,0,0,0,2,0,1,2,1,1,4,0,0,3,0,9,6,1,2,4,2,2,2,6,0,0,2,1,7,8,0,0,3,9]}.assign;
+obsReveal('ch13',s=>{
+  const N=ITEMS.length,LX=300,HX=790;
+  const itemY=i=>34+i*(340/Math.max(1,N-1)),teamY=j=>52+j*36;
+  const counts=Array(TEAM.length).fill(0);
+  const owner=i=>ASSIGN[i];
+  for(let i=0;i<N;i++)counts[owner(i)]++;
+  for(let i=0;i<N;i++){
+    const name=ITEMS[i];
+    const yi=itemY(i),yj=teamY(owner(i));
+    txt(s,{x:LX-16,y:yi+3,'font-size':11,fill:MUTED,'text-anchor':'end',
+      class:'fade',style:`animation-delay:${i*.012}s`},name);
+    el(s,'rect',{x:LX,y:yi-1,width:8,height:2,fill:'#B0AFA9',
+      class:'fade',style:`animation-delay:${i*.012}s`});
+    el(s,'path',{d:`M${LX+14} ${yi} C ${LX+230} ${yi} ${HX-230} ${yj} ${HX-18} ${yj}`,fill:'none',
+      stroke:'#A8A7A0','stroke-width':1,opacity:.55,pathLength:1,
+      class:'draw',style:`animation-delay:${.2+i*.015}s;animation-duration:.7s`});
+  }
+  TEAM.forEach((t,j)=>{
+    const y=teamY(j),n=counts[j];
+    // 中心点面积 = 归属条数
+    el(s,'circle',{cx:HX,cy:y,r:5+Math.sqrt(n)*5,fill:n>=7?INK:n>=4?'#6A6963':'#B0AFA9',
+      stroke:PAPER,'stroke-width':2,class:'pop',style:`animation-delay:${.6+j*.05}s`});
+    txt(s,{x:HX+22+n*1.6,y:y-3,'font-size':15,'font-weight':600,fill:INK,
+      class:'fade',style:`animation-delay:${.65+j*.05}s`},t);
+    txt(s,{x:HX+22+n*1.6,y:y+16,'font-size':13,fill:MUTED,'font-variant-numeric':'tabular-nums',
+      class:'fade',style:`animation-delay:${.7+j*.05}s`},n+' 条');
+  });
+  txt(s,{x:40,y:410,'font-size':11,'font-weight':500,fill:FAINT,'letter-spacing':'.12em',
+    class:'fade',style:'animation-delay:1s'},
+    `左 = 逐条名录（共 ${N} 条）· 发丝 = 归属关系，不丢明细 · 右点面积 = 归属条数`);
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 G7 · Tree LR 左右树（重绘版 · 全出血）
+// 数据契约：层级结构（2–3 层）；ECharts。容器是 <div class="ch" id="…">，不是 svg。
+// 形式依据：层级从属（不比较份额）→ 树。降级理由：Lupi/Basics 无层级图，
+//           F13 Treemap 要权重语义，而层级条目没有诚实权重。
+// 色彩：分支走灰阶明度阶梯（L），根节点墨色。文字一律穿墨色 token。
+// 引擎：ECharts（HTML 需引入 echarts@6 CDN）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：{"name":"商城 V3.2.0","children":[{"name":"支付","children":[{"name":"下单支付"},{"name":"退款"},{"name":"对账"},{"name":"汇率"}]},{"name":"订单","children":[{"name":"创建"},{"name":"取消"},{"name":"超时关单"}]},{"name":"用户","children":[{"name":"登录"},{"name":"实名认证"},{"name":"收货地址"}]},{"name":"商品","children":[{"name":"列表"},{"name":"详情"},{"name":"库存"}]}]} 由服务端注入 JSON（{name, children:[{name, children:[…]}, …]}，2–3 层）。
+(()=>{
+const TREE={"name":"商城 V3.2.0","children":[{"name":"支付","children":[{"name":"下单支付"},{"name":"退款"},{"name":"对账"},{"name":"汇率"}]},{"name":"订单","children":[{"name":"创建"},{"name":"取消"},{"name":"超时关单"}]},{"name":"用户","children":[{"name":"登录"},{"name":"实名认证"},{"name":"收货地址"}]},{"name":"商品","children":[{"name":"列表"},{"name":"详情"},{"name":"库存"}]}]};
+// 分支明度按子节点序取 L 阶梯；根节点墨色。文字不穿数据色。
+const build=(node,depth,idx)=>{
+  const shade=depth===0?INK:L[Math.min(L.length-1,idx)];
+  const out={name:node.name,itemStyle:{color:shade},lineStyle:{color:shade},
+    children:(node.children||[]).map((c,i)=>build(c,depth+1,i))};
+  if(depth===0)out.label={fontSize:16,color:INK,fontWeight:700};
+  return out;
+};
+eReveal('ch14',{
+  animationDuration:1100,animationEasing:'quarticOut',
+  tooltip:{...tipLight,textStyle:{...tipLight.textStyle,fontSize:13}},
+  series:[{
+    type:'tree',layout:'orthogonal',orient:'LR',
+    left:130,right:240,top:24,bottom:24,
+    symbol:'circle',symbolSize:10,
+    initialTreeDepth:2,expandAndCollapse:false,roam:false,
+    itemStyle:{borderWidth:0},
+    lineStyle:{width:2,curveness:.5},
+    label:{fontFamily:FONT.text,fontSize:13,fontWeight:600,color:'#4A4944',position:'left'},
+    leaves:{label:{position:'right',color:MUTED,fontWeight:500}},
+    data:[build(TREE,0,0)],
+  }],
+});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 图型片段 G15 · Jitter Strip 抖动条带（重绘版 · 全出血）
+// 数据契约：分组分布，逐条记录（几百点）；ECharts。容器是 <div class="ch">，不是 svg。
+// 形式依据：分组分布且逐条记录 → 抖动条带。降级理由：F8 散点容量 ≤20 点不足。
+//           同一组内横轴是同一量纲（解决时长），共用一根横轴 —— 绝不双轴。
+// 色彩：点的明度 = 分组序（灰阶明度阶梯 L），不上色相。文字一律穿墨色 token。
+// 引擎：ECharts（HTML 需引入 echarts@6 CDN）
+// ═══════════════════════════════════════════════════════════
+// 数据槽位：{"cats":["P0 致命","P1 严重","P2 一般","P3 提示"],"groups":[[[2.1910000000000003,-0.13107999999999997],[2.5195,0.2465],[0.43520000000000003,-0.06263999999999999],[0.879,0.21286],[1.226,0.14035999999999998],[1.117,-0.0017400000000000015],[0.336,-0.22272],[1.195,0.08062],[0.926,-0.061479999999999986],[1.5649000000000002,-0.18502],[0.31040000000000006,-0.18328],[1.0390000000000001,0.1711],[1.218,-0.11019999999999999],[0.645,0.01218000000000001],[0.552,0.27375999999999995],[0.587,0.19661999999999996],[1.086,0.05451999999999998],[1.5545,0.25925999999999993],[0.43600000000000005,0.020880000000000017],[0.599,-0.06902],[1.483,0.05451999999999998],[0.925,-0.11426],[1.04,0.018560000000000014],[1.1515,-0.12701999999999997],[1.1179999999999999,0.10324000000000003],[1.1905000000000001,0.008700000000000006],[1.2040000000000002,-0.09511999999999998],[0.9670000000000001,0.05161999999999998],[0.5780000000000001,0.18443999999999997],[0.41100000000000003,0.13165999999999997],[0.864,-0.09279999999999998],[0.645,0.22562],[0.8694,-0.09163999999999999],[0.615,-0.056259999999999984],[0.9640000000000001,0.15544],[0.8410000000000001,-0.19893999999999998],[0.67,-0.06611999999999998],[0.883,-0.23026]],[[7.4171000000000005,1.1711],[6.1004000000000005,0.94896],[5.5625,0.89618],[3.1172,0.9246],[3.31058,1.07134],[1.7575999999999998,1.1786400000000001],[3.3878,0.7175400000000001],[1.7518799999999999,1.0058],[1.8169999999999997,0.87878],[3.1744,0.8144],[1.8301999999999998,1.1189],[2.6948,1.08236],[3.31058,1.2801399999999998],[1.5059199999999997,0.98376],[3.2133399999999996,1.26506],[3.0380000000000003,0.89908],[3.9169,0.75814],[1.8543999999999998,0.7912],[3.203,1.08062],[3.3811999999999998,0.71348],[3.3922,1.19314],[1.3352,0.7285600000000001],[3.78534,0.99942],[2.66708,1.13804],[3.137,1.0284200000000001],[3.6909599999999996,0.91184],[2.5517999999999996,1.2755],[2.8179999999999996,0.73204],[1.3886599999999998,0.78946],[3.56512,0.7564],[1.8119399999999999,0.87878],[3.3649199999999997,0.85964],[2.2438,1.2233],[2.8928,1],[3.6766599999999996,1.2291],[2.1052,0.77844],[2.6397999999999997,0.82194],[1.3527999999999998,1.1925599999999998],[1.9577999999999998,1.1479],[3.29628,1.21228],[3.30486,0.75002],[2.3472,0.7912],[3.79106,1.1131],[1.4315599999999997,0.73204],[3.0798,1.25346],[3.6337599999999997,1.22504],[2.5913999999999997,0.98202],[3.4692,0.7691600000000001],[3.12182,1.13398],[3.1875999999999998,0.85152],[3.9283400000000004,1.12354],[3.3372,1.2494],[3.29342,1.28478],[2.69568,1.04408],[2.081,1.0284200000000001],[4.05132,0.7506],[1.6117399999999997,0.7767],[3.4164,1.22272],[2.0238,0.7662599999999999],[1.4627999999999999,1.22156],[1.4033999999999998,0.8579],[1.78048,1.28072],[3.5336600000000002,1.08874],[3.03316,1.0382799999999999]],[[14.602400000000001,1.8724],[16.0928,2.08062],[13.4648,1.77148],[16.971200000000003,1.71522],[5.8088,1.97216],[4.7672,2.08294],[5.0888,1.87124],[8.3744,2.1305],[8.4392,2.1972],[5.6912,1.71406],[4.6616,2.2633199999999998],[5.6408000000000005,2.24418],[5.2328,1.78192],[5.117120000000001,1.96694],[4.4744,1.91764],[7.196,1.76394],[7.1336,1.8724],[5.840960000000001,2.10498],[6.3751999999999995,1.8480400000000001],[4.90496,2.27086],[4.77392,2.0463999999999998],[4.21856,1.9913],[6.58352,2.2633199999999998],[7.77536,2.23606],[5.54768,1.79352],[5.132,1.75698],[7.70672,2.08468],[4.7192,1.8811],[5.37296,1.78192],[6.9656,1.93098],[4.26224,1.88748],[8.36192,1.85094],[5.828,1.79816],[4.8051200000000005,1.9797],[5.38544,1.8666],[5.39168,2.0899],[4.848800000000001,2.14384],[6.3776,1.88922],[7.2584,2.08236],[5.5352,1.99014],[6.04688,1.73784],[5.2568,2.27202],[5.2808,2.1914],[6.1688,1.96462],[7.076,2.06496],[9.82208,2.20938],[9.404,2.07076],[4.4984,2.00522],[4.19984,2.02552],[6.80192,2.24302],[6.383839999999999,2.16124],[6.48992,2.00754],[8.767520000000001,2.22272],[8.3864,2.18038],[5.410399999999999,2.2378],[5.7660800000000005,2.1305],[4.948640000000001,2.07192],[5.7943999999999996,1.86254],[8.8712,2.28652],[5.40416,2.22098],[6.27152,1.85616],[9.85952,1.95302],[7.3928,1.8434],[7.7336,1.83818],[6.9454400000000005,1.83528],[8.586559999999999,1.89966],[6.9079999999999995,1.96172],[6.35264,2.25346],[4.8104000000000005,2.09744],[8.11232,1.86022],[8.58032,2.06148],[6.428,1.77322],[6.0968,2.27608],[7.9376,1.9971],[5.6456,2.16124],[6.502400000000001,1.96462],[9.41648,1.90256],[8.262080000000001,2.0145],[8.58032,1.7158],[5.5289600000000005,1.79062],[7.64432,1.942],[6.859999999999999,1.82658],[10.25264,2.20532],[5.0648,2.28014],[7.3832,1.80512],[9.21056,2.21866],[7.3544,2.21692],[10.00928,1.92982],[8.49296,1.77496],[5.7943999999999996,1.88226],[4.7432,1.87588],[6.83936,2.28478],[9.11696,2.2552],[7.964,1.79178],[5.1608,1.81324],[8.36192,2.05974],[8.8232,2.06728],[4.6808,1.9333],[4.8584000000000005,2.14036],[4.4432,1.98318],[8.51792,2.26912],[5.1224,2.26042],[4.611680000000001,1.9942],[8.3,1.88342],[5.148320000000001,1.90952],[5.60384,1.8022200000000002],[5.972,2.1334],[8.4368,1.98898],[7.1144,1.89792],[6.32768,2.18038]],[[31.2575,2.75698],[31.648999999999997,2.90372],[33.6605,3.23142],[18.5792,2.88632],[12.1793,2.74074],[13.55,3.13804],[11.4539,3.22446],[15.368,3.18096],[12.821,3.22098],[13.154,2.75524],[15.8063,3.06438],[14.3672,3.19256],[9.689,3.00986],[20.006600000000002,2.73436],[11.722999999999999,2.9971],[12.344,3.17168],[14.9405,3.23954],[14.999,3.17516],[17.584699999999998,2.90778],[15.836,3.09512],[16.9529,3.23142],[13.838,2.92228],[16.691,3.19778],[11.911999999999999,2.91648],[12.6941,2.75582],[13.154,3.24012],[12.6239,2.91706],[10.796,3.22504],[15.953,3.09222],[20.7086,2.72276],[14.4725,3.2349],[15.943999999999999,2.90256],[11.921899999999999,3.15022],[13.694,3.11484],[15.953,3.0609],[16.628,3.1508],[15.934999999999999,3.15718],[14.594,3.145],[12.6941,3.11426],[13.136000000000001,2.99072],[19.6907,2.87182],[13.046,3.15196],[10.408999999999999,2.87994],[12.5888,2.71464],[10.564699999999998,2.92982],[16.0286,3.20996],[14.333,3.10382],[12.56,2.9304],[16.789099999999998,3.04002],[15.134,2.96868],[11.243300000000001,3.11078],[16.8008,3.21112],[9.671,3.28362],[10.922,3.22156],[18.9653,3.0435],[17.744,2.92112],[15.6659,2.87298],[12.2378,3.20996],[17.4911,2.78598],[17.830399999999997,3.12296],[14.2385,2.81962],[17.942,3.21228],[16.979,2.99246],[19.4684,2.80512],[12.245,2.7245],[14.624600000000001,3.145],[11.759,2.7767],[19.421599999999998,2.99304],[17.7953,2.73146],[16.9178,3.03132],[17.2571,2.98318],[16.098799999999997,3.00464]]]} 由服务端注入 JSON（{cats:[分组名,…], groups:[[[x,y],…],…]}）。
+(()=>{
+const cats={"cats":["P0 致命","P1 严重","P2 一般","P3 提示"],"groups":[[[2.1910000000000003,-0.13107999999999997],[2.5195,0.2465],[0.43520000000000003,-0.06263999999999999],[0.879,0.21286],[1.226,0.14035999999999998],[1.117,-0.0017400000000000015],[0.336,-0.22272],[1.195,0.08062],[0.926,-0.061479999999999986],[1.5649000000000002,-0.18502],[0.31040000000000006,-0.18328],[1.0390000000000001,0.1711],[1.218,-0.11019999999999999],[0.645,0.01218000000000001],[0.552,0.27375999999999995],[0.587,0.19661999999999996],[1.086,0.05451999999999998],[1.5545,0.25925999999999993],[0.43600000000000005,0.020880000000000017],[0.599,-0.06902],[1.483,0.05451999999999998],[0.925,-0.11426],[1.04,0.018560000000000014],[1.1515,-0.12701999999999997],[1.1179999999999999,0.10324000000000003],[1.1905000000000001,0.008700000000000006],[1.2040000000000002,-0.09511999999999998],[0.9670000000000001,0.05161999999999998],[0.5780000000000001,0.18443999999999997],[0.41100000000000003,0.13165999999999997],[0.864,-0.09279999999999998],[0.645,0.22562],[0.8694,-0.09163999999999999],[0.615,-0.056259999999999984],[0.9640000000000001,0.15544],[0.8410000000000001,-0.19893999999999998],[0.67,-0.06611999999999998],[0.883,-0.23026]],[[7.4171000000000005,1.1711],[6.1004000000000005,0.94896],[5.5625,0.89618],[3.1172,0.9246],[3.31058,1.07134],[1.7575999999999998,1.1786400000000001],[3.3878,0.7175400000000001],[1.7518799999999999,1.0058],[1.8169999999999997,0.87878],[3.1744,0.8144],[1.8301999999999998,1.1189],[2.6948,1.08236],[3.31058,1.2801399999999998],[1.5059199999999997,0.98376],[3.2133399999999996,1.26506],[3.0380000000000003,0.89908],[3.9169,0.75814],[1.8543999999999998,0.7912],[3.203,1.08062],[3.3811999999999998,0.71348],[3.3922,1.19314],[1.3352,0.7285600000000001],[3.78534,0.99942],[2.66708,1.13804],[3.137,1.0284200000000001],[3.6909599999999996,0.91184],[2.5517999999999996,1.2755],[2.8179999999999996,0.73204],[1.3886599999999998,0.78946],[3.56512,0.7564],[1.8119399999999999,0.87878],[3.3649199999999997,0.85964],[2.2438,1.2233],[2.8928,1],[3.6766599999999996,1.2291],[2.1052,0.77844],[2.6397999999999997,0.82194],[1.3527999999999998,1.1925599999999998],[1.9577999999999998,1.1479],[3.29628,1.21228],[3.30486,0.75002],[2.3472,0.7912],[3.79106,1.1131],[1.4315599999999997,0.73204],[3.0798,1.25346],[3.6337599999999997,1.22504],[2.5913999999999997,0.98202],[3.4692,0.7691600000000001],[3.12182,1.13398],[3.1875999999999998,0.85152],[3.9283400000000004,1.12354],[3.3372,1.2494],[3.29342,1.28478],[2.69568,1.04408],[2.081,1.0284200000000001],[4.05132,0.7506],[1.6117399999999997,0.7767],[3.4164,1.22272],[2.0238,0.7662599999999999],[1.4627999999999999,1.22156],[1.4033999999999998,0.8579],[1.78048,1.28072],[3.5336600000000002,1.08874],[3.03316,1.0382799999999999]],[[14.602400000000001,1.8724],[16.0928,2.08062],[13.4648,1.77148],[16.971200000000003,1.71522],[5.8088,1.97216],[4.7672,2.08294],[5.0888,1.87124],[8.3744,2.1305],[8.4392,2.1972],[5.6912,1.71406],[4.6616,2.2633199999999998],[5.6408000000000005,2.24418],[5.2328,1.78192],[5.117120000000001,1.96694],[4.4744,1.91764],[7.196,1.76394],[7.1336,1.8724],[5.840960000000001,2.10498],[6.3751999999999995,1.8480400000000001],[4.90496,2.27086],[4.77392,2.0463999999999998],[4.21856,1.9913],[6.58352,2.2633199999999998],[7.77536,2.23606],[5.54768,1.79352],[5.132,1.75698],[7.70672,2.08468],[4.7192,1.8811],[5.37296,1.78192],[6.9656,1.93098],[4.26224,1.88748],[8.36192,1.85094],[5.828,1.79816],[4.8051200000000005,1.9797],[5.38544,1.8666],[5.39168,2.0899],[4.848800000000001,2.14384],[6.3776,1.88922],[7.2584,2.08236],[5.5352,1.99014],[6.04688,1.73784],[5.2568,2.27202],[5.2808,2.1914],[6.1688,1.96462],[7.076,2.06496],[9.82208,2.20938],[9.404,2.07076],[4.4984,2.00522],[4.19984,2.02552],[6.80192,2.24302],[6.383839999999999,2.16124],[6.48992,2.00754],[8.767520000000001,2.22272],[8.3864,2.18038],[5.410399999999999,2.2378],[5.7660800000000005,2.1305],[4.948640000000001,2.07192],[5.7943999999999996,1.86254],[8.8712,2.28652],[5.40416,2.22098],[6.27152,1.85616],[9.85952,1.95302],[7.3928,1.8434],[7.7336,1.83818],[6.9454400000000005,1.83528],[8.586559999999999,1.89966],[6.9079999999999995,1.96172],[6.35264,2.25346],[4.8104000000000005,2.09744],[8.11232,1.86022],[8.58032,2.06148],[6.428,1.77322],[6.0968,2.27608],[7.9376,1.9971],[5.6456,2.16124],[6.502400000000001,1.96462],[9.41648,1.90256],[8.262080000000001,2.0145],[8.58032,1.7158],[5.5289600000000005,1.79062],[7.64432,1.942],[6.859999999999999,1.82658],[10.25264,2.20532],[5.0648,2.28014],[7.3832,1.80512],[9.21056,2.21866],[7.3544,2.21692],[10.00928,1.92982],[8.49296,1.77496],[5.7943999999999996,1.88226],[4.7432,1.87588],[6.83936,2.28478],[9.11696,2.2552],[7.964,1.79178],[5.1608,1.81324],[8.36192,2.05974],[8.8232,2.06728],[4.6808,1.9333],[4.8584000000000005,2.14036],[4.4432,1.98318],[8.51792,2.26912],[5.1224,2.26042],[4.611680000000001,1.9942],[8.3,1.88342],[5.148320000000001,1.90952],[5.60384,1.8022200000000002],[5.972,2.1334],[8.4368,1.98898],[7.1144,1.89792],[6.32768,2.18038]],[[31.2575,2.75698],[31.648999999999997,2.90372],[33.6605,3.23142],[18.5792,2.88632],[12.1793,2.74074],[13.55,3.13804],[11.4539,3.22446],[15.368,3.18096],[12.821,3.22098],[13.154,2.75524],[15.8063,3.06438],[14.3672,3.19256],[9.689,3.00986],[20.006600000000002,2.73436],[11.722999999999999,2.9971],[12.344,3.17168],[14.9405,3.23954],[14.999,3.17516],[17.584699999999998,2.90778],[15.836,3.09512],[16.9529,3.23142],[13.838,2.92228],[16.691,3.19778],[11.911999999999999,2.91648],[12.6941,2.75582],[13.154,3.24012],[12.6239,2.91706],[10.796,3.22504],[15.953,3.09222],[20.7086,2.72276],[14.4725,3.2349],[15.943999999999999,2.90256],[11.921899999999999,3.15022],[13.694,3.11484],[15.953,3.0609],[16.628,3.1508],[15.934999999999999,3.15718],[14.594,3.145],[12.6941,3.11426],[13.136000000000001,2.99072],[19.6907,2.87182],[13.046,3.15196],[10.408999999999999,2.87994],[12.5888,2.71464],[10.564699999999998,2.92982],[16.0286,3.20996],[14.333,3.10382],[12.56,2.9304],[16.789099999999998,3.04002],[15.134,2.96868],[11.243300000000001,3.11078],[16.8008,3.21112],[9.671,3.28362],[10.922,3.22156],[18.9653,3.0435],[17.744,2.92112],[15.6659,2.87298],[12.2378,3.20996],[17.4911,2.78598],[17.830399999999997,3.12296],[14.2385,2.81962],[17.942,3.21228],[16.979,2.99246],[19.4684,2.80512],[12.245,2.7245],[14.624600000000001,3.145],[11.759,2.7767],[19.421599999999998,2.99304],[17.7953,2.73146],[16.9178,3.03132],[17.2571,2.98318],[16.098799999999997,3.00464]]]}.cats,groups={"cats":["P0 致命","P1 严重","P2 一般","P3 提示"],"groups":[[[2.1910000000000003,-0.13107999999999997],[2.5195,0.2465],[0.43520000000000003,-0.06263999999999999],[0.879,0.21286],[1.226,0.14035999999999998],[1.117,-0.0017400000000000015],[0.336,-0.22272],[1.195,0.08062],[0.926,-0.061479999999999986],[1.5649000000000002,-0.18502],[0.31040000000000006,-0.18328],[1.0390000000000001,0.1711],[1.218,-0.11019999999999999],[0.645,0.01218000000000001],[0.552,0.27375999999999995],[0.587,0.19661999999999996],[1.086,0.05451999999999998],[1.5545,0.25925999999999993],[0.43600000000000005,0.020880000000000017],[0.599,-0.06902],[1.483,0.05451999999999998],[0.925,-0.11426],[1.04,0.018560000000000014],[1.1515,-0.12701999999999997],[1.1179999999999999,0.10324000000000003],[1.1905000000000001,0.008700000000000006],[1.2040000000000002,-0.09511999999999998],[0.9670000000000001,0.05161999999999998],[0.5780000000000001,0.18443999999999997],[0.41100000000000003,0.13165999999999997],[0.864,-0.09279999999999998],[0.645,0.22562],[0.8694,-0.09163999999999999],[0.615,-0.056259999999999984],[0.9640000000000001,0.15544],[0.8410000000000001,-0.19893999999999998],[0.67,-0.06611999999999998],[0.883,-0.23026]],[[7.4171000000000005,1.1711],[6.1004000000000005,0.94896],[5.5625,0.89618],[3.1172,0.9246],[3.31058,1.07134],[1.7575999999999998,1.1786400000000001],[3.3878,0.7175400000000001],[1.7518799999999999,1.0058],[1.8169999999999997,0.87878],[3.1744,0.8144],[1.8301999999999998,1.1189],[2.6948,1.08236],[3.31058,1.2801399999999998],[1.5059199999999997,0.98376],[3.2133399999999996,1.26506],[3.0380000000000003,0.89908],[3.9169,0.75814],[1.8543999999999998,0.7912],[3.203,1.08062],[3.3811999999999998,0.71348],[3.3922,1.19314],[1.3352,0.7285600000000001],[3.78534,0.99942],[2.66708,1.13804],[3.137,1.0284200000000001],[3.6909599999999996,0.91184],[2.5517999999999996,1.2755],[2.8179999999999996,0.73204],[1.3886599999999998,0.78946],[3.56512,0.7564],[1.8119399999999999,0.87878],[3.3649199999999997,0.85964],[2.2438,1.2233],[2.8928,1],[3.6766599999999996,1.2291],[2.1052,0.77844],[2.6397999999999997,0.82194],[1.3527999999999998,1.1925599999999998],[1.9577999999999998,1.1479],[3.29628,1.21228],[3.30486,0.75002],[2.3472,0.7912],[3.79106,1.1131],[1.4315599999999997,0.73204],[3.0798,1.25346],[3.6337599999999997,1.22504],[2.5913999999999997,0.98202],[3.4692,0.7691600000000001],[3.12182,1.13398],[3.1875999999999998,0.85152],[3.9283400000000004,1.12354],[3.3372,1.2494],[3.29342,1.28478],[2.69568,1.04408],[2.081,1.0284200000000001],[4.05132,0.7506],[1.6117399999999997,0.7767],[3.4164,1.22272],[2.0238,0.7662599999999999],[1.4627999999999999,1.22156],[1.4033999999999998,0.8579],[1.78048,1.28072],[3.5336600000000002,1.08874],[3.03316,1.0382799999999999]],[[14.602400000000001,1.8724],[16.0928,2.08062],[13.4648,1.77148],[16.971200000000003,1.71522],[5.8088,1.97216],[4.7672,2.08294],[5.0888,1.87124],[8.3744,2.1305],[8.4392,2.1972],[5.6912,1.71406],[4.6616,2.2633199999999998],[5.6408000000000005,2.24418],[5.2328,1.78192],[5.117120000000001,1.96694],[4.4744,1.91764],[7.196,1.76394],[7.1336,1.8724],[5.840960000000001,2.10498],[6.3751999999999995,1.8480400000000001],[4.90496,2.27086],[4.77392,2.0463999999999998],[4.21856,1.9913],[6.58352,2.2633199999999998],[7.77536,2.23606],[5.54768,1.79352],[5.132,1.75698],[7.70672,2.08468],[4.7192,1.8811],[5.37296,1.78192],[6.9656,1.93098],[4.26224,1.88748],[8.36192,1.85094],[5.828,1.79816],[4.8051200000000005,1.9797],[5.38544,1.8666],[5.39168,2.0899],[4.848800000000001,2.14384],[6.3776,1.88922],[7.2584,2.08236],[5.5352,1.99014],[6.04688,1.73784],[5.2568,2.27202],[5.2808,2.1914],[6.1688,1.96462],[7.076,2.06496],[9.82208,2.20938],[9.404,2.07076],[4.4984,2.00522],[4.19984,2.02552],[6.80192,2.24302],[6.383839999999999,2.16124],[6.48992,2.00754],[8.767520000000001,2.22272],[8.3864,2.18038],[5.410399999999999,2.2378],[5.7660800000000005,2.1305],[4.948640000000001,2.07192],[5.7943999999999996,1.86254],[8.8712,2.28652],[5.40416,2.22098],[6.27152,1.85616],[9.85952,1.95302],[7.3928,1.8434],[7.7336,1.83818],[6.9454400000000005,1.83528],[8.586559999999999,1.89966],[6.9079999999999995,1.96172],[6.35264,2.25346],[4.8104000000000005,2.09744],[8.11232,1.86022],[8.58032,2.06148],[6.428,1.77322],[6.0968,2.27608],[7.9376,1.9971],[5.6456,2.16124],[6.502400000000001,1.96462],[9.41648,1.90256],[8.262080000000001,2.0145],[8.58032,1.7158],[5.5289600000000005,1.79062],[7.64432,1.942],[6.859999999999999,1.82658],[10.25264,2.20532],[5.0648,2.28014],[7.3832,1.80512],[9.21056,2.21866],[7.3544,2.21692],[10.00928,1.92982],[8.49296,1.77496],[5.7943999999999996,1.88226],[4.7432,1.87588],[6.83936,2.28478],[9.11696,2.2552],[7.964,1.79178],[5.1608,1.81324],[8.36192,2.05974],[8.8232,2.06728],[4.6808,1.9333],[4.8584000000000005,2.14036],[4.4432,1.98318],[8.51792,2.26912],[5.1224,2.26042],[4.611680000000001,1.9942],[8.3,1.88342],[5.148320000000001,1.90952],[5.60384,1.8022200000000002],[5.972,2.1334],[8.4368,1.98898],[7.1144,1.89792],[6.32768,2.18038]],[[31.2575,2.75698],[31.648999999999997,2.90372],[33.6605,3.23142],[18.5792,2.88632],[12.1793,2.74074],[13.55,3.13804],[11.4539,3.22446],[15.368,3.18096],[12.821,3.22098],[13.154,2.75524],[15.8063,3.06438],[14.3672,3.19256],[9.689,3.00986],[20.006600000000002,2.73436],[11.722999999999999,2.9971],[12.344,3.17168],[14.9405,3.23954],[14.999,3.17516],[17.584699999999998,2.90778],[15.836,3.09512],[16.9529,3.23142],[13.838,2.92228],[16.691,3.19778],[11.911999999999999,2.91648],[12.6941,2.75582],[13.154,3.24012],[12.6239,2.91706],[10.796,3.22504],[15.953,3.09222],[20.7086,2.72276],[14.4725,3.2349],[15.943999999999999,2.90256],[11.921899999999999,3.15022],[13.694,3.11484],[15.953,3.0609],[16.628,3.1508],[15.934999999999999,3.15718],[14.594,3.145],[12.6941,3.11426],[13.136000000000001,2.99072],[19.6907,2.87182],[13.046,3.15196],[10.408999999999999,2.87994],[12.5888,2.71464],[10.564699999999998,2.92982],[16.0286,3.20996],[14.333,3.10382],[12.56,2.9304],[16.789099999999998,3.04002],[15.134,2.96868],[11.243300000000001,3.11078],[16.8008,3.21112],[9.671,3.28362],[10.922,3.22156],[18.9653,3.0435],[17.744,2.92112],[15.6659,2.87298],[12.2378,3.20996],[17.4911,2.78598],[17.830399999999997,3.12296],[14.2385,2.81962],[17.942,3.21228],[16.979,2.99246],[19.4684,2.80512],[12.245,2.7245],[14.624600000000001,3.145],[11.759,2.7767],[19.421599999999998,2.99304],[17.7953,2.73146],[16.9178,3.03132],[17.2571,2.98318],[16.098799999999997,3.00464]]]}.groups;
+const flat=groups.flat();
+eReveal('ch15',{
+  animationDuration:450,animationEasing:'cubicOut',
+  animationDelay:i=>i<flat.length?Math.round(flat[i][1])*260+(i%37)*9:0,
+  tooltip:{...tipLight,textStyle:{...tipLight.textStyle,fontSize:13},
+    formatter:p=>cats[Math.round(p.value[1])]+' — 解决耗时 '+p.value[0].toFixed(1)+' 小时'},
+  grid:{left:130,right:40,top:24,bottom:56},
+  xAxis:{type:'value',name:'解决耗时（小时）',
+    nameTextStyle:{color:FAINT,fontSize:12,fontFamily:FONT.mono},
+    nameGap:16,nameLocation:'middle',
+    splitLine:{lineStyle:{color:GRID,width:1}},
+    axisLine:{show:false},axisTick:{show:false},
+    axisLabel:{color:MUTED,fontFamily:FONT.text,fontSize:12,
+      fontVariantNumeric:'tabular-nums',formatter:v=>v+' 小时'}},
+  yAxis:{type:'value',min:-.6,max:3.6,inverse:true,
+    splitLine:{show:false},axisLine:{show:false},axisTick:{show:false},
+    axisLabel:{show:false}},
+  series:[{
+    type:'scatter',
+    data:flat,
+    symbolSize:9,
+    itemStyle:{color:p=>L[Math.round(p.value[1])],opacity:.62},
+  },{
+    // 分组名左置：无声系列只承载标签，不是数据
+    type:'scatter',silent:true,symbolSize:0,
+    data:cats.map((c,i)=>({value:[0,i],label:{show:true,position:'left',offset:[-10,0],
+      color:'#4A4944',fontFamily:FONT.text,fontSize:14,fontWeight:600,formatter:c}})),
+  }],
+});
+})();
+
+</script>
+</body>
+</html>

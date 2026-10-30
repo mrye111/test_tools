@@ -8,7 +8,7 @@ vi.mock("../testcase/ai.js", async () => {
 });
 
 import { streamChatCompletionParts } from "../testcase/ai.js";
-import { generateReport, reviseReport, ReportGenerateError, extractHtml, type ReportGenerateEvent } from "./generate.js";
+import { generateReport, reviseReport, ReportGenerateError, type ReportGenerateEvent } from "./generate.js";
 import type { AiRequestConfig } from "../testcase/types.js";
 
 const mockStream = vi.mocked(streamChatCompletionParts);
@@ -31,20 +31,28 @@ function scriptResponses(...responses: string[]) {
   }
 }
 
-const VALID_SELECTION = JSON.stringify({
+/** 槽位 JSON（B 层：模型只出这个，HTML 由服务端模板拼装）。 */
+const VALID_DRAFT = JSON.stringify({
   title: "登录模块测试总结",
+  kicker: ["登录模块 · 测试报告", "测试总结 / 第 1 轮"],
+  verdict: { stamp: "good", label: "通过", text: "核心链路无阻塞" },
+  meta: [{ label: "Project", value: "登录模块" }],
+  findings: [{ tag: "good", label: "达标", text: "核心链路无阻塞" }],
   charts: [
-    { code: "F11", title: "本轮通过率 92%", sub: "1 tick = 1% · 功能用例", source: "TICK GAUGE · 用例执行", data: { value: 92 } },
+    {
+      code: "F11",
+      title: "本轮通过率 92%",
+      sub: "1 格 = 1% 目标 · 功能用例",
+      source: "进度轨 · 用例执行",
+      data: { rows: [["用户中心", 92, 95, "warn"]] },
+      table: { columns: ["模块", "通过率"], rows: [["用户中心", "92%"]] },
+    },
   ],
+  sections: [{ num: "§ 02", title: "执行情况", figureIndexes: [0] }],
+  colophon: ["NexusKit · 测试报告", "3.2.0 · 第 1 轮", "Generated 2026-09-22"],
 });
 
-const VALID_HTML = `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>登录模块测试总结</title></head>
-<body><div class="grid2">
-<div class="card"><h2>本轮通过率 92%</h2><div class="sub">1 tick = 1% · 功能用例</div><svg id="c1"></svg><div class="src">TICK GAUGE · 用例执行</div></div>
-</div><script>const D=[92];</script></body></html>`;
-
-describe("generateReport 管线", () => {
+describe("generateReport 管线（B 层：出稿 → 模板拼装 → 校验 → 落库）", () => {
   let repo: MemoryReportRepository;
   let events: ReportGenerateEvent[];
 
@@ -54,8 +62,8 @@ describe("generateReport 管线", () => {
     events = [];
   });
 
-  it("完整链路：选图 → 组装 → 校验 → 落库，事件序列完整", async () => {
-    scriptResponses(VALID_SELECTION, VALID_HTML);
+  it("完整链路：只调一次 LLM，事件序列完整，报告落库", async () => {
+    scriptResponses(VALID_DRAFT);
 
     const report = await generateReport(
       aiConfig,
@@ -70,80 +78,74 @@ describe("generateReport 管线", () => {
     expect(report.chartKinds).toMatchObject({ charts: [{ code: "F11" }] });
     expect(await repo.countReports()).toBe(1);
     expect(events.map((e) => (e.type === "progress" ? e.stage : e.type))).toEqual(["select", "assemble", "validate", "done"]);
+    // 组装阶段不再消耗 LLM 调用
+    expect(mockStream).toHaveBeenCalledTimes(1);
   });
 
-  it("选图首次输出非法 JSON 时修复重试一次后成功", async () => {
-    scriptResponses("这不是 JSON", VALID_SELECTION, VALID_HTML);
+  it("版式确定性：同一槽位 JSON 两次生成的 HTML 逐字节一致", async () => {
+    scriptResponses(VALID_DRAFT, VALID_DRAFT);
+    const a = await generateReport(aiConfig, repo, { reportType: "summary", sourceType: "csv", sourceText: "{}" });
+    const b = await generateReport(aiConfig, repo, { reportType: "summary", sourceType: "csv", sourceText: "{}" });
+    expect(a.html).toBe(b.html);
+  });
 
-    const report = await generateReport(aiConfig, repo, {
-      reportType: "summary",
-      sourceType: "csv",
-      sourceText: "{}",
-    });
+  it("文本槽位进 HTML 前被转义（模型输出是不可信输入）", async () => {
+    scriptResponses(
+      JSON.stringify({
+        title: `标题<script>alert(1)</script>`,
+        findings: [{ tag: "mute", label: "待补", text: "<img onerror=1>" }],
+        charts: [{ code: "F11", title: "t", sub: "s", source: "x", data: { rows: [["a", 1, 2, "good"]] } }],
+        sections: [{ num: "§ 02", title: "执行情况", figureIndexes: [0] }],
+        colophon: ["NexusKit", "3.2.0", "Generated 2026-09-22"],
+      }),
+    );
+    const report = await generateReport(aiConfig, repo, { reportType: "summary", sourceType: "csv", sourceText: "{}" });
+    expect(report.html).not.toContain("<script>alert(1)</script>");
+    expect(report.html).not.toContain("<img onerror=1>");
+    expect(report.html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(report.html).toContain("&lt;img onerror=1&gt;");
+  });
+
+  it("出稿首次为非法 JSON 时修复重试一次后成功", async () => {
+    scriptResponses("这不是 JSON", VALID_DRAFT);
+    const report = await generateReport(aiConfig, repo, { reportType: "summary", sourceType: "csv", sourceText: "{}" });
     expect(report.id).toMatch(/^rpt_/);
-    expect(mockStream).toHaveBeenCalledTimes(3);
+    expect(mockStream).toHaveBeenCalledTimes(2);
   });
 
-  it("选图修复后仍不合格：抛 SELECT 错误且不落库", async () => {
+  it("出稿修复后仍不合格：抛错且不落库", async () => {
     scriptResponses("垃圾1", "垃圾2");
-
     await expect(
       generateReport(aiConfig, repo, { reportType: "summary", sourceType: "csv", sourceText: "{}" }),
     ).rejects.toThrow(ReportGenerateError);
     expect(await repo.countReports()).toBe(0);
   });
 
-  it("选图使用了白名单外图型：修复重试后仍违规则抛错", async () => {
-    const badSelection = JSON.stringify({
-      title: "x",
-      charts: [{ code: "G16", title: "t", sub: "s", source: "x", data: {} }],
-    });
-    scriptResponses(badSelection, badSelection);
-
+  it("白名单外图型：修复重试后仍违规则抛错", async () => {
+    const bad = JSON.stringify({ title: "x", charts: [{ code: "G16", title: "t", sub: "s", source: "x", data: {} }] });
+    scriptResponses(bad, bad);
     await expect(
       generateReport(aiConfig, repo, { reportType: "summary", sourceType: "csv", sourceText: "{}" }),
     ).rejects.toThrow(/白名单/);
-  });
-
-  it("组装 HTML 校验失败时携带问题清单修复重试", async () => {
-    const brokenHtml = VALID_HTML.replace('<div class="src">TICK GAUGE · 用例执行</div>', "");
-    scriptResponses(VALID_SELECTION, brokenHtml, VALID_HTML);
-
-    const report = await generateReport(aiConfig, repo, {
-      reportType: "summary",
-      sourceType: "csv",
-      sourceText: "{}",
-    });
-    expect(report.html).toContain("TICK GAUGE");
-    expect(mockStream).toHaveBeenCalledTimes(3);
-  });
-
-  it("组装修复后仍不合格：抛 VALIDATION 错误且不落库", async () => {
-    const brokenHtml = "<!doctype html><html><body>no cards</body></html>";
-    scriptResponses(VALID_SELECTION, brokenHtml, brokenHtml);
-
-    await expect(
-      generateReport(aiConfig, repo, { reportType: "summary", sourceType: "csv", sourceText: "{}" }),
-    ).rejects.toThrow(/静态校验/);
     expect(await repo.countReports()).toBe(0);
   });
 
-  it("诚实校验：文本素材的编造百分比触发修复，仍编造则失败", async () => {
-    // VALID_HTML 含 92%，但素材与选型均不含 92 → 诚实校验不通过
-    const selectionWithout92 = JSON.stringify({
+  it("内容不诚实：文本素材的编造百分比触发修复，仍编造则失败", async () => {
+    // 图标题含 92%，但素材与选型数据均不含 92 → 诚实校验不通过
+    const dishonest = JSON.stringify({
       title: "登录测试简报",
-      charts: [{ code: "F5", title: "重点条目", sub: "s", source: "x", data: { items: ["启动", "上限"] } }],
+      charts: [{ code: "F5", title: "通过率 92%", sub: "s", source: "x", data: { rows: [["启动", 1, true]] } }],
+      sections: [{ num: "§ 02", title: "重点", figureIndexes: [0] }],
     });
-    scriptResponses(selectionWithout92, VALID_HTML, VALID_HTML);
-
+    scriptResponses(dishonest, dishonest);
     await expect(
       generateReport(aiConfig, repo, { reportType: "brief", sourceType: "text", sourceText: "测试了登录功能的启动与上限" }),
-    ).rejects.toThrow(ReportGenerateError);
+    ).rejects.toThrow(/诚实|百分比|静态校验/);
     expect(await repo.countReports()).toBe(0);
   });
 
   it("titleHint 优先于 AI 标题", async () => {
-    scriptResponses(VALID_SELECTION, VALID_HTML);
+    scriptResponses(VALID_DRAFT);
     const report = await generateReport(aiConfig, repo, {
       reportType: "summary",
       sourceType: "csv",
@@ -151,6 +153,24 @@ describe("generateReport 管线", () => {
       titleHint: "8 月登录模块回归总结",
     });
     expect(report.title).toBe("8 月登录模块回归总结");
+  });
+
+  it("缺数占位条目渲染为带补录桥接的占位卡", async () => {
+    scriptResponses(
+      JSON.stringify({
+        title: "缺数报告",
+        findings: [{ tag: "mute", label: "待补", text: "缺上一轮模块级数据" }],
+        charts: [
+          { code: "F11", title: "t", sub: "s", source: "x", data: { rows: [["a", 1, 2, "good"]] } },
+          { code: "PLACEHOLDER", missing: "trend", title: "轮次对比（未出图）", need: "需要上一轮模块级数据" },
+        ],
+        sections: [{ num: "§ 02", title: "执行情况", figureIndexes: [0] }],
+        colophon: ["NexusKit", "3.2.0", "Generated 2026-09-22"],
+      }),
+    );
+    const report = await generateReport(aiConfig, repo, { reportType: "summary", sourceType: "csv", sourceText: "{}" });
+    expect(report.html).toContain('data-missing="trend"');
+    expect(report.html).toContain("nexus-report-supplement");
   });
 });
 
@@ -173,7 +193,7 @@ describe("reviseReport 追改", () => {
       chartKinds: { charts: [{ code: "F11" }] },
       html: "<html>v1</html>",
     });
-    scriptResponses(VALID_SELECTION, VALID_HTML);
+    scriptResponses(VALID_DRAFT);
 
     const updated = await reviseReport(aiConfig, repo, { reportId: created.id, instruction: "把标题改激进一点" }, (e) => events.push(e));
 
@@ -188,19 +208,5 @@ describe("reviseReport 追改", () => {
 
   it("报告不存在时抛错", async () => {
     await expect(reviseReport(aiConfig, repo, { reportId: "rpt_missing", instruction: "改" })).rejects.toThrow("不存在");
-  });
-});
-
-describe("extractHtml", () => {
-  it("剥离 Markdown 围栏与前后杂散文本", () => {
-    expect(extractHtml("前言\n```html\n<!doctype html><html><body>x</body></html>\n```\n后记")).toBe(
-      "<!doctype html><html><body>x</body></html>",
-    );
-  });
-
-  it("无围栏时从 <!doctype 截到 </html>", () => {
-    expect(extractHtml("AI 说：<!doctype html><html><body>x</body></html>以上")).toBe(
-      "<!doctype html><html><body>x</body></html>",
-    );
   });
 });

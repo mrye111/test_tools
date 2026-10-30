@@ -3,14 +3,13 @@ import type { AiRequestConfig } from "../testcase/types.js";
 import { isObject, parseMaybeJsonObject } from "../testcase/utils.js";
 import { logger } from "../../logger.js";
 import { isChartAllowed } from "./chart-catalog.js";
-import { loadChartFragments, loadMonoTokens } from "./fragments.js";
+import { loadChartFragment, loadMonoTokens } from "./fragments.js";
 import {
-  buildAssemblyMessages,
-  buildAssemblyRepairInstruction,
   buildSelectionMessages,
   SELECTION_REPAIR_INSTRUCTION,
-  type ReportSelection,
+  type ReportDraft,
 } from "./prompts.js";
+import { renderReportHtml } from "./template.js";
 import { validateReportHtml } from "./validate.js";
 import type { ReportRepository, ReportSourceType, ReportType, TestReport } from "./types.js";
 
@@ -50,15 +49,15 @@ async function collectStream(config: AiRequestConfig, options: StreamRequestOpti
   return content;
 }
 
-/** 校验选图阶段输出：结构合法 + 图型编号在该报告类型白名单内。 */
-function validateSelection(raw: unknown, reportType: ReportType): { selection?: ReportSelection; error?: string } {
+/** 校验选图阶段输出：图表结构 + 图型编号白名单；文档槽位宽松透传（模板侧已转义 + 容错）。 */
+function validateSelection(raw: unknown, reportType: ReportType): { selection?: ReportDraft; error?: string } {
   if (!isObject(raw)) return { error: "选型输出不是 JSON 对象" };
   const title = typeof raw.title === "string" ? raw.title.trim() : "";
   if (!title) return { error: "选型缺少 title" };
   if (!Array.isArray(raw.charts) || raw.charts.length === 0) return { error: "选型 charts 为空" };
   if (raw.charts.length > 8) return { error: "选型 charts 超过 8 张上限" };
 
-  const charts: ReportSelection["charts"] = [];
+  const charts: ReportDraft["charts"] = [];
   let placeholderCount = 0;
   for (const [index, item] of raw.charts.entries()) {
     if (!isObject(item)) return { error: `第 ${index + 1} 个选型条目不是对象` };
@@ -79,91 +78,94 @@ function validateSelection(raw: unknown, reportType: ReportType): { selection?: 
     if (item.data === undefined || item.data === null) {
       return { error: `第 ${index + 1} 个选型条目缺少 data` };
     }
-    charts.push({ code: item.code, title: item.title, sub: item.sub, source: item.source, data: item.data });
+    const entry: ReportDraft["charts"][number] = {
+      code: item.code,
+      title: item.title,
+      sub: item.sub,
+      source: item.source,
+      data: item.data,
+    };
+    // 数据表孪生：列名与行数做了最低限度的形状检查
+    if (isObject(item.table) && Array.isArray(item.table.columns) && Array.isArray(item.table.rows)) {
+      entry.table = {
+        columns: item.table.columns.map((c) => String(c)),
+        rows: item.table.rows
+          .filter((r): r is unknown[] => Array.isArray(r))
+          .map((r) => r.map((c) => (typeof c === "number" ? c : String(c)))),
+      };
+    }
+    charts.push(entry);
   }
   if (placeholderCount > 2) return { error: "缺数占位条目超过 2 张上限" };
-  return { selection: { title, charts } };
+
+  // 文档槽位宽松透传：模板对缺省字段一律容错，且文本进 HTML 前已转义
+  const draft: ReportDraft = { title, charts, ...(raw as Partial<ReportDraft>) };
+  draft.title = title;
+  draft.charts = charts;
+  return { selection: draft };
 }
 
-/** 从模型输出中提取完整 HTML（剥离 Markdown 围栏与前后杂散文本）。 */
-export function extractHtml(raw: string): string {
-  let text = raw.trim();
-  const fence = text.match(/```(?:html)?\s*([\s\S]*?)```/i);
-  if (fence) text = fence[1].trim();
-  const start = text.search(/<!doctype html/i);
-  if (start >= 0) {
-    text = text.slice(start);
-  } else {
-    const htmlStart = text.search(/<html[\s>]/i);
-    if (htmlStart >= 0) text = text.slice(htmlStart);
+/** 一次出稿尝试的产物：槽位 JSON + 拼装出的 HTML。 */
+interface DraftAttempt {
+  draft: ReportDraft;
+  html: string;
+}
+
+/**
+ * 把一次模型输出跑完整条确定性链路：解析 → 槽位校验 → 模板拼装 → 静态校验。
+ * 任何一环不过都返回可读的 error，供修复重试带上。
+ */
+function tryDraft(raw: string, input: GenerateReportInput):
+  | { ok: true; value: DraftAttempt }
+  | { ok: false; error: string } {
+  const parsed = validateSelection(parseMaybeJsonObject(raw), input.reportType);
+  if (parsed.error || !parsed.selection) return { ok: false, error: parsed.error ?? "选型输出不合格" };
+
+  const html = renderReportHtml(parsed.selection, {
+    monoTokens: loadMonoTokens(),
+    fragment: loadChartFragment,
+  });
+  const issues = validateReportHtml(html, {
+    requireHonesty: input.sourceType === "text",
+    sourceText: input.sourceText,
+    selection: parsed.selection,
+  });
+  if (issues.length > 0) {
+    return { ok: false, error: `内容未通过静态校验：${issues.map((i) => i.message).join("；")}` };
   }
-  const end = text.search(/<\/html>/i);
-  if (end >= 0) text = text.slice(0, end + "</html>".length);
-  return text;
+  return { ok: true, value: { draft: parsed.selection, html } };
 }
 
-/** 阶段一：选图与数据映射（严格 JSON，失败修复重试一次）。 */
-async function selectCharts(config: AiRequestConfig, input: GenerateReportInput): Promise<ReportSelection> {
+/**
+ * 出稿（阶段一）：模型只产出槽位 JSON，服务端模板拼装并静态校验，失败修复重试一次。
+ * 阶段二不再消耗 LLM 调用 —— 版式由 renderReportHtml 恒定产出。
+ */
+async function draftReport(config: AiRequestConfig, input: GenerateReportInput): Promise<DraftAttempt> {
   const messages = buildSelectionMessages(input);
   const first = await collectStream(config, { messages, temperature: 0.2, maxTokens: 8192, responseJson: true });
-  const parsedFirst = validateSelection(parseMaybeJsonObject(first), input.reportType);
-  if (parsedFirst.selection) return parsedFirst.selection;
+  const attempt1 = tryDraft(first, input);
+  if (attempt1.ok) return attempt1.value;
 
-  logger.warn({ reason: parsedFirst.error }, "选图阶段输出不合格，发起一次修复重试");
+  logger.warn({ reason: attempt1.error }, "出稿不合格，发起一次修复重试");
   const repaired = await collectStream(config, {
-    messages: [...messages, { role: "assistant", content: first }, { role: "user", content: SELECTION_REPAIR_INSTRUCTION }],
+    messages: [
+      ...messages,
+      { role: "assistant", content: first },
+      { role: "user", content: `${SELECTION_REPAIR_INSTRUCTION}\n上一次未通过的原因：${attempt1.error}` },
+    ],
     temperature: 0.1,
     maxTokens: 8192,
     responseJson: true,
   });
-  const parsedRepaired = validateSelection(parseMaybeJsonObject(repaired), input.reportType);
-  if (!parsedRepaired.selection) {
-    throw new ReportGenerateError(`AI 选图输出不合格：${parsedRepaired.error}`, "SELECT");
+  const attempt2 = tryDraft(repaired, input);
+  if (!attempt2.ok) {
+    throw new ReportGenerateError(`AI 出稿不合格：${attempt2.error}`, attempt2.error.includes("白名单") ? "SELECT" : "VALIDATION");
   }
-  return parsedRepaired.selection;
-}
-
-/** 阶段二：注入真实图型片段组装 HTML，静态校验失败修复重试一次。 */
-async function assembleHtml(config: AiRequestConfig, input: GenerateReportInput, selection: ReportSelection): Promise<string> {
-  const chartCodes = selection.charts.filter((c) => c.code !== "PLACEHOLDER").map((c) => c.code);
-  const messages = buildAssemblyMessages({
-    reportType: input.reportType,
-    selection,
-    monoTokens: loadMonoTokens(),
-    fragments: loadChartFragments(chartCodes),
-    sourceText: input.sourceText,
-  });
-  const validateOptions = {
-    requireHonesty: input.sourceType === "text",
-    sourceText: input.sourceText,
-    selection,
-  };
-
-  const first = extractHtml(await collectStream(config, { messages, temperature: 0.3, maxTokens: 32768 }));
-  const firstIssues = validateReportHtml(first, validateOptions);
-  if (firstIssues.length === 0) return first;
-
-  logger.warn({ issues: firstIssues.map((i) => i.message) }, "组装阶段 HTML 未通过静态校验，发起一次修复重试");
-  const repaired = extractHtml(
-    await collectStream(config, {
-      messages: [
-        ...messages,
-        { role: "assistant", content: first },
-        { role: "user", content: buildAssemblyRepairInstruction(firstIssues.map((i) => i.message)) },
-      ],
-      temperature: 0.1,
-      maxTokens: 32768,
-    }),
-  );
-  const repairedIssues = validateReportHtml(repaired, validateOptions);
-  if (repairedIssues.length > 0) {
-    throw new ReportGenerateError(`报告 HTML 未通过静态校验：${repairedIssues[0].message} 等 ${repairedIssues.length} 项`, "VALIDATION");
-  }
-  return repaired;
+  return attempt2.value;
 }
 
 /**
- * AI 报告生成管线：选图 → 组装 → 校验 → 落库。
+ * AI 报告生成管线：出稿（模型出槽位 JSON）→ 模板拼装 → 静态校验 → 落库。
  * 过程事件经 onEvent 流出（SSE）；任何阶段失败抛 ReportGenerateError，不落库。
  */
 export async function generateReport(
@@ -172,20 +174,18 @@ export async function generateReport(
   input: GenerateReportInput,
   onEvent: (event: ReportGenerateEvent) => void = () => {},
 ): Promise<TestReport> {
-  onEvent({ type: "progress", stage: "select", message: "正在分析素材并选择图型…" });
-  const selection = await selectCharts(config, input);
-  const chartCodes = selection.charts.map((c) => ("missing" in c ? `占位(${c.missing})` : c.code));
-  onEvent({ type: "progress", stage: "assemble", message: `已选定 ${selection.charts.length} 张图（${chartCodes.join(" / ")}），正在组装报告…` });
-
-  const html = await assembleHtml(config, input, selection);
+  onEvent({ type: "progress", stage: "select", message: "正在分析素材并出稿…" });
+  const { draft, html } = await draftReport(config, input);
+  const chartCodes = draft.charts.map((c) => ("missing" in c ? `占位(${c.missing})` : c.code));
+  onEvent({ type: "progress", stage: "assemble", message: `已选定 ${draft.charts.length} 张图（${chartCodes.join(" / ")}），版式由模板拼装…` });
   onEvent({ type: "progress", stage: "validate", message: "静态校验通过，正在保存报告…" });
 
   const report = await repo.createReport({
-    title: input.titleHint?.trim() || selection.title,
+    title: input.titleHint?.trim() || draft.title,
     reportType: input.reportType,
     sourceType: input.sourceType,
     sourceDigest: input.sourceText.slice(0, 1000000),
-    chartKinds: selection,
+    chartKinds: draft,
     html,
   });
   onEvent({ type: "done", report });
@@ -224,14 +224,12 @@ export async function reviseReport(
     ].join("\n\n"),
   };
 
-  onEvent({ type: "progress", stage: "select", message: "正在按修改指令重新选图…" });
-  const selection = await selectCharts(config, revisedInput);
-  onEvent({ type: "progress", stage: "assemble", message: "正在重新组装报告…" });
-
-  const html = await assembleHtml(config, revisedInput, selection);
+  onEvent({ type: "progress", stage: "select", message: "正在按修改指令重新出稿…" });
+  const { draft, html } = await draftReport(config, revisedInput);
+  onEvent({ type: "progress", stage: "assemble", message: "版式由模板拼装完成…" });
   onEvent({ type: "progress", stage: "save", message: "校验通过，正在更新报告…" });
 
-  const updated = await repo.updateReportContent(existing.id, { html, chartKinds: selection });
+  const updated = await repo.updateReportContent(existing.id, { html, chartKinds: draft });
   onEvent({ type: "done", report: updated });
   return updated;
 }

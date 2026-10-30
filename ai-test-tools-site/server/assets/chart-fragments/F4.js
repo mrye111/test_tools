@@ -1,48 +1,52 @@
 // ═══════════════════════════════════════════════════════════
-// 图型片段 F4 · Where the traffic comes from
-// 数据契约：100% 构成（≤6 段）；1 tick = 1%
+// 图型片段 F4 · Stacked Share 状态构成条（重绘版 · 全出血）
+// 数据契约：100% 构成（≤6 段）；状态构成用 STATUS 三色，段序固定
+//           通过 | 阻塞 | 失败 | 跳过 —— 绿红不得相邻（红绿色盲下 ΔE 仅 4.1）。
+// 形式依据：part-to-whole → 单条水平堆叠条（不是环形图 / 饼图）。
+// 标记规格：条厚 24px；段间 2px 表面间隙、不描边；基线端方角、数据端 4px 圆角；
+//           段内直标只在放得下时给，否则交给图例 + tooltip。
+// 文字穿墨色 token；段内标签按填充明度取纸/墨（唯一例外）。
 // 引擎：手写 SVG（零依赖，可离线）
-// 来源：lieflat-charts（PolyForm Noncommercial 1.0.0），由 extract-chart-fragments.mjs 抽取
-// 用法：参考实现——替换数据与元素 id，保留几何、编码方式与动效节奏；禁止脱离骨架另画
 // ═══════════════════════════════════════════════════════════
-// ════ B4 · tick donut ════
-// 环形图的 Lupi 化：ballot tally 的百人队列绕成整圈表盘，1 tick = 1%，
-// 四段来源用灰阶 ladder 分段，段间留一格呼吸。中心只放总数和单位说明。
+// 数据槽位：__DATA__ 由服务端注入 JSON（[[名称, 条数, 状态键, 标记], …]，≤6 段）。
+// 状态键 ∈ good | warn | crit | mute，色值由 STATUS 取，**数据里不带颜色**。
 (()=>{
-const D=[['ORGANIC',37,INK],['PAID',28,'#55554F'],['REFERRAL',21,'#8F8E88'],['SOCIAL',14,'#B0AFA9']];
+const D=__DATA__.map(([n,v,k,ico])=>[n,v,STATUS[k]||STATUS.mute,ico]);
 obsReveal('tickdonut',s=>{
-  const cx=200,cy=148,R0=64;
-  let k0=0;
-  D.forEach(([name,v,shade],si)=>{
-    for(let k=0;k<v;k++){
-      const idx=k0+k,a=idx*3.6-90;
-      const len=10+rnd(idx+1,si+2)*6;
-      const [x1,y1]=pol(cx,cy,R0,a),[x2,y2]=pol(cx,cy,R0+len,a);
-      el(s,'line',{x1,y1,x2,y2,stroke:shade,'stroke-width':1,
-        class:'fade',style:`animation-delay:${idx*.012}s`});
-      if(idx%10===0){
-        const [dx,dy]=pol(cx,cy,R0-5,a);
-        el(s,'circle',{cx:dx,cy:dy,r:.8,fill:'#C6C5BF',
-          class:'fade',style:`animation-delay:${idx*.012}s`});
-      }
+  const W=1080,GAP=2,BAR=24,Y=34;
+  const total=D.reduce((a,d)=>a+d[1],0);
+  const usable=W-GAP*(D.length-1);
+  let x=0;
+  D.forEach(([name,v,shade,ico],i)=>{
+    const w=v/total*usable;
+    const isLast=i===D.length-1;
+    // 整条是一个标记：左端（基线）方角，右端（数据端）4px 圆角；中段两端方角
+    const p=el(s,'path',{d:isLast?barH(x,Y,w,BAR,4):`M${x} ${Y} H${x+w} V${Y+BAR} H${x} Z`,fill:shade});
+    tip(p,`${name} ${v} 条 · ${(v/total*100).toFixed(1)}%`);
+    // 段内直标：放得下才给（≥150px），文字按填充明度取纸/墨
+    if(w>=150){
+      const pale=shade===STATUS.mute||shade==='#B0AFA9';
+      txt(s,{x:x+16,y:Y+BAR/2,'font-size':14,'font-weight':600,
+        fill:pale?INK:PAPER,'dominant-baseline':'middle',
+        class:'fade',style:`animation-delay:${.3+i*.06}s`},`${name} ${v}`);
     }
-    // segment label at mid-angle, outside, tied by a dotted hairline
-    const mid=(k0+v/2)*3.6-90,[lx,ly]=pol(cx,cy,R0+38,mid),[gx,gy]=pol(cx,cy,R0+20,mid);
-    el(s,'line',{x1:gx,y1:gy,x2:lx,y2:ly,stroke:'#C6C5BF','stroke-width':.7,
-      'stroke-dasharray':'1 3',class:'fade',style:`animation-delay:${.6+si*.1}s`});
-    const anchor=Math.cos(mid*D2R)>0.3?'start':Math.cos(mid*D2R)<-0.3?'end':'middle';
-    const lab=txt(s,{x:lx,y:ly+3,'font-size':8,'font-weight':800,fill:shade,'text-anchor':anchor,
-      'letter-spacing':'.06em',style:`paint-order:stroke;stroke:${PAPER};stroke-width:3px;animation-delay:${.65+si*.1}s`,
-      class:'fade'},`${name} · ${v}`);
-    tip(lab,`${name} — ${v}% of traffic`);
-    k0+=v;
+    x+=w+GAP;
   });
-  txt(s,{x:cx,y:cy-2,'font-size':22,'font-weight':800,fill:INK,'text-anchor':'middle',
-    class:'fade',style:'animation-delay:.9s'},'100');
-  txt(s,{x:cx,y:cy+14,'font-size':7,'font-weight':600,fill:MUTED,'text-anchor':'middle',
-    'letter-spacing':'.1em',class:'fade',style:'animation-delay:.9s'},'TICKS · ONE = 1%');
-  txt(s,{x:200,y:296,'font-size':7,'font-weight':600,fill:'#B0AFA9','text-anchor':'middle',
-    'letter-spacing':'.12em',class:'fade',style:'animation-delay:1.1s'},
-    'TWELVE O’CLOCK IS ZERO · DOT MARKS EVERY TENTH · READS CLOCKWISE');
+
+  // 图例：≥2 系列必出；状态色必配 icon + label + 数值，绝不单靠颜色承载语义
+  const LY=112;
+  let lx=0;
+  D.forEach(([name,v,shade,ico],i)=>{
+    const g=el(s,'g',{class:'fade',style:`animation-delay:${.5+i*.06}s`});
+    el(g,'rect',{x:lx,y:LY-9,width:11,height:11,rx:2.5,fill:shade});
+    txt(g,{x:lx+20,y:LY,'font-size':13,'font-weight':700,fill:shade,'dominant-baseline':'middle'},ico);
+    txt(g,{x:lx+38,y:LY,'font-size':14,fill:INK,'dominant-baseline':'middle'},name);
+    txt(g,{x:lx+38+name.length*15,y:LY,'font-size':14,'font-weight':700,fill:INK,
+      'dominant-baseline':'middle','font-variant-numeric':'tabular-nums'},String(v));
+    txt(g,{x:lx+38+name.length*15+34,y:LY,'font-size':12,fill:MUTED,
+      'dominant-baseline':'middle','font-variant-numeric':'tabular-nums'},(v/total*100).toFixed(1)+'%');
+    tip(g,`${name} ${v} 条 · 占 ${(v/total*100).toFixed(1)}%`);
+    lx+=270;
+  });
 });
 })();
