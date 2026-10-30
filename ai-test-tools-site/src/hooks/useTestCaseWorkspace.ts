@@ -12,16 +12,17 @@ import {
   getTestCaseSet,
   listTestCaseProjects,
   listTestCaseSets,
-  loadStoredModelConfig,
   updateTestCaseExecution,
   updateTestCaseProject,
   upsertTestCase,
   waitForGenerateJob,
   type GenerateJobData,
   type TestCaseExecutionItem,
+  type ProjectInput,
   type TestCaseProject,
   type TestCaseSet,
 } from '../lib/testcase-api'
+import { loadActiveAiConfigSelection } from '../lib/active-ai-config'
 import type { Language, PromptPreset, TestType } from './testcase-constants'
 
 export interface CreateTestSetInput {
@@ -46,6 +47,7 @@ export function useTestCaseWorkspace() {
   const [exporting, setExporting] = useState<string | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
   const [supplementNotice, setSupplementNotice] = useState<string | null>(null)
+  const [optimizeNotice, setOptimizeNotice] = useState<string | null>(null)
   const [standaloneSet, setStandaloneSet] = useState<TestCaseSet | null>(null)
 
   const selectedProject = useMemo(
@@ -143,11 +145,11 @@ export function useTestCaseWorkspace() {
     void refreshProjects()
   }, [hasBusySets, refreshProjects, selectedProjectId, testSets.length])
 
-  async function createProject(name: string) {
+  async function createProject(input: ProjectInput) {
     setCreatingProject(true)
     setPageError(null)
     try {
-      const created = await createTestCaseProject(name.trim())
+      const created = await createTestCaseProject({ ...input, name: input.name.trim() })
       await refreshProjects()
       setSelectedProjectId(created.id)
       return true
@@ -159,11 +161,11 @@ export function useTestCaseWorkspace() {
     }
   }
 
-  async function renameProject(projectId: string, name: string) {
+  async function updateProject(projectId: string, input: ProjectInput) {
     setCreatingProject(true)
     setPageError(null)
     try {
-      await updateTestCaseProject(projectId, name.trim())
+      await updateTestCaseProject(projectId, { ...input, name: input.name.trim() })
       await refreshProjects()
       return true
     } catch (error) {
@@ -192,8 +194,8 @@ export function useTestCaseWorkspace() {
     setGenerating(true)
     setPageError(null)
     try {
-      const aiConfig = loadStoredModelConfig()
-      if (!aiConfig) throw new Error('请先在模型设置中配置统一供应商')
+      const aiSelection = await loadActiveAiConfigSelection()
+      if (!aiSelection) throw new Error('请先在模型设置中配置统一供应商')
       const created = await createGenerateJob({
         mode: 'create',
         projectId: selectedProject.id,
@@ -203,7 +205,7 @@ export function useTestCaseWorkspace() {
         testType: input.testType,
         language: input.language,
         promptPreset: input.promptPreset,
-        aiConfig,
+        aiConfig: aiSelection.payload,
       })
       await refreshTestSets(selectedProject.id)
       void waitForGenerateJob(created.jobId)
@@ -243,8 +245,8 @@ export function useTestCaseWorkspace() {
     setPageError(null)
     setSupplementNotice(null)
     try {
-      const aiConfig = loadStoredModelConfig()
-      if (!aiConfig) throw new Error('请先在模型设置中配置统一供应商')
+      const aiSelection = await loadActiveAiConfigSelection()
+      if (!aiSelection) throw new Error('请先在模型设置中配置统一供应商')
       const created = await createGenerateJob({
         mode: 'supplement',
         projectId: selectedProject.id,
@@ -255,7 +257,7 @@ export function useTestCaseWorkspace() {
         testType: testSet.testType,
         language: testSet.language,
         rows: testSet.rows,
-        aiConfig,
+        aiConfig: aiSelection.payload,
       })
       await refreshTestSets(selectedProject.id)
       void waitForGenerateJob(created.jobId)
@@ -277,6 +279,59 @@ export function useTestCaseWorkspace() {
       return true
     } catch (error) {
       setPageError(error instanceof Error ? error.message : '补充需求失败')
+      return false
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  /** 优化用例：按用户指令对现有全集做整体改写（改+增+删），完成后提示变更统计。 */
+  async function optimizeTestSet(testSet: TestCaseSet, instruction: string) {
+    if (!selectedProject) return false
+    setGenerating(true)
+    setPageError(null)
+    setOptimizeNotice(null)
+    try {
+      const aiSelection = await loadActiveAiConfigSelection()
+      if (!aiSelection) throw new Error('请先在模型设置中配置统一供应商')
+      const created = await createGenerateJob({
+        mode: 'optimize',
+        projectId: selectedProject.id,
+        testSetId: testSet.id,
+        testSetName: testSet.name,
+        featureName: testSet.name,
+        context: instruction.trim(),
+        testType: testSet.testType,
+        language: testSet.language,
+        rows: testSet.rows,
+        aiConfig: aiSelection.payload,
+      })
+      await refreshTestSets(selectedProject.id)
+      void waitForGenerateJob(created.jobId)
+        .then((job) => {
+          if (!mountedRef.current || job.status !== 'completed') return
+          const stats = job.optimizeStats
+          if (!stats) return
+          if (stats.modified + stats.added + stats.removed === 0) {
+            setOptimizeNotice('AI 判断当前用例与指令一致，无需修改')
+            return
+          }
+          const parts = [
+            stats.modified > 0 ? `修改 ${stats.modified} 条` : '',
+            stats.added > 0 ? `新增 ${stats.added} 条` : '',
+            stats.removed > 0 ? `删除 ${stats.removed} 条` : '',
+          ].filter(Boolean)
+          setOptimizeNotice(`优化完成：${parts.join(' / ')}`)
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (!mountedRef.current) return
+          void refreshTestSets(selectedProject.id)
+          void refreshProjects()
+        })
+      return true
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : '优化用例失败')
       return false
     } finally {
       setGenerating(false)
@@ -390,15 +445,19 @@ export function useTestCaseWorkspace() {
     setPageError,
     supplementNotice,
     setSupplementNotice,
+    optimizeNotice,
+    setOptimizeNotice,
     createProject,
-    renameProject,
+    updateProject,
     removeProject,
     createTestSet,
     removeTestSet,
     supplementTestSet,
+    optimizeTestSet,
     addTestCase,
     removeTestCase,
     updateExecution,
+    refreshTestSets,
     toggleSetSelection,
     toggleAllCompleted,
     exportSingle,

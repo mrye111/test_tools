@@ -1,6 +1,7 @@
 import { EmptyAiResponseError, callChatCompletion, parseAiRequestConfig, streamChatCompletion } from "./ai.js";
 import { healCsvRow, invalidGeneratedCaseRows, normalizeGeneratedRows, normalizeGeneratedRowsLenient, renumberCaseRows, rowsToCases } from "./csv.js";
 import { resolveGenerationMaxTokens } from "./model-capabilities.js";
+import { optimizeGapBatch, reconcileOptimizedRows } from "./optimize.js";
 import {
   buildGenerateMessages,
   buildRepairMessages,
@@ -11,6 +12,24 @@ import type { TestCaseStore } from "./store.js";
 import type { AiRequestConfig, CsvRuntime, GenerateJobRecord, JsonObject } from "./types.js";
 import { nowIso, rowsInput, text } from "./utils.js";
 import { logger } from "../../logger.js";
+
+/**
+ * 任务运行时 AI 配置解析器（云端引用场景）：request 的 ai_config 只带 cloudConfigId 时，
+ * 由 bootstrap 注入的实现（auth 域 createJobAiConfigResolver）实时重取并解密出内存态有效 request；
+ * 未注入时原样返回（本地内联配置与测试不受影响）。持久化的 request 永远只有引用，不落明文。
+ */
+export type JobAiConfigResolver = (request: JsonObject) => Promise<JsonObject>;
+
+let jobAiConfigResolver: JobAiConfigResolver | null = null;
+
+/** 注入进程级任务 AI 配置解析器（传 null 供测试还原）。 */
+export function setJobAiConfigResolver(resolver: JobAiConfigResolver | null): void {
+  jobAiConfigResolver = resolver;
+}
+
+function resolveJobRequest(request: JsonObject): Promise<JsonObject> {
+  return jobAiConfigResolver ? jobAiConfigResolver(request) : Promise.resolve(request);
+}
 
 function isApiRequest(data: JsonObject): boolean {
   return text(data.test_type ?? data.testType).toLowerCase() === "api";
@@ -116,7 +135,7 @@ function minimumUsefulCaseCount(context: string): number {
 
 function needsSupplementalBatch(data: JsonObject, context: string, rows: string[][]): boolean {
   const mode = text(data.mode);
-  if (mode === "regenerate_selected" || mode === "supplement") return false;
+  if (mode === "regenerate_selected" || mode === "supplement" || mode === "optimize") return false;
   return rows.length > 0 && rows.length < minimumUsefulCaseCount(context);
 }
 
@@ -231,6 +250,7 @@ export function mergeJobRows(job: GenerateJobRecord, generatedRows: string[][]):
     });
     return renumberCaseRows(nextRows, isApiRequest(job.request));
   }
+  // optimize：AI 输出即为完整新用例集（可改/增/删），不与旧集合并，直接整体替换。
   return renumberCaseRows(generatedRows, isApiRequest(job.request));
 }
 
@@ -244,9 +264,12 @@ export async function streamGenerateCsvText(
   const featureName = text(data.feature_name ?? data.featureName, "未命名需求");
   const promptPreset = text(data.promptPreset ?? data.prompt_preset, "standard");
   const context = text(data.context);
-  const supplementMode = text(data.mode) === "supplement";
+  const mode = text(data.mode);
+  const supplementMode = mode === "supplement";
+  const optimizeMode = mode === "optimize";
   // 超限 Swagger 文档自动按接口分组：分组后每批只携带需求描述 + 本组接口定义，避免整份文档挤爆上下文。
-  const swaggerSplit = supplementMode ? null : splitSwaggerContext(context);
+  // optimize 模式与 supplement 一样以原始需求文本为基准，不走 Swagger 拆分（优化基于已有全集改写）。
+  const swaggerSplit = supplementMode || optimizeMode ? null : splitSwaggerContext(context);
   const effectiveContext = swaggerSplit ? swaggerSplit.requirement : context;
   const { runtime } = buildGenerateMessages({
     featureName,
@@ -265,16 +288,23 @@ export async function streamGenerateCsvText(
         context,
         rowsInput(data.rows).map((row) => healCsvRow(Array.isArray(row) ? row.map((cell) => text(cell)) : [])),
       )]
-    : swaggerSplit
-      ? swaggerSplit.groups.map((group) => ({
-          name: `${featureName} ${group.name}`,
-          scope: `【Swagger/OpenAPI ${group.name}】
+    : optimizeMode
+      ? [optimizeGapBatch(
+          featureName,
+          text(data.originalContext ?? data.original_context),
+          context,
+          rowsInput(data.rows).map((row) => healCsvRow(Array.isArray(row) ? row.map((cell) => text(cell)) : [])),
+        )]
+      : swaggerSplit
+        ? swaggerSplit.groups.map((group) => ({
+            name: `${featureName} ${group.name}`,
+            scope: `【Swagger/OpenAPI ${group.name}】
 ${group.document}
 
 只生成上述分组内接口的用例，不要生成其他接口的用例。`,
-          coverageItems: group.endpoints,
-        }))
-      : [primaryCoverageBatch(featureName, effectiveContext)];
+            coverageItems: group.endpoints,
+          }))
+        : [primaryCoverageBatch(featureName, effectiveContext)];
   const batchSnapshots: string[][][] = Array.from({ length: batches.length }, () => []);
   const invalidRowsByBatch: string[][][] = Array.from({ length: batches.length }, () => []);
   const rawCsvByBatch: string[] = Array.from({ length: batches.length }, () => "");
@@ -350,7 +380,7 @@ export async function runGenerationJob(jobId: string, store: TestCaseStore): Pro
   const job = store.getJob(jobId);
   if (!job) return;
   store.updateJob(jobId, { status: "running", startedAt: nowIso(), streamText: "" });
-  if (job.mode === "supplement" && !text(job.request.originalContext)) {
+  if ((job.mode === "supplement" || job.mode === "optimize") && !text(job.request.originalContext)) {
     const originalContext = store.getTestSet(job.testSetId)?.context ?? "";
     job.request = { ...job.request, originalContext };
     store.updateJob(jobId, { request: job.request });
@@ -358,7 +388,10 @@ export async function runGenerationJob(jobId: string, store: TestCaseStore): Pro
   const initialTestSet = store.getTestSet(job.testSetId);
   if (initialTestSet) store.upsertTestSet({ ...initialTestSet, status: "running", error: "" });
   try {
-    const result = await streamGenerateCsvText(job.request, (snapshot) => {
+    // 云端引用（ai_config 只有 cloudConfigId）在运行起点按引用解析出内存态有效 request；
+    // 解析结果不写回 job.request，持久化层始终只见引用。
+    const effectiveRequest = await resolveJobRequest(job.request);
+    const result = await streamGenerateCsvText(effectiveRequest, (snapshot) => {
       const liveRows = mergeJobRows(job, snapshot.rows);
       store.updateJob(jobId, {
         streamText: snapshot.csv,
@@ -396,12 +429,22 @@ export async function runGenerationJob(jobId: string, store: TestCaseStore): Pro
       : {};
 
     const completedTestSet = store.getTestSet(job.testSetId);
+    // optimize：按内容指纹重建执行状态（未动→保留、变更→重置、删除→清除），并产出变更统计。
+    const optimizeReconcile = job.mode === "optimize"
+      ? reconcileOptimizedRows(
+          rowsInput(job.request.rows).map((row) => healCsvRow(Array.isArray(row) ? row.map((cell) => text(cell)) : [])),
+          nextRows,
+          completedTestSet?.executionStatus ?? {},
+        )
+      : null;
+
     if (completedTestSet) {
       store.upsertTestSet({
         ...completedTestSet,
         status: "completed",
         header: result.header,
         rows: nextRows,
+        executionStatus: optimizeReconcile ? optimizeReconcile.executionStatus : completedTestSet.executionStatus,
         error: "",
       });
       store.replaceTestSetCases(job.testSetId, rowsToCases(job.testSetId, nextRows));
@@ -417,6 +460,7 @@ export async function runGenerationJob(jobId: string, store: TestCaseStore): Pro
       finishedAt: nowIso(),
       error: "",
       ...supplementStats,
+      ...(optimizeReconcile ? { optimizeStats: optimizeReconcile.stats } : {}),
     });
     // 接入 MySQL 时冲刷写穿透队列，确保终态数据已入库再向外报告完成。
     await store.flushDb();

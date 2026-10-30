@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { healCsvRow, renumberCaseRows } from "./csv.js";
+import { getJobSecretCrypto, restoreApiKeySecret, stripApiKeySecret } from "./job-secrets.js";
 import type { PersistTable, TestCasePersistenceAdapter } from "./mysql-persistence.js";
 import type { GenerateJobRecord, ProjectRecord, TestCaseRecord, TestCaseStoreData, TestSetRecord } from "./types.js";
 import { nowIso } from "./utils.js";
@@ -84,6 +85,26 @@ function hasAnyRecords(data: TestCaseStoreData): boolean {
   return data.projects.length > 0 || data.testSets.length > 0 || data.testCases.length > 0 || data.generationJobs.length > 0;
 }
 
+/** 落盘序列化视图：任务 request 内的明文密钥剥离为 api_key_enc 信封（内存态保持明文，文件只落占位+信封）。 */
+function toPersistedData(data: TestCaseStoreData): TestCaseStoreData {
+  return {
+    ...data,
+    generationJobs: data.generationJobs.map((job) => {
+      const stored = stripApiKeySecret(job.request ?? {}, job.apiKeyEnc, getJobSecretCrypto());
+      return { ...job, request: stored.request, apiKeyEnc: stored.apiKeyEnc ?? undefined };
+    }),
+  };
+}
+
+/** 读入反序列化视图：api_key_enc 解密回填 request 的占位字段（内存态还原）。 */
+function toRestoredJobs(jobs: GenerateJobRecord[]): GenerateJobRecord[] {
+  const secret = getJobSecretCrypto();
+  return jobs.map((job) => ({
+    ...job,
+    request: restoreApiKeySecret(job.request ?? {}, job.apiKeyEnc, secret),
+  }));
+}
+
 /** 取快照中最新的业务时间戳（用例集与任务的 updatedAt/createdAt），用于文件与 DB 的新鲜度比较。 */
 function maxRecordTimestamp(data: TestCaseStoreData): string {
   const stamps: string[] = [];
@@ -146,6 +167,14 @@ export class TestCaseStore {
     return this.dbAdapter ? "mysql" : "file";
   }
 
+  /**
+   * 注入 SecretCrypto 后调用（bootstrap）：把已加载任务 request 内的 [SECRET_REF] 占位还原为明文。
+   * Store 单例在模块加载期即完成文件读取，早于 bootstrap 注入密钥，故需在此补一次内存态还原。
+   */
+  rehydrateJobSecrets(): void {
+    this.data.generationJobs = toRestoredJobs(this.data.generationJobs);
+  }
+
   /** 等待排队的 DB 写穿透全部完成；未接入 DB 或写入已被记录降级时立即返回。 */
   async flushDb(): Promise<void> {
     await this.dbWriteChain;
@@ -165,7 +194,7 @@ export class TestCaseStore {
         projects: parsed.projects ?? defaultData().projects,
         testSets: parsed.testSets ?? [],
         testCases: parsed.testCases ?? [],
-        generationJobs: parsed.generationJobs ?? [],
+        generationJobs: toRestoredJobs(parsed.generationJobs ?? []),
       };
     } catch {
       return defaultData();
@@ -179,7 +208,8 @@ export class TestCaseStore {
   private persistNow(data = this.data): void {
     withSpanSync({ name: "store.write", type: "store", attributes: { file: this.path } }, () => {
       try {
-        writeTextFileWithRetry(this.path, JSON.stringify(data, null, 2), this.writeOptions);
+        // 序列化时剥离任务密钥（缺 SecretCrypto 且存在明文时抛错，宁可拒绝写入也不落明文）
+        writeTextFileWithRetry(this.path, JSON.stringify(toPersistedData(data), null, 2), this.writeOptions);
       } catch (error) {
         const cause = error instanceof Error ? error : new Error(String(error));
         throw storeError(`写入本地存储失败：${cause.message}`, cause);

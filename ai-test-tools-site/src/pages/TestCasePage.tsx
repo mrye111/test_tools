@@ -14,14 +14,17 @@ import {
   Download,
   FileSpreadsheet,
   FolderKanban,
+  Globe,
   Layers3,
   Loader2,
   Pencil,
+  Play,
   Plus,
   RotateCcw,
   ShieldCheck,
   Sparkles,
   Trash2,
+  WandSparkles,
   X,
 } from 'lucide-react'
 import { CustomSelect } from '../components/ui/CustomSelect'
@@ -29,6 +32,9 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { useErrorDialog } from '../components/ui/ErrorDialogProvider'
 import { ModalShell } from '../components/ui/ModalShell'
 import { Tooltip } from '../components/ui/Tooltip'
+import { ProjectIcon } from '../components/ProjectIcon'
+import { ProjectIconPicker } from '../components/ProjectIconPicker'
+import { ReferenceFileStrip } from '../components/ReferenceFileStrip'
 import {
   LANGUAGE_OPTIONS,
   PROMPT_PRESET_OPTIONS,
@@ -41,6 +47,13 @@ import { displayCellText, normalizeDisplayHeader } from '../hooks/testcase-helpe
 import { useGoBack } from '../hooks/useGoBack'
 import { useTestCaseWorkspace } from '../hooks/useTestCaseWorkspace'
 import { normalizeErrorMessage } from '../lib/app-error'
+import { normalizeSystemUrl, systemUrlHost } from '../lib/system-url'
+import { referencesToContext } from '../lib/reference-file'
+import { useReferenceFiles } from '../hooks/useReferenceFiles'
+import { runFunctionalCase } from '../lib/automation-api'
+import { getPreference, putPreference } from '../lib/auth-api'
+import { RunProgressModal, type RunProgressHandle } from '../features/automation/RunProgressModal'
+import { loadActiveAiConfigSelection } from '../lib/active-ai-config'
 import { REQUIREMENT_CONDITIONS_HANDOFF_KEY, type ConditionsHandoffPayload } from '../features/requirement-analysis-v2/handoff'
 import { linkConditionsToTestset } from '../features/requirement-analysis-v2/analysis-api'
 import type { TestCaseProject, TestCaseSet, TestCaseExecutionStatus } from '../lib/testcase-api'
@@ -210,6 +223,10 @@ export function TestCasePage() {
   const [deletingProject, setDeletingProject] = useState<TestCaseProject | null>(null)
   const [projectName, setProjectName] = useState('')
   const [projectNameError, setProjectNameError] = useState('')
+  const [projectSystemUrl, setProjectSystemUrl] = useState('')
+  const [projectUrlError, setProjectUrlError] = useState('')
+  const [projectIconKey, setProjectIconKey] = useState('')
+  const [projectIconColor, setProjectIconColor] = useState('')
   const [showTestSetModal, setShowTestSetModal] = useState(false)
   const [testSetName, setTestSetName] = useState('')
   const [context, setContext] = useState('')
@@ -219,6 +236,20 @@ export function TestCasePage() {
   const [promptPreset, setPromptPreset] = useState<PromptPreset>('standard')
   const [formErrors, setFormErrors] = useState<{ name?: string; context?: string; swagger?: string }>({})
   const [showSupplementModal, setShowSupplementModal] = useState(false)
+  const [showOptimizeModal, setShowOptimizeModal] = useState(false)
+  const [optimizeInstruction, setOptimizeInstruction] = useState('')
+  const [optimizeError, setOptimizeError] = useState('')
+  // 三个 AI 生成弹窗共用一套参考文件（粘贴解析）通道
+  const referenceFiles = useReferenceFiles()
+  const referenceStrip = <ReferenceFileStrip files={referenceFiles.files} onRemove={referenceFiles.removeFile} />
+  const referenceContextTail = () => {
+    const refs = referenceFiles.parsedReferences()
+    return refs.length > 0 ? `\n\n${referencesToContext(refs)}` : ''
+  }
+  const referenceBlocker = () => {
+    const blocker = referenceFiles.submitBlocker()
+    return blocker ?? ''
+  }
   const [supplementContext, setSupplementContext] = useState('')
   const [supplementError, setSupplementError] = useState('')
   const [showCaseModal, setShowCaseModal] = useState(false)
@@ -236,6 +267,11 @@ export function TestCasePage() {
   const [executionFilter, setExecutionFilter] = useState<'all' | 'untested' | 'passed' | 'failed' | 'blocked'>('all')
   const [showQualityModal, setShowQualityModal] = useState(false)
   const [defectModalTarget, setDefectModalTarget] = useState<{ row: string[]; caseId: string } | null>(null)
+  // AI 执行（UI 自动化直跑）：entryUrl 按用例集持久化
+  const [aiRunTarget, setAiRunTarget] = useState<{ caseId: string; title: string } | null>(null)
+  const [aiRunEntryUrl, setAiRunEntryUrl] = useState('')
+  const [aiRunStarting, setAiRunStarting] = useState(false)
+  const [aiRunHandle, setAiRunHandle] = useState<RunProgressHandle | null>(null)
   const [defectBugId, setDefectBugId] = useState('')
   const [defectActual, setDefectActual] = useState('')
   const [defectSeverity, setDefectSeverity] = useState<'P0' | 'P1' | 'P2' | 'P3' | 'P4'>('P0')
@@ -308,6 +344,10 @@ export function TestCasePage() {
     setEditingProject(project)
     setProjectName(project.name)
     setProjectNameError('')
+    setProjectSystemUrl(project.systemUrl ?? '')
+    setProjectUrlError('')
+    setProjectIconKey(project.iconKey ?? '')
+    setProjectIconColor(project.iconColor ?? '')
     setShowProjectModal(true)
   }
 
@@ -316,6 +356,10 @@ export function TestCasePage() {
     setEditingProject(null)
     setProjectName('')
     setProjectNameError('')
+    setProjectSystemUrl('')
+    setProjectUrlError('')
+    setProjectIconKey('')
+    setProjectIconColor('')
   }
 
   async function submitProject() {
@@ -323,9 +367,20 @@ export function TestCasePage() {
       setProjectNameError('请输入项目名称')
       return
     }
+    const urlResult = normalizeSystemUrl(projectSystemUrl)
+    if (!urlResult.ok) {
+      setProjectUrlError(urlResult.error)
+      return
+    }
+    const input = {
+      name: projectName,
+      systemUrl: urlResult.value,
+      iconKey: projectIconKey,
+      iconColor: projectIconColor,
+    }
     const saved = editingProject
-      ? await workspace.renameProject(editingProject.id, projectName)
-      : await workspace.createProject(projectName)
+      ? await workspace.updateProject(editingProject.id, input)
+      : await workspace.createProject(input)
     if (saved) closeProjectModal()
   }
 
@@ -359,11 +414,18 @@ export function TestCasePage() {
       }
     }
     setFormErrors(nextErrors)
-    if (Object.keys(nextErrors).length) return
+    const referenceIssue = referenceBlocker()
+    if (referenceIssue) nextErrors.context = referenceIssue
+    if (Object.keys(nextErrors).length) {
+      setFormErrors(nextErrors)
+      return
+    }
 
-    const finalContext = isApi && swagger
+    const refTail = referenceContextTail()
+    const baseContext = isApi && swagger
       ? `${context.trim()}\n\n${SWAGGER_CONTEXT_MARKER}\n${swagger}`
       : context
+    const finalContext = refTail ? `${baseContext}${refTail}` : baseContext
     const created = await workspace.createTestSet({ name: testSetName, context: finalContext, testType, language, promptPreset }, (job) => {
       // 需求分析接力回写：用例集生成完成后登记 条件↔用例集 关联（RTM）
       if (conditionsHandoff && job.testSetId) {
@@ -373,21 +435,48 @@ export function TestCasePage() {
     })
     if (created) {
       setShowTestSetModal(false)
+      referenceFiles.clearFiles()
       resetTestSetForm()
     }
   }
 
   async function submitSupplement() {
     if (!workspace.previewSet) return
+    const referenceIssue = referenceBlocker()
+    if (referenceIssue) {
+      setSupplementError(referenceIssue)
+      return
+    }
     if (!supplementContext.trim()) {
       setSupplementError('请输入补充需求')
       return
     }
-    const submitted = await workspace.supplementTestSet(workspace.previewSet, supplementContext)
+    const submitted = await workspace.supplementTestSet(workspace.previewSet, `${supplementContext.trim()}${referenceContextTail()}`)
     if (submitted) {
       setSupplementContext('')
       setSupplementError('')
+      referenceFiles.clearFiles()
       setShowSupplementModal(false)
+    }
+  }
+
+  async function submitOptimize() {
+    if (!workspace.previewSet) return
+    const referenceIssue = referenceBlocker()
+    if (referenceIssue) {
+      setOptimizeError(referenceIssue)
+      return
+    }
+    if (!optimizeInstruction.trim()) {
+      setOptimizeError('请输入优化指令')
+      return
+    }
+    const submitted = await workspace.optimizeTestSet(workspace.previewSet, `${optimizeInstruction.trim()}${referenceContextTail()}`)
+    if (submitted) {
+      setOptimizeInstruction('')
+      setOptimizeError('')
+      referenceFiles.clearFiles()
+      setShowOptimizeModal(false)
     }
   }
 
@@ -502,6 +591,56 @@ export function TestCasePage() {
     await workspace.updateExecution(workspace.previewSet, current)
   }
 
+  // ── AI 执行（UI 自动化直跑）───────────────────────────────────────────
+  const openAiRunModal = (row: string[]) => {
+    const caseId = String(row[0] ?? '').trim()
+    const title = String(row[3] ?? row[2] ?? caseId).trim()
+    setAiRunTarget({ caseId, title })
+    // entryUrl 按用例集记忆（个人偏好挂用户）：先清空再异步回填，读失败保持空串
+    setAiRunEntryUrl('')
+    getPreference(`ai-run-entry:${workspace.previewSet?.id ?? ''}`)
+      .then((value) => {
+        // 异步回填不覆盖用户已输入的内容
+        if (value) setAiRunEntryUrl((current) => (current.trim() ? current : value))
+      })
+      .catch(() => {
+        // 读偏好失败降级为空串
+      })
+  }
+
+  const startAiRun = async () => {
+    if (!aiRunTarget || !workspace.previewSet || !aiRunEntryUrl.trim() || aiRunStarting) return
+    setAiRunStarting(true)
+    try {
+      const aiSelection = await loadActiveAiConfigSelection()
+      if (!aiSelection) throw new Error('请先在「设置」中配置 AI 模型')
+      const entryUrl = aiRunEntryUrl.trim()
+      // 入口地址记忆写个人偏好；写失败静默，不阻塞主流程
+      void putPreference(`ai-run-entry:${workspace.previewSet.id}`, entryUrl).catch(() => {})
+      const { run } = await runFunctionalCase({
+        testSetId: workspace.previewSet.id,
+        caseId: aiRunTarget.caseId,
+        entryUrl,
+        aiConfig: aiSelection.payload,
+      })
+      const target = aiRunTarget
+      setAiRunTarget(null)
+      setAiRunHandle({
+        runId: run.id,
+        title: `${target.caseId} · ${target.title}`,
+        onDone: () => {
+          // 服务端回写为权威（run-manager onDone 无条件执行且先于 verdict 事件落库）；
+          // 前端不做整图 PUT（会用启动时快照覆盖运行期间的其他打标，评审 C2），只重新拉取刷新 UI
+          if (workspace.selectedProjectId) void workspace.refreshTestSets(workspace.selectedProjectId)
+        },
+      })
+    } catch (error) {
+      showError(error, { title: 'AI 执行失败', fallbackMessage: 'AI 执行发起失败，请检查目标地址与模型配置后重试。' })
+    } finally {
+      setAiRunStarting(false)
+    }
+  }
+
   const handleExportExecutionCsv = () => {
     if (!workspace.previewSet) return
     const csv = generateExecutionTrackingCsv(
@@ -594,6 +733,20 @@ export function TestCasePage() {
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2.5">
+            {systemUrlHost(workspace.selectedProject?.systemUrl) && (
+              <Tooltip content="新标签打开被测系统">
+                <a
+                  href={workspace.selectedProject!.systemUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="secondary-action px-3 py-2 text-xs"
+                  aria-label={`打开被测系统 ${systemUrlHost(workspace.selectedProject!.systemUrl)}`}
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  {systemUrlHost(workspace.selectedProject!.systemUrl)}
+                </a>
+              </Tooltip>
+            )}
             <div className="testcase-mode-switcher mr-1">
               <button
                 type="button"
@@ -637,6 +790,10 @@ export function TestCasePage() {
                 <button type="button" onClick={() => setShowSupplementModal(true)} disabled={previewBusy} className="secondary-action px-4 py-2 text-xs disabled:pointer-events-none disabled:opacity-45">
                   {workspace.generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                   补充需求
+                </button>
+                <button type="button" onClick={() => setShowOptimizeModal(true)} disabled={previewBusy || previewRows.length === 0} className="secondary-action px-4 py-2 text-xs disabled:pointer-events-none disabled:opacity-45">
+                  {workspace.generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WandSparkles className="h-3.5 w-3.5" />}
+                  优化用例
                 </button>
                 <button type="button" onClick={() => setShowCaseModal(true)} disabled={previewBusy} className="primary-action px-4 py-2 text-xs disabled:pointer-events-none disabled:opacity-45">
                   <Plus className="h-3.5 w-3.5" />
@@ -745,6 +902,14 @@ export function TestCasePage() {
           </div>
         )}
 
+        {workspace.optimizeNotice && (
+          <div className="testcase-supplement-notice" role="status">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1">{workspace.optimizeNotice}</span>
+            <button type="button" onClick={() => workspace.setOptimizeNotice(null)} className="testcase-supplement-notice-close" aria-label="关闭提示"><X className="h-3.5 w-3.5" /></button>
+          </div>
+        )}
+
         <div className="testcase-detail-table-card" data-mode={previewMode}>
           <table className="testcase-result-table testcase-detail-table border-collapse text-left text-[12px]">
             <thead>
@@ -795,6 +960,17 @@ export function TestCasePage() {
                     ) : (
                       <td className="testcase-cell testcase-exec-action-cell">
                         <div className="testcase-exec-actions-wrap">
+                          <Tooltip content="AI 执行该用例（UI 自动化直跑）">
+                            <button
+                              type="button"
+                              onClick={() => openAiRunModal(row)}
+                              className="testcase-btn-reset"
+                              style={{ color: 'oklch(0.52 0.17 155)' }}
+                              aria-label={`AI 执行用例 ${caseId}`}
+                            >
+                              <Play className="h-3 w-3" />
+                            </button>
+                          </Tooltip>
                           <button
                             type="button"
                             onClick={() => void handleSetExecution(caseId, 'passed')}
@@ -880,22 +1056,60 @@ export function TestCasePage() {
                 <button type="button" onClick={() => setShowSupplementModal(false)} disabled={workspace.generating} className="icon-action h-9 w-9" aria-label="关闭补充需求窗口"><X className="h-4 w-4" /></button>
               </div>
               <div className="mt-6">
+                {referenceStrip}
                 <label className={labelCls} htmlFor="testcase-supplement-context">本次补充说明</label>
                 <textarea
                   id="testcase-supplement-context"
                   value={supplementContext}
                   onChange={(event) => { setSupplementContext(event.target.value); setSupplementError('') }}
+                  onPaste={referenceFiles.handlePaste}
                   rows={7}
                   className={`${inputCls} ${supplementError ? 'field-control-error' : ''}`}
-                  placeholder="例如：补充手机号格式边界、重复联系人、无权限查看组织成员、批量导入异常场景。"
+                  placeholder="例如：补充手机号格式边界、重复联系人、无权限查看组织成员、批量导入异常场景。可直接粘贴参考文件。"
                 />
                 {supplementError && <p className="field-error">{supplementError}</p>}
               </div>
               <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
                 <button type="button" onClick={() => setShowSupplementModal(false)} disabled={workspace.generating} className="secondary-action px-5 py-2.5 text-sm">取消</button>
-                <button type="button" onClick={() => void submitSupplement()} disabled={workspace.generating} className="primary-action px-5 py-2.5 text-sm disabled:opacity-50">
+                <button type="button" onClick={() => void submitSupplement()} disabled={workspace.generating} className="ai-glass-action px-5 py-2.5 text-sm disabled:opacity-50">
                   {workspace.generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                   {workspace.generating ? '正在补充...' : '开始补充'}
+                </button>
+              </div>
+            </div>
+          )}
+        </ModalShell>
+
+        <ModalShell open={showOptimizeModal && Boolean(workspace.previewSet)} onClose={() => !workspace.generating && setShowOptimizeModal(false)} closeOnBackdrop={!workspace.generating} closeOnEscape={!workspace.generating}>
+          {showOptimizeModal && workspace.previewSet && (
+            <div className="modal-panel w-full max-w-[640px] rounded-[24px] p-6 max-sm:p-4" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="optimize-testcase-title">
+              <div className="modal-heading-row">
+                <div>
+                  <p className="modal-kicker">{workspace.previewSet.name}</p>
+                  <h2 id="optimize-testcase-title">优化用例</h2>
+                  <span>告诉 AI 界面的实际操作逻辑，AI 将对已有 {workspace.previewSet.rows.length} 条用例做整体改写（可修改、新增、删除）。执行中的用例状态会按内容变化自动保留或重置。</span>
+                </div>
+                <button type="button" onClick={() => setShowOptimizeModal(false)} disabled={workspace.generating} className="icon-action h-9 w-9" aria-label="关闭优化用例窗口"><X className="h-4 w-4" /></button>
+              </div>
+              <div className="mt-6">
+                {referenceStrip}
+                <label className={labelCls} htmlFor="testcase-optimize-instruction">优化指令（界面实际操作逻辑）</label>
+                <textarea
+                  id="testcase-optimize-instruction"
+                  value={optimizeInstruction}
+                  onChange={(event) => { setOptimizeInstruction(event.target.value); setOptimizeError('') }}
+                  onPaste={referenceFiles.handlePaste}
+                  rows={7}
+                  className={`${inputCls} ${optimizeError ? 'field-control-error' : ''}`}
+                  placeholder="例如：登录页实际是「手机号 + 短信验证码」登录，没有密码框。可直接粘贴界面说明文档作为参考文件。"
+                />
+                {optimizeError && <p className="field-error">{optimizeError}</p>}
+              </div>
+              <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+                <button type="button" onClick={() => setShowOptimizeModal(false)} disabled={workspace.generating} className="secondary-action px-5 py-2.5 text-sm">取消</button>
+                <button type="button" onClick={() => void submitOptimize()} disabled={workspace.generating} className="ai-glass-action px-5 py-2.5 text-sm disabled:opacity-50">
+                  {workspace.generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <WandSparkles className="h-4 w-4" />}
+                  {workspace.generating ? '正在优化...' : '开始优化'}
                 </button>
               </div>
             </div>
@@ -1125,6 +1339,46 @@ export function TestCasePage() {
           onConfirm={() => void confirmDeleteCase()}
           danger
         />
+
+        {/* AI 执行入口：填目标系统地址后直跑功能用例（UI 自动化） */}
+        <ModalShell open={Boolean(aiRunTarget)} onClose={() => !aiRunStarting && setAiRunTarget(null)}>
+          {aiRunTarget && (
+            <div
+              style={{ width: 480, maxWidth: '92vw' }}
+              role="dialog"
+              aria-modal="true"
+              aria-label={`AI 执行 · ${aiRunTarget.caseId}`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mb-1 flex items-center gap-2 text-sm font-bold text-fg">
+                <Play className="h-4 w-4" style={{ color: 'oklch(0.52 0.17 155)' }} />
+                AI 执行 · {aiRunTarget.caseId}
+              </div>
+              <p className="mb-3 text-xs text-muted">{aiRunTarget.title}</p>
+              <label className="mb-1 block text-xs font-semibold text-fg" htmlFor="ai-run-entry">目标系统入口地址</label>
+              <input
+                id="ai-run-entry"
+                value={aiRunEntryUrl}
+                onChange={(e) => setAiRunEntryUrl(e.target.value)}
+                className="mb-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-accent"
+                placeholder="https://…（用例文本不含 URL，执行前必须指定）"
+                disabled={aiRunStarting}
+                onKeyDown={(e) => e.key === 'Enter' && void startAiRun()}
+              />
+              <p className="mb-4 text-[11px] leading-relaxed text-muted">
+                将实时编译该用例的步骤与预期为 AI 指令并在服务端浏览器执行；地址按用例集记忆，下次自动填入。
+              </p>
+              <div className="flex items-center justify-end gap-3">
+                <button type="button" onClick={() => setAiRunTarget(null)} className="secondary-action px-4 py-2 text-xs" disabled={aiRunStarting}>取消</button>
+                <button type="button" onClick={() => void startAiRun()} className="primary-action px-5 py-2 text-xs" disabled={aiRunStarting || !aiRunEntryUrl.trim()}>
+                  {aiRunStarting ? '正在发起…' : '开始执行'}
+                </button>
+              </div>
+            </div>
+          )}
+        </ModalShell>
+
+        <RunProgressModal handle={aiRunHandle} onClose={() => setAiRunHandle(null)} />
       </div>
     )
   }
@@ -1167,6 +1421,20 @@ export function TestCasePage() {
         </div>
         {workspace.selectedProject && (
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            {systemUrlHost(workspace.selectedProject?.systemUrl) && (
+              <Tooltip content="新标签打开被测系统">
+                <a
+                  href={workspace.selectedProject!.systemUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="secondary-action px-3 py-2 text-xs"
+                  aria-label={`打开被测系统 ${systemUrlHost(workspace.selectedProject!.systemUrl)}`}
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  {systemUrlHost(workspace.selectedProject!.systemUrl)}
+                </a>
+              </Tooltip>
+            )}
             <button type="button" onClick={() => setShowTestSetModal(true)} className="primary-action px-3.5 py-2 text-xs">
               <Plus className="h-3.5 w-3.5" />添加用例集
             </button>
@@ -1227,13 +1495,13 @@ export function TestCasePage() {
                     style={{ '--project-index': index } as React.CSSProperties}
                   >
                     <div className="project-card-topline">
-                      <div className="project-card-icon"><FolderKanban className="h-[18px] w-[18px]" /></div>
+                      <ProjectIcon iconKey={project.iconKey} iconColor={project.iconColor} />
                       <div className="project-card-actions">
-                        <Tooltip content="重命名项目">
+                        <Tooltip content="编辑项目">
                           <button
                             type="button"
                             className="project-card-action icon-action h-7 w-7"
-                            aria-label={`重命名项目 ${project.name}`}
+                            aria-label={`编辑项目 ${project.name}`}
                             onClick={(event) => { event.stopPropagation(); openEditProjectModal(project) }}
                           >
                             <Pencil className="h-3.5 w-3.5" />
@@ -1254,6 +1522,19 @@ export function TestCasePage() {
                     </div>
                     <div className="project-card-body">
                       <h2>{project.name}</h2>
+                      {systemUrlHost(project.systemUrl) && (
+                        <a
+                          className="project-card-link"
+                          href={project.systemUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`打开被测系统 ${systemUrlHost(project.systemUrl)}`}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {systemUrlHost(project.systemUrl)}
+                          <ArrowUpRight className="h-3 w-3" />
+                        </a>
+                      )}
                     </div>
                     <footer className="project-card-footer">
                       <span><Layers3 className="h-3.5 w-3.5" />{project.testSetCount || 0} 个用例集</span>
@@ -1419,12 +1700,12 @@ export function TestCasePage() {
 
       <ModalShell open={showProjectModal} onClose={() => !workspace.creatingProject && closeProjectModal()} closeOnBackdrop={!workspace.creatingProject} closeOnEscape={!workspace.creatingProject}>
         {showProjectModal && (
-          <div className="modal-panel w-full max-w-[480px] rounded-[26px] p-6" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="add-project-title">
+          <div className="modal-panel w-full max-w-[560px] rounded-[26px] p-6" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="add-project-title">
             <div className="modal-heading-row">
               <div>
                 <p className="modal-kicker">项目管理</p>
                 <h2 id="add-project-title">{editingProject ? '编辑项目' : '添加项目'}</h2>
-                <span>{editingProject ? `重命名「${editingProject.name}」。` : '为测试用例建立一个清晰的业务归属。'}</span>
+                <span>{editingProject ? `维护「${editingProject.name}」的名称、被测系统地址与图标配色。` : '为测试用例建立一个清晰的业务归属。'}</span>
               </div>
               <button type="button" onClick={closeProjectModal} className="icon-action h-9 w-9" aria-label="关闭项目窗口"><X className="h-4 w-4" /></button>
             </div>
@@ -1440,6 +1721,32 @@ export function TestCasePage() {
                 placeholder="例如：订单中心"
               />
               {projectNameError && <p className="field-error">{projectNameError}</p>}
+            </div>
+            <div className="mt-4">
+              <div className="flex items-baseline justify-between gap-3">
+                <label className={labelCls} htmlFor="testcase-project-url">被测系统地址</label>
+                <span className="field-hint">可选，支持内网地址与 localhost</span>
+              </div>
+              <input
+                id="testcase-project-url"
+                value={projectSystemUrl}
+                onChange={(event) => { setProjectSystemUrl(event.target.value); setProjectUrlError('') }}
+                className={`${inputCls} ${projectUrlError ? 'field-control-error' : ''}`}
+                placeholder="例如：https://staging.shop.com 或 localhost:5173"
+              />
+              {projectUrlError && <p className="field-error">{projectUrlError}</p>}
+            </div>
+            <div className="mt-4">
+              <label className={labelCls}>项目图标</label>
+              <ProjectIconPicker
+                iconKey={projectIconKey}
+                iconColor={projectIconColor}
+                onSelectIcon={(key, defaultColor) => {
+                  setProjectIconKey(key)
+                  if (defaultColor) setProjectIconColor(defaultColor)
+                }}
+                onSelectColor={(hex) => setProjectIconColor(hex)}
+              />
             </div>
             <div className="mt-6 flex justify-end gap-3">
               <button type="button" onClick={closeProjectModal} disabled={workspace.creatingProject} className="secondary-action px-5 py-2.5 text-sm">取消</button>
@@ -1469,9 +1776,10 @@ export function TestCasePage() {
               <div><label className={labelCls}>测试类型</label><CustomSelect value={testType} onChange={(value) => setTestType(value as TestType)} options={TEST_TYPE_OPTIONS} /></div>
               <div><label className={labelCls}>输出语言</label><CustomSelect value={language} onChange={(value) => setLanguage(value as Language)} options={LANGUAGE_OPTIONS} /></div>
             </div>
-            <div className="mt-4">
-              <label className={labelCls} htmlFor="testcase-set-context">需求描述</label>
-              <textarea id="testcase-set-context" value={context} onChange={(event) => { setContext(event.target.value); setFormErrors((current) => ({ ...current, context: undefined })) }} rows={8} className={`${inputCls} ${formErrors.context ? 'field-control-error' : ''}`} placeholder="描述业务规则、输入输出、异常场景、边界条件等。" />
+              <div className="mt-6">
+                {referenceStrip}
+                <label className={labelCls} htmlFor="testcase-set-context">需求描述</label>
+                <textarea id="testcase-set-context" value={context} onChange={(event) => { setContext(event.target.value); setFormErrors((current) => ({ ...current, context: undefined })) }} onPaste={referenceFiles.handlePaste} rows={8} className={`${inputCls} ${formErrors.context ? 'field-control-error' : ''}`} placeholder="描述业务规则、输入输出、异常场景、边界条件等。可直接粘贴需求文档作为参考文件。" />
               {formErrors.context && <p className="field-error">{formErrors.context}</p>}
             </div>
             {testType === 'api' && (
@@ -1503,7 +1811,7 @@ export function TestCasePage() {
             )}
             <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
               <button type="button" onClick={() => setShowTestSetModal(false)} disabled={workspace.generating} className="secondary-action px-5 py-2.5 text-sm">取消</button>
-              <button type="button" onClick={() => void submitTestSet()} disabled={workspace.generating} className="primary-action px-5 py-2.5 text-sm disabled:opacity-50">
+              <button type="button" onClick={() => void submitTestSet()} disabled={workspace.generating} className="ai-glass-action px-5 py-2.5 text-sm disabled:opacity-50">
                 {workspace.generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 {workspace.generating ? '正在创建...' : '开始 AI 生成'}
               </button>

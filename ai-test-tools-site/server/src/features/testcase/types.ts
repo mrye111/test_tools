@@ -11,6 +11,9 @@ export type ProjectRecord = {
   id: string;
   name: string;
   description?: string;
+  systemUrl?: string;
+  iconKey?: string;
+  iconColor?: string;
   createdAt: string;
   ownerId?: number | null;
 };
@@ -55,13 +58,17 @@ export type GenerateJobRecord = {
   id: string;
   projectId: string;
   testSetId: string;
-  mode: "create" | "regenerate_all" | "supplement" | "regenerate_selected";
+  mode: "create" | "regenerate_all" | "supplement" | "regenerate_selected" | "optimize";
   status: "queued" | "running" | "completed" | "failed";
   request: JsonObject;
+  /** 任务密钥信封（v1:keyId:iv:ct）：与 request 内 [SECRET_REF] 占位配套，磁盘/库只存本字段不存明文。 */
+  apiKeyEnc?: string;
   generatedCount: number;
   generatedCountRaw?: number;
   addedCount?: number;
   duplicatesFiltered?: number;
+  /** 优化（optimize）模式的变更统计：修改/新增/删除（按内容指纹计算）。 */
+  optimizeStats?: { modified: number; added: number; removed: number };
   error: string;
   streamText?: string;
   resultHeader: string[];

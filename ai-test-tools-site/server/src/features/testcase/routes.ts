@@ -1,10 +1,14 @@
 import type { Express, Request, Response } from "express";
+import express from "express";
+import { AppError } from "../../app-error.js";
+import { cloudConfigIdOf, type AiConfigResolver } from "../auth/cloud-config-resolve.js";
 import { callChatCompletion, fetchAvailableModels, parseAiRequestConfig, testAiConnection } from "./ai.js";
 import { healCsvRow, rowsToCases } from "./csv.js";
 import { buildExcelExport, buildXmindWorkbook, type ExcelExportOptions } from "./exporters.js";
 import { runGenerationJob } from "./generation.js";
+import { MAX_REFERENCE_FILE_BYTES, ReferenceParseError, parseReferenceFile } from "./reference-parse.js";
 import { sharedTestCaseStore as store } from "./shared-store.js";
-import type { GenerateJobRecord, JsonObject, TestSetRecord } from "./types.js";
+import type { AiRequestConfig, GenerateJobRecord, JsonObject, TestSetRecord } from "./types.js";
 import { boolValue, isObject, makeId, nowIso, numberList, parseMaybeJsonObject, rowsInput, safeDownloadName, text } from "./utils.js";
 
 function ok(res: Response, data: JsonObject = {}): void {
@@ -13,6 +17,12 @@ function ok(res: Response, data: JsonObject = {}): void {
 
 function fail(res: Response, message: string, status = 400): void {
   res.status(status).json({ success: false, error: message });
+}
+
+/** AppError 保留其 HTTP 语义（云端引用 404/400），其余按原样 500/指定状态。 */
+function failError(res: Response, error: unknown, status = 500): void {
+  if (error instanceof AppError) return fail(res, error.message, error.httpStatus);
+  fail(res, error instanceof Error ? error.message : String(error), status);
 }
 
 function body(req: Request): JsonObject {
@@ -62,6 +72,7 @@ function jobResponse(job: GenerateJobRecord): JsonObject {
     generatedCountRaw: job.generatedCountRaw,
     addedCount: job.addedCount,
     duplicatesFiltered: job.duplicatesFiltered,
+    optimizeStats: job.optimizeStats,
     error: job.error,
     streamText: job.streamText ?? "",
     createdAt: job.createdAt,
@@ -73,7 +84,14 @@ function jobResponse(job: GenerateJobRecord): JsonObject {
   };
 }
 
-export function registerTestCaseRoutes(app: Express): void {
+export function registerTestCaseRoutes(app: Express, resolveAiConfig?: AiConfigResolver): void {
+  /** 解析请求体 AI 配置：注入了云端解析器且有登录上下文时走按引用解析，否则回退现状本地解析。 */
+  const resolveConfig = async (req: Request, data: JsonObject): Promise<AiRequestConfig> => {
+    const userId = req.authUser?.id;
+    if (resolveAiConfig && userId) return resolveAiConfig(userId, data);
+    return parseAiRequestConfig(data);
+  };
+
   app.get("/api/projects", (_req, res) => {
     ok(res, {
       data: store.listProjects().map((project) => {
@@ -93,6 +111,9 @@ export function registerTestCaseRoutes(app: Express): void {
       id: text(data.id, `proj_${Date.now()}`),
       name: text(data.name, "未命名项目").trim(),
       description: text(data.description),
+      systemUrl: text(data.systemUrl ?? data.system_url),
+      iconKey: text(data.iconKey ?? data.icon_key),
+      iconColor: text(data.iconColor ?? data.icon_color),
       createdAt: text(data.createdAt, nowIso()),
       ownerId: null,
     };
@@ -103,7 +124,14 @@ export function registerTestCaseRoutes(app: Express): void {
     const existing = store.listProjects().find((item) => item.id === req.params.projectId);
     if (!existing) return fail(res, "项目不存在", 404);
     const data = body(req);
-    store.upsertProject({ ...existing, name: text(data.name, existing.name).trim(), description: text(data.description, existing.description ?? "") });
+    store.upsertProject({
+      ...existing,
+      name: text(data.name, existing.name).trim(),
+      description: text(data.description, existing.description ?? ""),
+      systemUrl: text(data.systemUrl ?? data.system_url, existing.systemUrl ?? ""),
+      iconKey: text(data.iconKey ?? data.icon_key, existing.iconKey ?? ""),
+      iconColor: text(data.iconColor ?? data.icon_color, existing.iconColor ?? ""),
+    });
     ok(res);
   });
 
@@ -170,6 +198,25 @@ export function registerTestCaseRoutes(app: Express): void {
     });
     ok(res, { data: updated });
   });
+
+  /** 参考文件解析：raw body + ?filename=，转发 docling-serve 提取文本（不落库）。 */
+  app.post(
+    "/api/testcase/parse-reference",
+    express.raw({ type: () => true, limit: MAX_REFERENCE_FILE_BYTES }),
+    async (req, res) => {
+      try {
+        const filename = typeof req.query.filename === "string" ? req.query.filename : "";
+        if (!filename) return fail(res, "缺少 filename 查询参数");
+        const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? "");
+        if (buffer.length === 0) return fail(res, "文件内容为空");
+        const parsed = await parseReferenceFile(filename, buffer);
+        ok(res, { data: { text: parsed.text, truncated: parsed.truncated } });
+      } catch (err) {
+        if (err instanceof ReferenceParseError) return fail(res, err.message, 400);
+        fail(res, err instanceof Error ? err.message : "解析参考文件失败", 500);
+      }
+    },
+  );
 
   app.delete("/api/test-sets/:testSetId", (req, res) => {
     const projectId = projectIdFrom(req);
@@ -246,37 +293,52 @@ export function registerTestCaseRoutes(app: Express): void {
 
   app.post("/api/test-connection", async (req, res) => {
     try {
-      await testAiConnection(parseAiRequestConfig(body(req)));
+      await testAiConnection(await resolveConfig(req, body(req)));
       ok(res, { message: "API 连接成功" });
     } catch (error) {
-      fail(res, error instanceof Error ? error.message : String(error), 500);
+      failError(res, error);
     }
   });
 
   app.post("/api/model-config/models", async (req, res) => {
     try {
-      const models = await fetchAvailableModels(parseAiRequestConfig(body(req)));
+      const models = await fetchAvailableModels(await resolveConfig(req, body(req)));
       ok(res, { data: models });
     } catch (error) {
-      fail(res, error instanceof Error ? error.message : String(error), 500);
+      failError(res, error);
     }
   });
 
-  app.post("/api/generate-jobs", (req, res) => {
+  app.post("/api/generate-jobs", async (req, res) => {
     const data = body(req);
     const id = makeId("job");
     const projectId = projectIdFrom(req, data);
     if (!projectId || !store.projectExists(projectId)) return fail(res, "项目不存在", 404);
     const testSetId = text(data.testSetId ?? data.test_set_id, `tool-result-${id}`);
     const mode = text(data.mode, "create") as GenerateJobRecord["mode"];
-    if (!["create", "regenerate_all", "supplement", "regenerate_selected"].includes(mode)) return fail(res, "mode 参数无效");
+    if (!["create", "regenerate_all", "supplement", "regenerate_selected", "optimize"].includes(mode)) return fail(res, "mode 参数无效");
     if (!text(data.context).trim()) return fail(res, "context 不能为空");
     const existing = text(data.testSetId ?? data.test_set_id) ? store.findActiveJob(testSetId) : undefined;
     if (existing) return ok(res, { data: { jobId: existing.id, status: existing.status, testSetId, mode: existing.mode } });
     const selectedIndices = numberList(data.selectedIndices);
     if (mode === "regenerate_selected" && selectedIndices.length === 0) return fail(res, "selectedIndices 不能为空");
+
+    // 云端引用（ai_config 只有 cloudConfigId）：提交时快速失败校验（不存在/非本人 404、缺密钥 400），
+    // 并把提交者写入 request 供运行起点按引用重取——密钥明文不进任务 request 落库。
+    let cloudConfigUserId: string | null = null;
+    if (cloudConfigIdOf(data)) {
+      try {
+        await resolveConfig(req, data);
+      } catch (error) {
+        failError(res, error);
+        return;
+      }
+      cloudConfigUserId = req.authUser?.id ?? null;
+      if (!cloudConfigUserId) return fail(res, "云端模型配置引用需要登录上下文", 401);
+    }
+
     const now = nowIso();
-    const existingTestSet = (mode === "supplement" || mode === "regenerate_all" || mode === "regenerate_selected")
+    const existingTestSet = (mode === "supplement" || mode === "optimize" || mode === "regenerate_all" || mode === "regenerate_selected")
       ? store.getTestSet(testSetId)
       : undefined;
     const promptPreset = text(data.promptPreset ?? data.prompt_preset) || existingTestSet?.promptPreset || "standard";
@@ -308,7 +370,7 @@ export function registerTestCaseRoutes(app: Express): void {
       testSetId,
       mode,
       status: "queued",
-      request: { ...data, promptPreset },
+      request: { ...data, promptPreset, ...(cloudConfigUserId ? { cloudConfigUserId } : {}) },
       generatedCount: 0,
       error: "",
       streamText: "",
@@ -342,7 +404,7 @@ export function registerTestCaseRoutes(app: Express): void {
       const data = body(req);
       const images = Array.isArray(data.images) ? data.images : data.image ? [data.image] : [];
       if (!images.length) return fail(res, "No image data provided");
-      const config = parseAiRequestConfig(data);
+      const config = await resolveConfig(req, data);
       const describe = text(data.mode, "extract") === "describe";
       const prompt = describe
         ? `请详细描述图片中的内容。${text(data.userDescription) ? `用户补充说明：${text(data.userDescription)}` : ""}`

@@ -1,5 +1,5 @@
-import { buildUrl, parseJson, downloadBlob } from './httpClient'
-import { type AiConfig, type StoredModelConfig, type UniversalProvider, toAiConfig } from '../shared/api-types'
+import { apiFetch, buildUrl, parseJson, downloadBlob } from './httpClient'
+import { type AiConfig, type AiConfigSubmitPayload, type StoredModelConfig, toAiConfig } from '../shared/api-types'
 import { loadStoredModelConfig } from './model-config-store'
 
 export type { AiConfig, StoredModelConfig }
@@ -14,9 +14,22 @@ export interface TestCaseExportFormat {
 export interface TestCaseProject {
   id: string
   name: string
+  /** 被测系统地址（可选，展示为外链；允许内网地址与 localhost） */
+  systemUrl?: string
+  /** 图标符号 key：内置语义图标或品牌图标 */
+  iconKey?: string
+  /** 图标字形颜色（CSS 颜色值，徽标底色为其同色系浅色调） */
+  iconColor?: string
   createdAt: string
   testSetCount: number
   testCaseCount: number
+}
+
+export interface ProjectInput {
+  name: string
+  systemUrl?: string
+  iconKey?: string
+  iconColor?: string
 }
 
 export type TestCaseExecutionStatus = 'untested' | 'passed' | 'failed' | 'blocked'
@@ -58,46 +71,56 @@ async function readData<T>(response: Response, fallback: string): Promise<T> {
 }
 
 export async function listTestCaseProjects() {
-  return readData<TestCaseProject[]>(await fetch(buildUrl('/api/projects')), '获取项目失败')
+  return readData<TestCaseProject[]>(await apiFetch(buildUrl('/api/projects')), '获取项目失败')
 }
 
-export async function createTestCaseProject(name: string) {
-  const response = await fetch(buildUrl('/api/projects'), {
+export async function createTestCaseProject(input: ProjectInput) {
+  const response = await apiFetch(buildUrl('/api/projects'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({
+      name: input.name,
+      systemUrl: input.systemUrl ?? '',
+      iconKey: input.iconKey ?? '',
+      iconColor: input.iconColor ?? '',
+    }),
   })
   return readData<TestCaseProject>(response, '创建项目失败')
 }
 
-export async function updateTestCaseProject(projectId: string, name: string) {
-  const response = await fetch(buildUrl(`/api/projects/${encodeURIComponent(projectId)}`), {
+export async function updateTestCaseProject(projectId: string, input: ProjectInput) {
+  const response = await apiFetch(buildUrl(`/api/projects/${encodeURIComponent(projectId)}`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({
+      name: input.name,
+      systemUrl: input.systemUrl ?? '',
+      iconKey: input.iconKey ?? '',
+      iconColor: input.iconColor ?? '',
+    }),
   })
   const body = await parseJson<ApiEnvelope<unknown>>(response)
   if (!response.ok || body.success === false) throw new Error(body.error ?? `更新项目失败：${response.status}`)
 }
 
 export async function deleteTestCaseProject(projectId: string) {
-  const response = await fetch(buildUrl(`/api/projects/${encodeURIComponent(projectId)}`), { method: 'DELETE' })
+  const response = await apiFetch(buildUrl(`/api/projects/${encodeURIComponent(projectId)}`), { method: 'DELETE' })
   const body = await parseJson<ApiEnvelope<unknown>>(response)
   if (!response.ok || body.success === false) throw new Error(body.error ?? `删除项目失败：${response.status}`)
 }
 
 export async function listTestCaseSets(projectId: string) {
   const query = new URLSearchParams({ project_id: projectId })
-  return readData<TestCaseSet[]>(await fetch(buildUrl(`/api/test-sets?${query}`)), '获取用例集失败')
+  return readData<TestCaseSet[]>(await apiFetch(buildUrl(`/api/test-sets?${query}`)), '获取用例集失败')
 }
 
 export async function getTestCaseSet(testSetId: string) {
-  return readData<TestCaseSet>(await fetch(buildUrl(`/api/test-sets/${encodeURIComponent(testSetId)}`)), '获取测试用例集失败')
+  return readData<TestCaseSet>(await apiFetch(buildUrl(`/api/test-sets/${encodeURIComponent(testSetId)}`)), '获取测试用例集失败')
 }
 
 export async function deleteTestCaseSet(projectId: string, testSetId: string) {
   const query = new URLSearchParams({ project_id: projectId })
-  const response = await fetch(buildUrl(`/api/test-sets/${encodeURIComponent(testSetId)}?${query}`), { method: 'DELETE' })
+  const response = await apiFetch(buildUrl(`/api/test-sets/${encodeURIComponent(testSetId)}?${query}`), { method: 'DELETE' })
   const body = await parseJson<ApiEnvelope<unknown>>(response)
   if (!response.ok || body.success === false) throw new Error(body.error ?? `删除用例集失败：${response.status}`)
 }
@@ -107,7 +130,7 @@ export async function upsertTestCase(args: {
   id?: string
   row: string[]
 }) {
-  const response = await fetch(buildUrl('/api/test-cases'), {
+  const response = await apiFetch(buildUrl('/api/test-cases'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(args),
@@ -117,7 +140,7 @@ export async function upsertTestCase(args: {
 
 export async function deleteTestCase(testSetId: string, caseId: string) {
   const query = new URLSearchParams({ test_set_id: testSetId })
-  const response = await fetch(buildUrl(`/api/test-cases/${encodeURIComponent(caseId)}?${query}`), { method: 'DELETE' })
+  const response = await apiFetch(buildUrl(`/api/test-cases/${encodeURIComponent(caseId)}?${query}`), { method: 'DELETE' })
   return readData<TestCaseSet>(response, '删除测试用例失败')
 }
 
@@ -148,6 +171,7 @@ export interface GenerateJobStatusResponse {
     generatedCountRaw?: number
     addedCount?: number
     duplicatesFiltered?: number
+    optimizeStats?: { modified: number; added: number; removed: number }
     error: string
     streamText?: string
     createdAt: string
@@ -170,7 +194,7 @@ export type GenerateJobData = NonNullable<GenerateJobStatusResponse['data']>
 export { loadStoredModelConfig }
 
 export async function getTestCaseExportFormats() {
-  const response = await fetch(buildUrl('/api/export/formats'))
+  const response = await apiFetch(buildUrl('/api/export/formats'))
   const data = await parseJson<{ success: boolean; data?: TestCaseExportFormat[]; error?: string }>(response)
   if (!response.ok || data.success === false) {
     throw new Error(data.error ?? `获取导出格式失败：${response.status}`)
@@ -179,20 +203,20 @@ export async function getTestCaseExportFormats() {
 }
 
 export async function createGenerateJob(args: {
-  mode: 'create' | 'regenerate_all' | 'supplement' | 'regenerate_selected'
+  mode: 'create' | 'regenerate_all' | 'supplement' | 'regenerate_selected' | 'optimize'
   featureName: string
   context: string
   testType: 'functional' | 'api' | 'security'
   language: 'zh' | 'en'
   promptPreset?: 'standard' | 'google_qa'
-  aiConfig: UniversalProvider
+  aiConfig: AiConfigSubmitPayload
   rows?: string[][]
   selectedIndices?: number[]
   testSetId?: string
   projectId: string
   testSetName: string
 }) {
-  const response = await fetch(buildUrl('/api/generate-jobs'), {
+  const response = await apiFetch(buildUrl('/api/generate-jobs'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -207,7 +231,7 @@ export async function createGenerateJob(args: {
       testSetId: args.testSetId,
       projectId: args.projectId,
       testSetName: args.testSetName,
-      ai_config: toAiConfig(args.aiConfig),
+      ai_config: args.aiConfig,
     }),
   })
 
@@ -219,7 +243,7 @@ export async function createGenerateJob(args: {
 }
 
 export async function updateTestCaseExecution(testSetId: string, executionStatus: Record<string, TestCaseExecutionItem>) {
-  const response = await fetch(buildUrl(`/api/test-sets/${encodeURIComponent(testSetId)}/execution`), {
+  const response = await apiFetch(buildUrl(`/api/test-sets/${encodeURIComponent(testSetId)}/execution`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ executionStatus }),
@@ -227,8 +251,19 @@ export async function updateTestCaseExecution(testSetId: string, executionStatus
   return readData<TestCaseSet>(response, '更新用例执行状态失败')
 }
 
+/** 参考文件解析：raw body + ?filename=，转发 docling-serve 提取文本（不落库）。 */
+export async function parseReferenceFileApi(filename: string, file: File) {
+  const query = new URLSearchParams({ filename })
+  const response = await apiFetch(buildUrl(`/api/testcase/parse-reference?${query}`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: file,
+  })
+  return readData<{ text: string; truncated: boolean }>(response, '解析参考文件失败')
+}
+
 export async function getGenerateJob(jobId: string) {
-  const response = await fetch(buildUrl(`/api/generate-jobs/${encodeURIComponent(jobId)}`))
+  const response = await apiFetch(buildUrl(`/api/generate-jobs/${encodeURIComponent(jobId)}`))
   const data = await parseJson<GenerateJobStatusResponse>(response)
   if (!response.ok || data.success === false || !data.data) {
     throw new Error(data.error ?? `获取任务状态失败：${response.status}`)
@@ -257,7 +292,7 @@ export async function exportTestCaseExcel(args: {
   labels?: string
   productName?: string
 }) {
-  const response = await fetch(buildUrl('/api/export/excel'), {
+  const response = await apiFetch(buildUrl('/api/export/excel'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(args),
@@ -273,7 +308,7 @@ export async function exportTestCaseXmind(args: {
   featureName: string
   rows: string[][]
 }) {
-  const response = await fetch(buildUrl('/api/export/xmind'), {
+  const response = await apiFetch(buildUrl('/api/export/xmind'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(args),
@@ -289,7 +324,7 @@ export async function exportTestCaseExcelAll(args: {
   projectName: string
   testSets: Array<{ featureName: string; rows: string[][] }>
 }) {
-  const response = await fetch(buildUrl('/api/export/excel-all'), {
+  const response = await apiFetch(buildUrl('/api/export/excel-all'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...args, format: 'default' }),
@@ -302,7 +337,7 @@ export async function exportTestCaseXmindAll(args: {
   projectName: string
   testSets: Array<{ featureName: string; rows: string[][] }>
 }) {
-  const response = await fetch(buildUrl('/api/export/xmind-all'), {
+  const response = await apiFetch(buildUrl('/api/export/xmind-all'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(args),

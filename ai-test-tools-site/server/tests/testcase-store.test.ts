@@ -1,11 +1,13 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "../src/app-error.js";
+import { createSecretCrypto } from "../src/shared/secret-crypto.js";
+import { SECRET_REF_PLACEHOLDER, setJobSecretCrypto } from "../src/features/testcase/job-secrets.js";
 import { runGenerationJob } from "../src/features/testcase/generation.js";
 import { TestCaseStore, type TestCaseStoreOptions } from "../src/features/testcase/store.js";
-import type { GenerateJobRecord, TestSetRecord } from "../src/features/testcase/types.js";
+import type { GenerateJobRecord, JsonObject, TestSetRecord } from "../src/features/testcase/types.js";
 
 const tempDirs: string[] = [];
 
@@ -71,6 +73,7 @@ function makeJob(id = "job_1"): GenerateJobRecord {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  setJobSecretCrypto(null);
   while (tempDirs.length) {
     const dir = tempDirs.pop();
     if (dir) rmSync(dir, { recursive: true, force: true });
@@ -174,6 +177,8 @@ describe("测试用例 Store 落盘策略", () => {
 
   it("生成任务终态落盘失败时，任务被标记为失败而不是假成功", async () => {
     const failWrites = { current: true };
+    // 注入密钥上下文：密钥剥离成功后由写盘失败触发终态失败（测的是写盘失败路径而非缺密钥）
+    setJobSecretCrypto(createSecretCrypto({ masterKeyBase64: Buffer.alloc(32, 5).toString("base64") }));
     const { store } = createStoreWithWriteSpy({ failWrites });
     store.upsertTestSet({ ...makeTestSet(), status: "queued" });
     const job = makeJob();
@@ -251,5 +256,68 @@ describe("测试用例 Store 落盘策略", () => {
     const fetched = store.getTestSet("set_1");
     expect(fetched?.executionStatus?.TC001?.status).toBe("passed");
     expect(fetched?.executionStatus?.TC002?.bugId).toBe("BUG-001");
+  });
+});
+
+describe("任务密钥剥离（JSON 文件持久化）", () => {
+  const secret = createSecretCrypto({ masterKeyBase64: Buffer.alloc(32, 9).toString("base64") });
+
+  function createStoreAt(path: string) {
+    return new TestCaseStore(path, { persistDebounceMs: 0 });
+  }
+
+  it("落盘剥离 request 内 apiKey 明文，重载还原（文件只存占位+信封，重落盘仍无明文）", () => {
+    setJobSecretCrypto(secret);
+    const dir = mkdtempSync(join(tmpdir(), "testcase-secret-"));
+    tempDirs.push(dir);
+    const path = join(dir, "store.json");
+
+    const store = createStoreAt(path);
+    const job = makeJob();
+    job.request = {
+      context: "登录",
+      ai_config: { baseUrl: "https://ai.test/v1", apiKey: "sk-plain-9999", model: "m" },
+    };
+    store.createJob(job);
+
+    // 文件侧：无明文、占位串 + api_key_enc 信封随记录存
+    const raw = readFileSync(path, "utf8");
+    expect(raw).not.toContain("sk-plain-9999");
+    expect(raw).toContain(SECRET_REF_PLACEHOLDER);
+    const persisted = JSON.parse(raw) as { generationJobs: GenerateJobRecord[] };
+    expect(persisted.generationJobs[0]?.apiKeyEnc).toMatch(/^v1:/);
+    expect(persisted.generationJobs[0]?.apiKeyEnc).not.toContain("sk-plain-9999");
+
+    // 重载：内存态还原出明文，文件仍是信封；再次落盘保持剥离
+    const reloaded = createStoreAt(path);
+    const restored = reloaded.getJob("job_1");
+    expect((restored?.request.ai_config as JsonObject).apiKey).toBe("sk-plain-9999");
+    reloaded.updateJob("job_1", { status: "completed" });
+    const rawAfter = readFileSync(path, "utf8");
+    expect(rawAfter).not.toContain("sk-plain-9999");
+    expect(rawAfter).toContain(SECRET_REF_PLACEHOLDER);
+  });
+
+  it("占位+信封但缺 SecretCrypto 时保留占位（不误报明文，落盘沿用原信封）", () => {
+    setJobSecretCrypto(secret);
+    const dir = mkdtempSync(join(tmpdir(), "testcase-secret-"));
+    tempDirs.push(dir);
+    const path = join(dir, "store.json");
+
+    const store = createStoreAt(path);
+    const job = makeJob();
+    job.request = { aiConfig: { apiKey: "sk-laya-7777", model: "m" } };
+    store.createJob(job);
+    const firstEnvelope = (JSON.parse(readFileSync(path, "utf8")) as { generationJobs: GenerateJobRecord[] }).generationJobs[0]?.apiKeyEnc;
+    expect(firstEnvelope).toMatch(/^v1:/);
+
+    // 未注入密钥时重载：占位保持、信封沿用，再落盘不丢密钥
+    setJobSecretCrypto(null);
+    const reloaded = createStoreAt(path);
+    expect((reloaded.getJob("job_1")?.request.aiConfig as JsonObject).apiKey).toBe(SECRET_REF_PLACEHOLDER);
+    reloaded.updateJob("job_1", { status: "failed", error: "x" });
+    const persisted = (JSON.parse(readFileSync(path, "utf8")) as { generationJobs: GenerateJobRecord[] }).generationJobs[0];
+    expect(persisted?.apiKeyEnc).toBe(firstEnvelope);
+    expect((persisted?.request.aiConfig as JsonObject).apiKey).toBe(SECRET_REF_PLACEHOLDER);
   });
 });

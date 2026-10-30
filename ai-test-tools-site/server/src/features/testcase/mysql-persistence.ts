@@ -1,8 +1,11 @@
 /** 测试用例域 MySQL 持久化适配器：schema 初始化、快照水合与按表写穿透。 */
 
 import type { Pool, ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import type { SecretCrypto } from "../../shared/secret-crypto.js";
+import { getJobSecretCrypto, restoreApiKeySecret, stripApiKeySecret } from "./job-secrets.js";
 import type {
   GenerateJobRecord,
+  JsonObject,
   ProjectRecord,
   TestCaseRecord,
   TestCaseStoreData,
@@ -24,6 +27,9 @@ export const TESTCASE_SCHEMA_STATEMENTS = [
     id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(200) NOT NULL,
     description TEXT,
+    system_url TEXT,
+    icon_key VARCHAR(64),
+    icon_color VARCHAR(32),
     created_at DATETIME(3) NOT NULL,
     owner_id BIGINT NULL
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -77,6 +83,7 @@ export const TESTCASE_SCHEMA_STATEMENTS = [
     result_header JSON,
     result_rows JSON,
     selected_indices JSON,
+    optimize_stats JSON,
     created_at DATETIME(3) NOT NULL,
     updated_at DATETIME(3) NOT NULL,
     started_at DATETIME(3) NULL,
@@ -86,11 +93,27 @@ export const TESTCASE_SCHEMA_STATEMENTS = [
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 ];
 
+/** 存量表的补列迁移（MySQL 不支持 ADD COLUMN IF NOT EXISTS，重复列错误容忍跳过）。 */
+const COLUMN_MIGRATIONS = [
+  "ALTER TABLE tc_projects ADD COLUMN system_url TEXT",
+  "ALTER TABLE tc_projects ADD COLUMN icon_key VARCHAR(64)",
+  "ALTER TABLE tc_projects ADD COLUMN icon_color VARCHAR(32)",
+  "ALTER TABLE tc_generation_jobs ADD COLUMN optimize_stats JSON",
+  "ALTER TABLE tc_generation_jobs ADD COLUMN api_key_enc TEXT",
+];
+
 export async function initTestcaseSchema(pool: Pool): Promise<void> {
   const connection = await pool.getConnection();
   try {
     for (const statement of TESTCASE_SCHEMA_STATEMENTS) {
       await connection.query(statement);
+    }
+    for (const statement of COLUMN_MIGRATIONS) {
+      try {
+        await connection.query(statement);
+      } catch (error) {
+        if ((error as { code?: string } | undefined)?.code !== "ER_DUP_FIELDNAME") throw error;
+      }
     }
   } finally {
     connection.release();
@@ -126,6 +149,9 @@ interface ProjectRow extends RowDataPacket {
   id: string;
   name: string;
   description: string | null;
+  system_url: string | null;
+  icon_key: string | null;
+  icon_color: string | null;
   created_at: Date | string;
   owner_id: number | null;
 }
@@ -172,6 +198,7 @@ interface JobRow extends RowDataPacket {
   mode: string;
   status: string;
   request: unknown;
+  api_key_enc?: string | null;
   generated_count: number;
   generated_count_raw: number | null;
   added_count: number | null;
@@ -180,6 +207,7 @@ interface JobRow extends RowDataPacket {
   result_header: unknown;
   result_rows: unknown;
   selected_indices: unknown;
+  optimize_stats: unknown;
   created_at: Date | string;
   updated_at: Date | string;
   started_at: Date | string | null;
@@ -191,6 +219,9 @@ function toProject(row: ProjectRow): ProjectRecord {
     id: row.id,
     name: row.name,
     description: row.description ?? undefined,
+    systemUrl: row.system_url ?? undefined,
+    iconKey: row.icon_key ?? undefined,
+    iconColor: row.icon_color ?? undefined,
     createdAt: toIso(row.created_at) ?? new Date(0).toISOString(),
     ownerId: row.owner_id,
   };
@@ -236,13 +267,17 @@ function toTestCase(row: TestCaseRow): TestCaseRecord {
 }
 
 function toJob(row: JobRow): GenerateJobRecord {
+  const request = toJsonValue<JsonObject>(row.request, {});
+  const apiKeyEnc = row.api_key_enc ?? undefined;
   return {
     id: row.id,
     projectId: row.project_id,
     testSetId: row.test_set_id,
     mode: row.mode as GenerateJobRecord["mode"],
     status: row.status as GenerateJobRecord["status"],
-    request: toJsonValue<GenerateJobRecord["request"]>(row.request, {}),
+    // 内存态还原：api_key_enc 解密回填 request 的占位字段（磁盘/库侧永远只有信封）
+    request: restoreApiKeySecret(request, apiKeyEnc, getJobSecretCrypto()),
+    apiKeyEnc,
     generatedCount: row.generated_count,
     generatedCountRaw: row.generated_count_raw ?? undefined,
     addedCount: row.added_count ?? undefined,
@@ -251,6 +286,7 @@ function toJob(row: JobRow): GenerateJobRecord {
     resultHeader: toJsonValue<string[]>(row.result_header, []),
     resultRows: toJsonValue<string[][]>(row.result_rows, []),
     selectedIndices: toJsonValue<number[]>(row.selected_indices, []),
+    optimizeStats: toJsonValue<GenerateJobRecord["optimizeStats"]>(row.optimize_stats, undefined),
     createdAt: toIso(row.created_at) ?? new Date(0).toISOString(),
     updatedAt: toIso(row.updated_at) ?? new Date(0).toISOString(),
     startedAt: toIso(row.started_at),
@@ -277,12 +313,16 @@ async function loadSnapshot(pool: Pool): Promise<TestCaseStoreData | null> {
 const TABLE_SQL: Record<PersistTable, { deleteSql: string; insertSql: string; toParams: (data: TestCaseStoreData) => unknown[][] }> = {
   projects: {
     deleteSql: "DELETE FROM tc_projects",
-    insertSql: "INSERT INTO tc_projects (id, name, description, created_at, owner_id) VALUES ?",
+    insertSql:
+      "INSERT INTO tc_projects (id, name, description, system_url, icon_key, icon_color, created_at, owner_id) VALUES ?",
     toParams: (data) =>
       data.projects.map((item) => [
         item.id,
         item.name,
         item.description ?? null,
+        item.systemUrl ?? null,
+        item.iconKey ?? null,
+        item.iconColor ?? null,
         toDate(item.createdAt) ?? new Date(),
         item.ownerId ?? null,
       ]),
@@ -335,28 +375,34 @@ const TABLE_SQL: Record<PersistTable, { deleteSql: string; insertSql: string; to
   generationJobs: {
     deleteSql: "DELETE FROM tc_generation_jobs",
     insertSql:
-      "INSERT INTO tc_generation_jobs (id, project_id, test_set_id, mode, status, request, generated_count, generated_count_raw, added_count, duplicates_filtered, error, result_header, result_rows, selected_indices, created_at, updated_at, started_at, finished_at) VALUES ?",
+      "INSERT INTO tc_generation_jobs (id, project_id, test_set_id, mode, status, request, generated_count, generated_count_raw, added_count, duplicates_filtered, error, result_header, result_rows, selected_indices, optimize_stats, created_at, updated_at, started_at, finished_at, api_key_enc) VALUES ?",
     toParams: (data) =>
-      data.generationJobs.map((item) => [
-        item.id,
-        item.projectId,
-        item.testSetId,
-        item.mode,
-        item.status,
-        JSON.stringify(item.request ?? {}),
-        item.generatedCount,
-        item.generatedCountRaw ?? null,
-        item.addedCount ?? null,
-        item.duplicatesFiltered ?? null,
-        item.error,
-        JSON.stringify(item.resultHeader ?? []),
-        JSON.stringify(item.resultRows ?? []),
-        JSON.stringify(item.selectedIndices ?? []),
-        toDate(item.createdAt) ?? new Date(),
-        toDate(item.updatedAt) ?? new Date(),
-        toDate(item.startedAt),
-        toDate(item.finishedAt),
-      ]),
+      data.generationJobs.map((item) => {
+        // 写入前剥离密钥：request 内留 [SECRET_REF]，信封进 api_key_enc（明文一次也不落库）
+        const stored = stripApiKeySecret(item.request ?? {}, item.apiKeyEnc, getJobSecretCrypto());
+        return [
+          item.id,
+          item.projectId,
+          item.testSetId,
+          item.mode,
+          item.status,
+          JSON.stringify(stored.request),
+          item.generatedCount,
+          item.generatedCountRaw ?? null,
+          item.addedCount ?? null,
+          item.duplicatesFiltered ?? null,
+          item.error,
+          JSON.stringify(item.resultHeader ?? []),
+          JSON.stringify(item.resultRows ?? []),
+          JSON.stringify(item.selectedIndices ?? []),
+          item.optimizeStats ? JSON.stringify(item.optimizeStats) : null,
+          toDate(item.createdAt) ?? new Date(),
+          toDate(item.updatedAt) ?? new Date(),
+          toDate(item.startedAt),
+          toDate(item.finishedAt),
+          stored.apiKeyEnc,
+        ];
+      }),
   },
 };
 
@@ -392,4 +438,37 @@ export function createMysqlTestcaseAdapter(pool: Pool): TestCasePersistenceAdapt
     load: () => loadSnapshot(pool),
     save: (tables, data) => saveTables(pool, tables, data),
   };
+}
+
+/** 一次性密钥迁移的游标批处理大小。 */
+const SECRET_MIGRATION_BATCH_SIZE = 200;
+
+/**
+ * 存量任务密钥一次性迁移（幂等、可重跑）：SELECT 候选行后在 Node 里剥离加密再 UPDATE，
+ * request 内明文 apiKey 全部转为 api_key_enc 信封 + [SECRET_REF] 占位，明文一次清零。
+ * 已迁移行（api_key_enc 非空）不再入选，跑两遍结果一致。
+ */
+export async function migrateGenerationJobSecrets(pool: Pool, secret: SecretCrypto): Promise<number> {
+  let cursor = "";
+  let migrated = 0;
+  for (;;) {
+    const [rows] = await pool.query<JobRow[]>(
+      `SELECT id, request, api_key_enc FROM tc_generation_jobs WHERE api_key_enc IS NULL AND id > ? ORDER BY id LIMIT ${SECRET_MIGRATION_BATCH_SIZE}`,
+      [cursor],
+    );
+    if (rows.length === 0) break;
+    for (const row of rows) {
+      cursor = row.id;
+      const request = toJsonValue<JsonObject>(row.request, {});
+      const stored = stripApiKeySecret(request, row.api_key_enc, secret);
+      if (!stored.changed || !stored.apiKeyEnc) continue;
+      await pool.query("UPDATE tc_generation_jobs SET api_key_enc = ?, request = ? WHERE id = ?", [
+        stored.apiKeyEnc,
+        JSON.stringify(stored.request),
+        row.id,
+      ]);
+      migrated += 1;
+    }
+  }
+  return migrated;
 }

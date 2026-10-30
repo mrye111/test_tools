@@ -1,6 +1,8 @@
 import { logger } from "../../logger.js";
 import { resolveSharedChatDb } from "../../shared/db/pool.js";
-import { createMysqlTestcaseAdapter, initTestcaseSchema } from "./mysql-persistence.js";
+import { ensureSecretMasterKey } from "../../shared/secret-crypto.js";
+import { setJobSecretCrypto } from "./job-secrets.js";
+import { createMysqlTestcaseAdapter, initTestcaseSchema, migrateGenerationJobSecrets } from "./mysql-persistence.js";
 import type { TestCaseStore } from "./store.js";
 
 /**
@@ -9,10 +11,17 @@ import type { TestCaseStore } from "./store.js";
  * 不可用 → 保持原有 JSON 文件存储，功能不受影响。
  */
 export async function bootstrapTestCaseStore(store: TestCaseStore): Promise<void> {
+  // 任务密钥剥离：注入进程级 SecretCrypto（JSON 文件与 tc_* 库都只落信封不落明文），并补一次内存态还原
+  const secret = ensureSecretMasterKey();
+  setJobSecretCrypto(secret);
+  store.rehydrateJobSecrets();
+
   const handle = await resolveSharedChatDb();
   if (handle.mode === "mysql" && handle.pool) {
     try {
       await initTestcaseSchema(handle.pool);
+      // 存量任务密钥一次性迁移（幂等）：request 内明文 apiKey 剥离为 api_key_enc 信封
+      await migrateGenerationJobSecrets(handle.pool, secret);
       await store.attachDb(createMysqlTestcaseAdapter(handle.pool));
       logger.info("测试用例域使用 MySQL 存储（tc_* 表，本地 JSON 文件保留为离线备份）");
       return;

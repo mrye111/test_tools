@@ -16,10 +16,19 @@ vi.mock('../lib/testcase-api', () => ({
   exportTestCaseXmindAll: vi.fn(),
   listTestCaseProjects: vi.fn(),
   listTestCaseSets: vi.fn(),
-  loadStoredModelConfig: vi.fn(),
   updateTestCaseProject: vi.fn(),
   upsertTestCase: vi.fn(),
   waitForGenerateJob: vi.fn(),
+}))
+
+vi.mock('../lib/active-ai-config', () => ({
+  loadActiveAiConfigSelection: vi.fn(async () => ({
+    storage: 'local',
+    payload: { provider: 'codex', endpointType: 'openai_responses', baseUrl: 'https://example.test/v1', apiKey: 'test-key', model: 'test-model' },
+    name: '测试模型',
+    model: 'test-model',
+    apiFormat: 'openai_responses',
+  })),
 }))
 
 const project = {
@@ -50,15 +59,6 @@ describe('TestCasePage', () => {
     vi.clearAllMocks()
     vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([])
     vi.mocked(testcaseApi.listTestCaseSets).mockResolvedValue([])
-    vi.mocked(testcaseApi.loadStoredModelConfig).mockReturnValue({
-      id: 'model-1',
-      name: '测试模型',
-      providerType: 'openrouter',
-      baseUrl: 'https://example.test/v1',
-      apiKey: 'test-key',
-      model: 'test-model',
-      apiFormat: 'openai_responses',
-    })
     vi.mocked(testcaseApi.waitForGenerateJob).mockImplementation(async () => new Promise(() => undefined))
   })
 
@@ -81,7 +81,7 @@ describe('TestCasePage', () => {
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '订单中心' } })
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '添加项目' }))
 
-    await waitFor(() => expect(testcaseApi.createTestCaseProject).toHaveBeenCalledWith('订单中心'))
+    await waitFor(() => expect(testcaseApi.createTestCaseProject).toHaveBeenCalledWith(expect.objectContaining({ name: '订单中心' })))
     expect(await screen.findByRole('heading', { name: '订单中心' })).toBeInTheDocument()
     expect(await screen.findByText('这个项目还没有用例集')).toBeInTheDocument()
     // 弹窗退出动画（200ms）结束后才真正卸载
@@ -97,12 +97,12 @@ describe('TestCasePage', () => {
     expect(within(card).getByText('21 条用例')).toBeInTheDocument()
   })
 
-  it('项目卡片支持重命名，提交后调用更新接口', async () => {
+  it('项目卡片支持编辑资料，提交后调用更新接口', async () => {
     vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([project])
     vi.mocked(testcaseApi.updateTestCaseProject).mockResolvedValue(undefined)
 
     render(<TestCasePage />, { wrapper: BrowserRouter })
-    fireEvent.click(await screen.findByRole('button', { name: '重命名项目 订单中心' }))
+    fireEvent.click(await screen.findByRole('button', { name: '编辑项目 订单中心' }))
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByRole('heading', { name: '编辑项目' })).toBeInTheDocument()
@@ -111,9 +111,60 @@ describe('TestCasePage', () => {
     fireEvent.change(input, { target: { value: '订单中心二期' } })
     fireEvent.click(within(dialog).getByRole('button', { name: '保存修改' }))
 
-    await waitFor(() => expect(testcaseApi.updateTestCaseProject).toHaveBeenCalledWith(project.id, '订单中心二期'))
+    await waitFor(() => expect(testcaseApi.updateTestCaseProject).toHaveBeenCalledWith(project.id, expect.objectContaining({ name: '订单中心二期' })))
     expect(testcaseApi.createTestCaseProject).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('添加项目支持被测系统地址与品牌图标，归一化后提交', async () => {
+    vi.mocked(testcaseApi.createTestCaseProject).mockResolvedValue(project)
+    vi.mocked(testcaseApi.listTestCaseProjects)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([project])
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '添加项目' }))
+
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '订单中心' } })
+    // 无协议域名归一化为 https；品牌图标默认官方色，色板点击覆盖
+    fireEvent.change(screen.getByLabelText('被测系统地址'), { target: { value: 'staging.shop.com' } })
+    fireEvent.change(screen.getByLabelText('搜索图标'), { target: { value: 'wechat' } })
+    fireEvent.click(screen.getByRole('button', { name: 'WeChat' }))
+    fireEvent.click(screen.getByRole('button', { name: '配色 红' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '添加项目' }))
+
+    await waitFor(() => expect(testcaseApi.createTestCaseProject).toHaveBeenCalledWith({
+      name: '订单中心',
+      systemUrl: 'https://staging.shop.com/',
+      iconKey: 'brand:wechat',
+      iconColor: '#E5484D',
+    }))
+  })
+
+  it('被测系统地址非法时行内报错且不提交', async () => {
+    vi.mocked(testcaseApi.createTestCaseProject).mockResolvedValue(project)
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '添加项目' }))
+
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '订单中心' } })
+    fireEvent.change(screen.getByLabelText('被测系统地址'), { target: { value: '中文地址' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '添加项目' }))
+
+    expect(await screen.findByText('地址不能包含中文，请填写 URL 形式')).toBeInTheDocument()
+    expect(testcaseApi.createTestCaseProject).not.toHaveBeenCalled()
+  })
+
+  it('项目卡片展示被测系统外链（新标签打开）', async () => {
+    vi.mocked(testcaseApi.listTestCaseProjects).mockResolvedValue([
+      { ...project, systemUrl: 'https://staging.shop.com/', iconKey: 'brand:wechat', iconColor: '#07C160' },
+    ])
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+
+    const link = await screen.findByRole('link', { name: '打开被测系统 staging.shop.com' })
+    expect(link).toHaveAttribute('href', 'https://staging.shop.com/')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(within(await screen.findByRole('button', { name: '订单中心' })).getByRole('button', { name: '编辑项目 订单中心' })).toBeInTheDocument()
   })
 
   it('删除项目前展示级联数量，确认后调用删除接口', async () => {

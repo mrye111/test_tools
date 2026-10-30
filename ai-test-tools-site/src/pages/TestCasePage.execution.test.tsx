@@ -13,8 +13,21 @@ vi.mock('../lib/testcase-api', async () => {
     listTestCaseSets: vi.fn(),
     getTestCaseSet: vi.fn(),
     updateTestCaseExecution: vi.fn(),
+    createGenerateJob: vi.fn(),
+    waitForGenerateJob: vi.fn(),
+    parseReferenceFileApi: vi.fn(),
   }
 })
+
+vi.mock('../lib/active-ai-config', () => ({
+  loadActiveAiConfigSelection: vi.fn(async () => ({
+    storage: 'local',
+    payload: { provider: 'codex', endpointType: 'openai_responses', baseUrl: 'https://example.test/v1', apiKey: 'test-key', model: 'test-model' },
+    name: '测试模型',
+    model: 'test-model',
+    apiFormat: 'openai_responses',
+  })),
+}))
 
 describe('TestCasePage - 执行看板与质量门禁 (software-testing-guide)', () => {
   const project: TestCaseProject = {
@@ -157,5 +170,120 @@ describe('TestCasePage - 执行看板与质量门禁 (software-testing-guide)', 
       expect(screen.queryByRole('button', { name: /执行看板/ })).not.toBeInTheDocument()
     })
     expect(await screen.findByRole('button', { name: /^结算与支付模块/ })).toBeInTheDocument()
+  })
+
+  it('用例维护头部提供优化用例入口，空指令不提交', async () => {
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+
+    fireEvent.click(await screen.findByRole('button', { name: '电商平台' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^结算与支付模块/ }))
+
+    fireEvent.click(await screen.findByRole('button', { name: '优化用例' }))
+    expect(await screen.findByRole('heading', { name: '优化用例' })).toBeInTheDocument()
+
+    // 空指令直接提交：行内报错且不发起生成任务
+    fireEvent.click(screen.getByRole('button', { name: '开始优化' }))
+    expect(await screen.findByText('请输入优化指令')).toBeInTheDocument()
+    expect(testcaseApi.createGenerateJob).not.toHaveBeenCalled()
+  })
+
+  it('提交优化指令后以 optimize 模式发起任务，完成后展示变更统计', async () => {
+    vi.mocked(testcaseApi.createGenerateJob).mockResolvedValue({ jobId: 'job-opt', status: 'queued', testSetId: 'set-1', mode: 'optimize' })
+    vi.mocked(testcaseApi.waitForGenerateJob).mockResolvedValue({
+      jobId: 'job-opt',
+      status: 'completed',
+      mode: 'optimize',
+      testSetId: 'set-1',
+      projectId: 'proj-1',
+      generatedCount: 3,
+      error: '',
+      optimizeStats: { modified: 2, added: 1, removed: 1 },
+      createdAt: '2026-09-23T00:00:00.000Z',
+      resultHeader: testSet.header,
+      resultRows: testSet.rows,
+    })
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+
+    fireEvent.click(await screen.findByRole('button', { name: '电商平台' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^结算与支付模块/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '优化用例' }))
+
+    fireEvent.change(screen.getByLabelText('优化指令（界面实际操作逻辑）'), {
+      target: { value: '支付页实际是余额+验证码组合支付' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '开始优化' }))
+
+    await waitFor(() => expect(testcaseApi.createGenerateJob).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'optimize',
+      testSetId: 'set-1',
+      context: '支付页实际是余额+验证码组合支付',
+      rows: testSet.rows,
+      testType: 'functional',
+      language: 'zh',
+    })))
+
+    // 完成后按 optimizeStats 展示变更统计
+    expect(await screen.findByText('优化完成：修改 2 条 / 新增 1 条 / 删除 1 条')).toBeInTheDocument()
+  })
+
+  it('优化弹窗粘贴参考文件：解析文本以标记段并入优化指令提交', async () => {
+    vi.mocked(testcaseApi.parseReferenceFileApi).mockResolvedValue({ text: '实际界面：登录页只有验证码登录', truncated: false })
+    vi.mocked(testcaseApi.createGenerateJob).mockResolvedValue({ jobId: 'job-opt2', status: 'queued', testSetId: 'set-1', mode: 'optimize' })
+    vi.mocked(testcaseApi.waitForGenerateJob).mockResolvedValue({
+      jobId: 'job-opt2', status: 'completed', mode: 'optimize', testSetId: 'set-1', projectId: 'proj-1',
+      generatedCount: 2, error: '', createdAt: '2026-09-24T00:00:00.000Z',
+      resultHeader: testSet.header, resultRows: testSet.rows,
+    })
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '电商平台' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^结算与支付模块/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '优化用例' }))
+
+    // 粘贴文件 → 卡片出现在输入框上方 → 解析完成
+    fireEvent.paste(screen.getByLabelText('优化指令（界面实际操作逻辑）'), {
+      clipboardData: { files: [new File(['x'], '界面说明.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })] },
+    })
+    expect(screen.getByRole('listitem')).toHaveTextContent('界面说明.docx')
+    await waitFor(() => expect(screen.getByLabelText('解析完成')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('优化指令（界面实际操作逻辑）'), { target: { value: '按附件修正登录流程' } })
+    fireEvent.click(screen.getByRole('button', { name: '开始优化' }))
+
+    await waitFor(() => expect(testcaseApi.createGenerateJob).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'optimize',
+      context: '按附件修正登录流程\n\n【参考文件：界面说明.docx】\n实际界面：登录页只有验证码登录',
+    })))
+  })
+
+  it('参考文件解析中或失败时阻止提交', async () => {
+    let rejectParse: (err: Error) => void = () => undefined
+    vi.mocked(testcaseApi.parseReferenceFileApi).mockImplementation(
+      () => new Promise((_resolve, reject) => { rejectParse = reject }),
+    )
+    vi.mocked(testcaseApi.createGenerateJob).mockResolvedValue({ jobId: 'job-x', status: 'queued', testSetId: 'set-1', mode: 'supplement' })
+
+    render(<TestCasePage />, { wrapper: BrowserRouter })
+    fireEvent.click(await screen.findByRole('button', { name: '电商平台' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^结算与支付模块/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '补充需求' }))
+
+    fireEvent.paste(screen.getByLabelText('本次补充说明'), {
+      clipboardData: { files: [new File(['x'], '补充协议.pdf', { type: 'application/pdf' })] },
+    })
+    fireEvent.change(screen.getByLabelText('本次补充说明'), { target: { value: '补充协议边界' } })
+
+    // 解析中：阻止提交
+    fireEvent.click(screen.getByRole('button', { name: '开始补充' }))
+    expect(await screen.findByText(/参考文件解析中/)).toBeInTheDocument()
+    expect(testcaseApi.createGenerateJob).not.toHaveBeenCalled()
+
+    // 解析失败：阻止提交并给出原因
+    rejectParse(new Error('解析服务未启动或不可达（ECONNREFUSED）'))
+    await waitFor(() => expect(screen.getByLabelText('解析失败')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: '开始补充' }))
+    expect(await screen.findByText(/补充协议.pdf.*解析服务未启动/)).toBeInTheDocument()
+    expect(testcaseApi.createGenerateJob).not.toHaveBeenCalled()
   })
 })

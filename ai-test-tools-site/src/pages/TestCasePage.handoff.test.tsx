@@ -20,9 +20,18 @@ vi.mock('../lib/testcase-api', async () => {
     listTestCaseSets: vi.fn(),
     createGenerateJob: vi.fn(),
     waitForGenerateJob: vi.fn(),
-    loadStoredModelConfig: vi.fn(() => ({ baseUrl: 'http://x', model: 'm', apiKey: 'k' })),
   }
 })
+
+vi.mock('../lib/active-ai-config', () => ({
+  loadActiveAiConfigSelection: vi.fn(async () => ({
+    storage: 'local',
+    payload: { provider: 'codex', endpointType: 'openai_chat', baseUrl: 'http://x', apiKey: 'k', model: 'm' },
+    name: 'm',
+    model: 'm',
+    apiFormat: 'openai_chat',
+  })),
+}))
 
 const mockApi = vi.mocked(testcaseApi)
 
