@@ -1,7 +1,7 @@
 /** 需求分析 v2 API 客户端：REST 记录操作 + SSE 分析流 + 文档解析 */
 
-import { buildUrl, parseJson } from '../../lib/httpClient'
-import type { RuntimeAiConfig } from '../../shared/api-types'
+import { apiFetch, buildUrl, parseJson } from '../../lib/httpClient'
+import type { AiConfigSubmitPayload } from '../../shared/api-types'
 
 /** API 信封：success=false 时抛后端错误文案 */
 async function parseOk<T>(response: Response): Promise<T> {
@@ -116,26 +116,26 @@ export type AnalysisStreamEvent =
   | { type: 'error'; message: string }
 
 export async function getAnalysisStorageStatus(): Promise<'mysql' | 'memory'> {
-  const response = await fetch(buildUrl('/api/requirement-analysis-v2/storage-status'))
+  const response = await apiFetch(buildUrl('/api/requirement-analysis-v2/storage-status'))
   const data = await parseOk<{ mode: 'mysql' | 'memory' }>(response)
   return data.mode
 }
 
 export async function listAnalysisRecords(page = 1, pageSize = 20): Promise<{ records: AnalysisRecordSummary[]; total: number }> {
   const offset = (page - 1) * pageSize
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records?limit=${pageSize}&offset=${offset}`))
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/records?limit=${pageSize}&offset=${offset}`))
   const data = await parseOk<{ records: AnalysisRecordSummary[]; total: number }>(response)
   return { records: data.records, total: data.total }
 }
 
 export async function getAnalysisRecord(id: string): Promise<AnalysisRecordDetail> {
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${id}`))
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/records/${id}`))
   const data = await parseOk<{ record: AnalysisRecordDetail }>(response)
   return data.record
 }
 
 export async function renameAnalysisRecord(id: string, title: string): Promise<void> {
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${id}`), {
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/records/${id}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title }),
@@ -144,12 +144,12 @@ export async function renameAnalysisRecord(id: string, title: string): Promise<v
 }
 
 export async function deleteAnalysisRecord(id: string): Promise<void> {
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${id}`), { method: 'DELETE' })
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/records/${id}`), { method: 'DELETE' })
   await parseOk(response)
 }
 
 export async function patchAnalysisIssue(id: string, patch: { status?: IssueStatus; severity?: IssueSeverity }): Promise<AnalysisIssue> {
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/issues/${id}`), {
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/issues/${id}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
@@ -159,7 +159,7 @@ export async function patchAnalysisIssue(id: string, patch: { status?: IssueStat
 }
 
 export async function patchCriterion(id: string, patch: { status?: CriterionStatus; rewrittenText?: string }): Promise<{ criterion: AcceptanceCriterion; issue: AnalysisIssue | null }> {
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/criteria/${id}`), {
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/criteria/${id}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
@@ -169,7 +169,7 @@ export async function patchCriterion(id: string, patch: { status?: CriterionStat
 
 /** 接力：勾选条件标记 relayed */
 export async function relayConditions(recordId: string, conditionIds: string[]): Promise<number> {
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/relay`), {
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/relay`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ conditionIds }),
@@ -180,7 +180,7 @@ export async function relayConditions(recordId: string, conditionIds: string[]):
 
 /** 用例集保存后回写条件↔用例集关联 */
 export async function linkConditionsToTestset(conditionIds: string[], testsetId: string): Promise<number> {
-  const response = await fetch(buildUrl('/api/requirement-analysis-v2/link-testset'), {
+  const response = await apiFetch(buildUrl('/api/requirement-analysis-v2/link-testset'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ conditionIds, testsetId }),
@@ -191,7 +191,7 @@ export async function linkConditionsToTestset(conditionIds: string[], testsetId:
 
 /** 人工新增条件 */
 export async function createCondition(recordId: string, input: { reqId: string; criterionId?: string | null; text: string; kind: ConditionKind }): Promise<TestCondition> {
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/conditions`), {
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/conditions`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -202,7 +202,7 @@ export async function createCondition(recordId: string, input: { reqId: string; 
 
 /** 编辑条件（已接力/已生成由后端拒绝） */
 export async function updateCondition(recordId: string, conditionId: string, patch: { text?: string; kind?: ConditionKind; reqId?: string; criterionId?: string | null }): Promise<TestCondition> {
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/conditions/${conditionId}`), {
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/conditions/${conditionId}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
@@ -213,13 +213,13 @@ export async function updateCondition(recordId: string, conditionId: string, pat
 
 /** 删除条件（已接力/已生成由后端拒绝） */
 export async function deleteCondition(recordId: string, conditionId: string): Promise<void> {
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/conditions/${conditionId}`), { method: 'DELETE' })
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/conditions/${conditionId}`), { method: 'DELETE' })
   await parseOk(response)
 }
 
 /** 问题批量状态更新（原子；返回更新后的条目） */
 export async function bulkPatchIssues(recordId: string, issueIds: string[], status: IssueStatus): Promise<AnalysisIssue[]> {
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/issues/bulk`), {
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/issues/bulk`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ issueIds, status }),
@@ -229,14 +229,14 @@ export async function bulkPatchIssues(recordId: string, issueIds: string[], stat
 }
 
 export async function getAnalysisRtm(recordId: string): Promise<RtmView> {
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/rtm`))
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/rtm`))
   const data = await parseOk<{ rtm: RtmView }>(response)
   return data.rtm
 }
 
 /** 文档解析（不落库）：raw body + filename 查询参数 */
 export async function parseRequirementDocument(file: File): Promise<{ text: string; warnings: string[]; truncated: boolean }> {
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/parse-document?filename=${encodeURIComponent(file.name)}`), {
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/parse-document?filename=${encodeURIComponent(file.name)}`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/octet-stream' },
     body: await file.arrayBuffer(),
@@ -308,10 +308,10 @@ async function readAnalysisStream(
 /** AI 分析（SSE）：完成时返回落库后的完整记录 */
 export async function analyzeRequirementStream(
   body: { sourceText: string; title?: string; sourceFileName?: string },
-  aiConfig: RuntimeAiConfig,
+  aiConfig: AiConfigSubmitPayload,
   onEvent: (event: AnalysisStreamEvent) => void,
 ): Promise<AnalysisRecordDetail | null> {
-  const response = await fetch(buildUrl('/api/requirement-analysis-v2/analyze'), {
+  const response = await apiFetch(buildUrl('/api/requirement-analysis-v2/analyze'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...body, aiConfig }),
@@ -322,10 +322,10 @@ export async function analyzeRequirementStream(
 /** 重新分析（SSE）：新记录 + 继承已处理问题状态；完成返回新记录 */
 export async function reanalyzeRecordStream(
   recordId: string,
-  aiConfig: RuntimeAiConfig,
+  aiConfig: AiConfigSubmitPayload,
   onEvent: (event: AnalysisStreamEvent) => void,
 ): Promise<AnalysisRecordDetail | null> {
-  const response = await fetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/reanalyze`), {
+  const response = await apiFetch(buildUrl(`/api/requirement-analysis-v2/records/${recordId}/reanalyze`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ aiConfig }),

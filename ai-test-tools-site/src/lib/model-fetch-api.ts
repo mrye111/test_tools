@@ -1,4 +1,4 @@
-import { buildUrl, parseJson } from './httpClient'
+import { apiFetch, buildUrl, parseJson } from './httpClient'
 import type { AiApiFormat } from '../shared/api-types'
 
 export interface FetchedModel {
@@ -12,7 +12,7 @@ export async function fetchModelsForConfig(input: {
   apiFormat: AiApiFormat
   modelsUrl?: string
 }) {
-  const response = await fetch(buildUrl('/api/model-config/models'), {
+  const response = await apiFetch(buildUrl('/api/model-config/models'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),

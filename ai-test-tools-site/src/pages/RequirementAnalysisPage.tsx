@@ -5,8 +5,7 @@ import { Tooltip } from '../components/ui/Tooltip'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { useErrorDialog } from '../components/ui/ErrorDialogProvider'
 import { useGoBack } from '../hooks/useGoBack'
-import { loadStoredModelConfig } from '../lib/model-config-store'
-import { toAiConfig } from '../shared/api-types'
+import { loadActiveAiConfigSelection } from '../lib/active-ai-config'
 import {
   analyzeRequirementStream,
   deleteAnalysisRecord,
@@ -103,8 +102,8 @@ export function RequirementAnalysisPage() {
       setFieldError('请上传需求文档或粘贴需求文本')
       return
     }
-    const stored = loadStoredModelConfig()
-    if (!stored) {
+    const aiSelection = await loadActiveAiConfigSelection()
+    if (!aiSelection) {
       setFieldError('请先在「设置」中配置模型，再开始分析')
       return
     }
@@ -114,7 +113,7 @@ export function RequirementAnalysisPage() {
     try {
       const record = await analyzeRequirementStream(
         { sourceText: trimmed, sourceFileName: fileName ?? undefined },
-        toAiConfig(stored),
+        aiSelection.payload,
         (event) => {
           if (event.type === 'progress') setProgressMessage(event.message)
         },
@@ -246,10 +245,10 @@ export function RequirementAnalysisPage() {
               type="button"
               onClick={() => void handleAnalyze()}
               disabled={analyzing || parsing}
-              className="primary-action px-5 py-2.5 text-sm disabled:opacity-50"
+              className="ai-glass-action px-5 py-2.5 text-sm disabled:opacity-50"
             >
               {analyzing ? (
-                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-accent/25 border-t-accent" />
               ) : (
                 <Sparkles className="h-4 w-4" />
               )}

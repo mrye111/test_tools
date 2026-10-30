@@ -37,6 +37,20 @@ npm run server:build
 node server/dist/src/index.js stdio
 ```
 
+## Playwright / Midscene 运行环境
+
+服务端 UI 自动化依赖 `@midscene/web` + `playwright` + `@playwright/test`（均为根 package.json dependencies，版本与 artifacts/midscene-poc 对齐）。
+
+```powershell
+# 首次安装浏览器二进制（默认落 %LOCALAPPDATA%\ms-playwright，server 进程自动发现；
+# 如需固定路径，设 PLAYWRIGHT_BROWSERS_PATH 后再执行，运行时保持同值）
+npx playwright install chromium
+
+# 最小验证：headless Chromium + PlaywrightAgent 跑一次 aiAct + aiAssert，
+# 模型配置读 artifacts/midscene-poc/.env，报告落 artifacts/midscene-server-verify/
+node server/scripts/verify-midscene.mjs
+```
+
 ## 说明
 
 参考 Java 服务依赖 JMeter 内部 Java 类直接序列化对象。TypeScript 版本不能复用这些类，因此采用行为还原：保留工具名、参数默认值、文本响应风格、作用域语义和常见 `guiclass/testclass` 映射，并自行构建 JMX XML。

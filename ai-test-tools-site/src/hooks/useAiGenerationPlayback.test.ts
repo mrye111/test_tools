@@ -6,18 +6,16 @@ import {
   useAiGenerationPlayback,
 } from './useAiGenerationPlayback'
 import type { AiGenerateResponse, generateJmeterWithAiStream } from '../lib/jmeter-api'
-import type { StoredModelConfig } from '../shared/api-types'
+import type { AiConfigSubmitPayload } from '../shared/api-types'
 
 type StreamGenerate = typeof generateJmeterWithAiStream
 
-const modelConfig: StoredModelConfig = {
-  id: 'test-provider',
-  name: '测试供应商',
-  providerType: 'newapi',
+const aiConfig: AiConfigSubmitPayload = {
+  provider: 'codex',
+  endpointType: 'openai_responses',
   baseUrl: 'https://api.example.com/v1',
   apiKey: 'test-key',
   model: 'gpt-5.5',
-  apiFormat: 'openai_responses',
 }
 
 function createResponse(overrides: Partial<AiGenerateResponse> = {}): AiGenerateResponse {
@@ -58,7 +56,7 @@ describe('useAiGenerationPlayback', () => {
 
     let startPromise: Promise<void>
     act(() => {
-      startPromise = result.current.start({ prompt: '生成 demo 计划', modelConfig })
+      startPromise = result.current.start({ prompt: '生成 demo 计划', aiConfig })
     })
     await act(async () => {
       await vi.advanceTimersByTimeAsync(STEP_MIN_VISIBLE_MS + DONE_TRANSITION_DELAY_MS)
@@ -89,7 +87,7 @@ describe('useAiGenerationPlayback', () => {
 
     let startPromise: Promise<void>
     act(() => {
-      startPromise = result.current.start({ prompt: '生成 demo 计划', modelConfig })
+      startPromise = result.current.start({ prompt: '生成 demo 计划', aiConfig })
     })
 
     // start 事件先被排空展示，done 事件进入最小展示等待
@@ -133,11 +131,11 @@ describe('useAiGenerationPlayback', () => {
 
     let firstStart: Promise<void>
     act(() => {
-      firstStart = result.current.start({ prompt: '第一次生成', modelConfig })
+      firstStart = result.current.start({ prompt: '第一次生成', aiConfig })
     })
     let secondStart: Promise<void>
     act(() => {
-      secondStart = result.current.start({ prompt: '第二次生成', modelConfig })
+      secondStart = result.current.start({ prompt: '第二次生成', aiConfig })
     })
 
     // 第一轮（已过期）完成：不应切换页签，也不应把 running 置回 false
@@ -168,7 +166,7 @@ describe('useAiGenerationPlayback', () => {
 
     let startPromise: Promise<void>
     act(() => {
-      startPromise = result.current.start({ prompt: '生成 demo 计划', modelConfig })
+      startPromise = result.current.start({ prompt: '生成 demo 计划', aiConfig })
     })
     await act(async () => {
       await startPromise
@@ -191,7 +189,7 @@ describe('useAiGenerationPlayback', () => {
 
     let startPromise: Promise<void>
     act(() => {
-      startPromise = result.current.start({ prompt: '生成 demo 计划', modelConfig })
+      startPromise = result.current.start({ prompt: '生成 demo 计划', aiConfig })
     })
     await act(async () => {
       await startPromise
@@ -213,7 +211,7 @@ describe('useAiGenerationPlayback', () => {
 
     let startPromise: Promise<void>
     act(() => {
-      startPromise = result.current.start({ prompt: '生成 demo 计划', modelConfig })
+      startPromise = result.current.start({ prompt: '生成 demo 计划', aiConfig })
     })
     await act(async () => {
       await vi.advanceTimersByTimeAsync(DONE_TRANSITION_DELAY_MS)
@@ -242,7 +240,7 @@ describe('useAiGenerationPlayback', () => {
 
     let startPromise: Promise<void>
     act(() => {
-      startPromise = result.current.start({ prompt: '生成 demo 计划', modelConfig })
+      startPromise = result.current.start({ prompt: '生成 demo 计划', aiConfig })
     })
     expect(result.current.running).toBe(true)
 

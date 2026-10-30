@@ -108,7 +108,8 @@ describe('jmeter-builders', () => {
 
     // 只有一次构建请求：整个模板一次发到 /api/jmeter/build
     expect(captured).toHaveLength(1)
-    expect(captured[0]?.url).toBe('http://localhost:3000/api/jmeter/build')
+    // dev/测试环境走同源 vite 代理（getApiBase 在 DEV 下返回空串），断言相对路径
+    expect(captured[0]?.url).toBe('/api/jmeter/build')
 
     const toolNames = captured[0]!.spec.steps.map((step) => step.tool)
     const headerConfigIndex = toolNames.indexOf('add_more_configs')

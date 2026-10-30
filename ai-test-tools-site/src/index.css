@@ -632,6 +632,132 @@ body {
   box-shadow: none;
 }
 
+/* ── AI Glass Action（幽灵描边液态玻璃 · AI 生成入口专用）────────── */
+
+@property --ai-glass-sweep {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* 近透明玻璃体：透出面板底色，描边是一道沿轮廓巡游的主色系流光 */
+.ai-glass-action {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid oklch(0.58 0.17 262 / 0.32);
+  border-radius: 14px;
+  background: linear-gradient(150deg, oklch(1 0 0 / 0.46), oklch(1 0 0 / 0.14) 55%, oklch(0.74 0.11 255 / 0.1));
+  backdrop-filter: blur(10px) saturate(1.6);
+  -webkit-backdrop-filter: blur(10px) saturate(1.6);
+  color: var(--color-accent);
+  font-weight: 680;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.85),
+    inset 0 -1px 1px oklch(1 0 0 / 0.28),
+    0 10px 26px -18px oklch(0.55 0.19 262 / 0.42);
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 流光描边：主蓝 → 青 → 白闪 → 薄荷的彗星光带沿轮廓巡游，底圈始终保留主色发丝线 */
+.ai-glass-action::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  padding: 1.5px;
+  border-radius: inherit;
+  background: conic-gradient(from var(--ai-glass-sweep),
+    transparent 0deg,
+    oklch(0.6 0.19 264 / 0.95) 36deg,
+    oklch(0.74 0.11 255 / 0.9) 74deg,
+    oklch(1 0 0 / 0.95) 106deg,
+    oklch(0.68 0.14 245 / 0.8) 140deg,
+    transparent 188deg,
+    transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0.72;
+  animation: ai-glass-sweep 4.8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes ai-glass-sweep {
+  to { --ai-glass-sweep: 360deg; }
+}
+
+/* 悬停掠光：一道镜面高光扫过玻璃体（沉在文字之下，保持可读） */
+.ai-glass-action::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(112deg,
+    transparent 34%,
+    oklch(1 0 0 / 0.62) 48%,
+    oklch(0.74 0.11 255 / 0.16) 56%,
+    transparent 70%);
+  background-size: 250% 100%;
+  background-position: 128% 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ai-glass-action:hover {
+  transform: translateY(-1px);
+  border-color: oklch(0.58 0.17 262 / 0.48);
+  background: linear-gradient(150deg, oklch(1 0 0 / 0.64), oklch(1 0 0 / 0.22) 55%, oklch(0.74 0.11 255 / 0.14));
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.92),
+    inset 0 -1px 1px oklch(1 0 0 / 0.32),
+    0 16px 34px -18px oklch(0.55 0.19 262 / 0.5),
+    0 0 0 1px oklch(0.58 0.17 262 / 0.08);
+}
+
+.ai-glass-action:hover::before { opacity: 1; }
+
+.ai-glass-action:hover::after {
+  opacity: 1;
+  animation: ai-glass-sheen 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes ai-glass-sheen {
+  from { background-position: 128% 0; }
+  to   { background-position: -28% 0; }
+}
+
+.ai-glass-action:active {
+  transform: translateY(0.5px) scale(0.99);
+}
+
+.ai-glass-action:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.85),
+    var(--shadow-focus-ring);
+}
+
+/* 生成中（禁用态）：流光继续巡游，呼应"AI 正在工作" */
+.ai-glass-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none;
+}
+
 /* ── Form Controls ──────────────────────────────────────────── */
 
 .field-control {
@@ -2058,6 +2184,192 @@ textarea.field-control {
 
 /* ── Test Case Execution Tracker & Quality Gates ───────────── */
 
+/* 项目图标徽标：浅色调底 + 彩色字形（颜色由内联 style 注入，未配置回落主题蓝） */
+.project-icon-badge {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid oklch(0.58 0.17 262 / 0.1);
+  border-radius: 10px;
+  transition: border-color 170ms ease, background-color 170ms ease, color 170ms ease;
+}
+
+/* 项目图标选择器：预览 + 搜索 + 色板 + 两组网格 */
+.project-icon-picker { display: flex; flex-direction: column; gap: 12px; }
+
+.project-icon-picker-topline { display: flex; align-items: center; gap: 10px; }
+
+.project-icon-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: oklch(1 0 0);
+  color: var(--color-muted);
+}
+.project-icon-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--color-fg);
+}
+
+.project-icon-palette { display: flex; flex-wrap: wrap; gap: 8px; }
+.project-icon-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 140ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 140ms ease;
+  box-shadow: inset 0 0 0 1px oklch(0 0 0 / 0.08);
+}
+.project-icon-swatch:hover { transform: scale(1.14); }
+.project-icon-swatch.is-active {
+  box-shadow: 0 0 0 2px white, 0 0 0 4px oklch(0.58 0.17 262 / 0.55);
+}
+
+.project-icon-group-title {
+  margin-bottom: 7px;
+  color: var(--color-muted);
+  font-size: 10.5px;
+  font-weight: 680;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.project-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+  gap: 6px;
+  max-height: 132px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.project-icon-option {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: oklch(1 0 0);
+  color: var(--color-fg-soft);
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease;
+}
+.project-icon-option:hover { border-color: oklch(0.58 0.17 262 / 0.4); color: var(--color-accent); }
+.project-icon-option.is-active {
+  border-color: var(--color-accent);
+  background: oklch(0.58 0.17 262 / 0.1);
+  color: var(--color-accent);
+}
+
+.project-icon-empty { color: var(--color-muted); font-size: 12px; }
+.project-icon-picker-hint { color: var(--color-muted); font-size: 11px; }
+
+/* 项目卡片外链（被测系统地址） */
+.project-card-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  color: var(--color-accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.project-card-link:hover { text-decoration: underline; }
+
+/* 参考文件卡片条：agent 工具风格紧凑卡片，横向排列、超宽左右滑动 */
+.reference-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+.reference-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: oklch(1 0 0);
+  font-size: 11.5px;
+  color: var(--color-fg-soft);
+}
+.reference-chip.is-failed {
+  border-color: oklch(0.52 0.18 25 / 0.35);
+  background: oklch(0.96 0.03 25 / 0.5);
+}
+.reference-chip-ext {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: oklch(0.95 0.01 264);
+  color: oklch(0.42 0.03 264);
+  font-size: 9.5px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+}
+.reference-chip.is-failed .reference-chip-ext {
+  background: oklch(0.55 0.2 25 / 0.15);
+  color: oklch(0.45 0.18 25);
+}
+.reference-chip-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reference-chip-notice {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: oklch(0.45 0.18 25);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.reference-chip-spin {
+  width: 12px;
+  height: 12px;
+  animation: spin 1s linear infinite;
+  color: var(--color-muted);
+}
+.reference-chip-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+}
+.reference-chip-dot.is-done { background: oklch(0.52 0.14 155); }
+.reference-chip-dot.is-truncated { background: oklch(0.7 0.14 85); }
+.reference-chip-dot.is-failed { background: oklch(0.55 0.2 25); }
+.reference-chip-remove {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--color-muted);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.reference-chip-remove:hover { background: oklch(0.94 0.008 264); color: var(--color-fg); }
+
 .testcase-detail-page {
   width: min(100% - 32px, 1680px) !important;
   margin-inline: auto !important;
@@ -2645,7 +2957,9 @@ textarea.field-control {
   .secondary-action,
   .secondary-action:hover,
   .icon-action,
-  .icon-action:hover {
+  .icon-action:hover,
+  .ai-glass-action,
+  .ai-glass-action:hover {
     transform: none;
   }
 

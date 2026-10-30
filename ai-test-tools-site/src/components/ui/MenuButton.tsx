@@ -76,15 +76,19 @@ export function MenuButton({
       const belowSpace = window.innerHeight - rect.bottom - viewportPadding
       const aboveSpace = rect.top - viewportPadding
       const openTop = placement === 'top' || (placement === 'auto' && belowSpace < 240 && aboveSpace > belowSpace)
-      const maxHeight = Math.max(120, Math.min(280, (openTop ? aboveSpace : belowSpace) - gap))
+      // 高度随内容收拢，仅受可用空间限制（内容放不下才出现纵向滚动）
+      const maxHeight = Math.max(120, (openTop ? aboveSpace : belowSpace) - gap)
       const minWidth = Math.max(rect.width, menuMinWidth ?? 0)
-      const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - minWidth - viewportPadding))
+      // 宽度随文字自适应（max-content）；贴视口右缘时回退左移
+      const panelWidth = dropdownRef.current?.offsetWidth ?? minWidth
+      const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - panelWidth - viewportPadding))
 
       setResolvedPlacement(openTop ? 'top' : 'bottom')
       setDropdownStyle({
         position: 'fixed',
         left,
         minWidth,
+        maxWidth: window.innerWidth - viewportPadding * 2,
         maxHeight,
         ...(openTop
           ? { bottom: window.innerHeight - rect.top + gap }
@@ -93,9 +97,12 @@ export function MenuButton({
     }
 
     updatePosition()
+    // 面板挂载后宽度才能测准，下一帧按真实宽度回正一次 left
+    const raf = requestAnimationFrame(updatePosition)
     window.addEventListener('resize', updatePosition)
     window.addEventListener('scroll', updatePosition, true)
     return () => {
+      cancelAnimationFrame(raf)
       window.removeEventListener('resize', updatePosition)
       window.removeEventListener('scroll', updatePosition, true)
     }
@@ -156,7 +163,7 @@ export function MenuButton({
           ref={dropdownRef}
           className={`${
             resolvedPlacement === 'top' ? 'dropdown-panel-up' : 'dropdown-panel'
-          } liquid-glass z-[999] w-max overflow-y-auto rounded-xl p-1.5`}
+          } liquid-glass z-[999] w-max overflow-x-hidden overflow-y-auto rounded-xl p-1.5`}
           style={dropdownStyle}
           role="menu"
           initial={{ opacity: 0, y: resolvedPlacement === 'top' ? 12 : -12, scale: 0.94 }}
@@ -185,13 +192,13 @@ export function MenuButton({
                   }}
                   whileHover={{ x: 4, transition: { type: 'spring', stiffness: 300, damping: 24 } }}
                   whileTap={{ scale: 0.97 }}
-                  className={`dropdown-item whitespace-nowrap ${
+                  className={`dropdown-item ${
                     isSelected ? 'dropdown-item-selected' : ''
                   } ${
                     isHighlighted && !isSelected ? 'bg-accent/10' : ''
                   }`}
                 >
-                  <span className="flex-1 text-left">{option.label}</span>
+                  <span className="min-w-0 flex-1 break-words text-left">{option.label}</span>
                   {isSelected && <Check className="ml-2 h-3.5 w-3.5 shrink-0 text-accent" />}
                 </motion.button>
               )

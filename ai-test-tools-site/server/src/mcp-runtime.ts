@@ -5,6 +5,7 @@ import { createRequirementV2Tools } from "./features/requirement-v2/mcp-tools.js
 import { err, type ToolResult } from "./tool-result.js";
 import { TestPlanService } from "./jmeterBackend.js";
 import { withSpanSync } from "./middleware/trace.js";
+import type { AsyncLoadTestTool } from './features/loadtest/mcp-tools.js';
 
 const PROTOCOL_VERSION = "2025-06-18";
 const SERVER_NAME = "jmeter-mcp-server";
@@ -15,11 +16,38 @@ export class JmeterMcpRuntime {
   // Web 端模板/AI 构建一律经 PlanBuilder（server/src/plan-builder.ts）创建每请求独立的 TestPlanService。
   readonly service = new TestPlanService();
   readonly tools = new Map<string, McpTool>();
+  private readonly asyncTools = new Map<string, AsyncLoadTestTool>();
 
   constructor() {
     for (const tool of createTools()) this.tools.set(tool.name, tool);
     // 需求分析 v2：聊天端直用的异步任务制工具（发起/查询）
     for (const tool of createRequirementV2Tools()) this.tools.set(tool.name, tool);
+  }
+
+  registerAsyncTools(tools: AsyncLoadTestTool[]): void {
+    for (const tool of tools) {
+      this.asyncTools.set(tool.name, tool);
+      this.tools.set(tool.name, { ...tool, execute: () => err('invalid-state', '请通过异步 MCP 接口调用') });
+    }
+  }
+
+  async callToolAsync(name: string, args: JsonObject = {}): Promise<ToolResult> {
+    const tool = this.asyncTools.get(name);
+    if (!tool) return this.callTool(name, args);
+    try { return await tool.execute(args); }
+    catch { return err('internal', '工具执行失败'); }
+  }
+
+  async dispatchAsync(request: JsonObject): Promise<JsonObject | null> {
+    if (request.method !== 'tools/call') return this.dispatch(request);
+    const params = (request.params as JsonObject | undefined) ?? {};
+    const name = typeof params.name === 'string' ? params.name : '';
+    if (!this.asyncTools.has(name)) return this.dispatch(request);
+    if (request.id === undefined || request.id === null) return null;
+    const result = await this.callToolAsync(name, (params.arguments as JsonObject | undefined) ?? {});
+    return result.ok
+      ? this.success(request.id, { content: [{ type: 'text', text: JSON.stringify(result.data ?? { message: result.message }) }], ...(result.data ? { data: result.data } : {}) })
+      : this.success(request.id, { content: [{ type: 'text', text: result.error.message }], isError: true });
   }
 
   dispatch(request: JsonObject): JsonObject | null {

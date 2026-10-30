@@ -1,0 +1,1 @@
+docling-serve>=0.3.0

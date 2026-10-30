@@ -1,9 +1,12 @@
 import { randomUUID } from "crypto";
 import type { Express, Request, Response } from "express";
 import express from "express";
+import { AppError } from "../../app-error.js";
 import { logger } from "../../logger.js";
 import { beginSse, emit, endSse } from "../../shared/sse.js";
 import { parseAiRequestConfig } from "../testcase/ai.js";
+import type { AiConfigResolver } from "../auth/cloud-config-resolve.js";
+import type { AiRequestConfig, JsonObject } from "../testcase/types.js";
 import { analysisDbMode } from "./migrate.js";
 import { analyzeRequirement, AnalysisGenerateError, reanalyzeRequirement } from "./analyze.js";
 import { DocumentParseError, MAX_FILE_BYTES, parseRequirementDocument } from "./parsers.js";
@@ -59,7 +62,14 @@ function handleError(res: Response, err: unknown, context: string): void {
  * 需求分析 v2 路由（/api/requirement-analysis-v2/）。
  * 记录 CRUD + 子资源 patch + 驳回闭环 + 接力/回写 + RTM。
  */
-export function registerRequirementV2Routes(app: Express, repo: AnalysisRepository): void {
+export function registerRequirementV2Routes(app: Express, repo: AnalysisRepository, resolveAiConfig?: AiConfigResolver): void {
+  /** 解析请求体 AI 配置：云端引用（cloudConfigId）按 req.authUser 实时解析，否则回退现状本地解析。 */
+  const resolveConfig = (req: Request, b: JsonObject): Promise<AiRequestConfig> => {
+    const userId = req.authUser?.id;
+    if (resolveAiConfig && userId) return resolveAiConfig(userId, b);
+    return Promise.resolve(parseAiRequestConfig(b));
+  };
+
   app.get("/api/requirement-analysis-v2/storage-status", (_req, res) => {
     res.json({ success: true, mode: analysisDbMode() });
   });
@@ -344,9 +354,9 @@ export function registerRequirementV2Routes(app: Express, repo: AnalysisReposito
     const b = body(req);
     let config;
     try {
-      config = parseAiRequestConfig(b);
+      config = await resolveConfig(req, b);
     } catch (err) {
-      fail(res, 400, err instanceof Error ? err.message : "AI 配置无效");
+      fail(res, err instanceof AppError ? err.httpStatus : 400, err instanceof Error ? err.message : "AI 配置无效");
       return;
     }
     const existing = await repo.getRecord(req.params.id);
@@ -409,9 +419,9 @@ export function registerRequirementV2Routes(app: Express, repo: AnalysisReposito
     }
     let config;
     try {
-      config = parseAiRequestConfig(b);
+      config = await resolveConfig(req, b);
     } catch (err) {
-      fail(res, 400, err instanceof Error ? err.message : "AI 配置无效");
+      fail(res, err instanceof AppError ? err.httpStatus : 400, err instanceof Error ? err.message : "AI 配置无效");
       return;
     }
 

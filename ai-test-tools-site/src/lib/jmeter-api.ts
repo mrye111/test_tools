@@ -1,5 +1,5 @@
-import { buildUrl, parseJson, downloadBlob } from './httpClient'
-import type { RuntimeAiConfig } from '../shared/api-types'
+import { apiFetch, buildUrl, parseJson, downloadBlob } from './httpClient'
+import type { AiConfigSubmitPayload } from '../shared/api-types'
 
 export type { AiConfig, RuntimeAiConfig, StoredModelConfig, UniversalProvider } from '../shared/api-types'
 export { getPreferredAiConfig, getPrimaryModelLabel, toAiConfig } from '../shared/api-types'
@@ -109,7 +109,7 @@ function getFilename(path: string) {
 }
 
 export async function getJmeterHealth() {
-  const response = await fetch(buildUrl('/health'))
+  const response = await apiFetch(buildUrl('/health'))
   if (!response.ok) {
     throw new Error(`后端健康检查失败：${response.status}`)
   }
@@ -117,7 +117,7 @@ export async function getJmeterHealth() {
 }
 
 export async function getJmeterTools() {
-  const response = await fetch(buildUrl('/tools'))
+  const response = await apiFetch(buildUrl('/tools'))
   if (!response.ok) {
     throw new Error(`获取工具列表失败：${response.status}`)
   }
@@ -125,7 +125,7 @@ export async function getJmeterTools() {
 }
 
 export async function getJmeterAiConfig() {
-  const response = await fetch(buildUrl('/ai/config'))
+  const response = await apiFetch(buildUrl('/ai/config'))
   if (!response.ok) {
     throw new Error(`获取 AI 接口配置失败：${response.status}`)
   }
@@ -133,7 +133,7 @@ export async function getJmeterAiConfig() {
 }
 
 export async function buildJmeterPlan(spec: JmeterBuildSpec): Promise<JmeterBuildResponse> {
-  const response = await fetch(buildUrl('/api/jmeter/build'), {
+  const response = await apiFetch(buildUrl('/api/jmeter/build'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(spec),
@@ -203,13 +203,13 @@ export function parseJmeterTree(text: string): JmeterTreeNode[] {
 export async function generateJmeterWithAiStream(
   args: {
     prompt: string
-    ai_config: RuntimeAiConfig
+    ai_config: AiConfigSubmitPayload
     output_path?: string
     max_tokens?: number
   },
   onEvent: (event: AiGenerateStreamEvent) => void | Promise<void>,
 ) {
-  const response = await fetch(buildUrl('/ai/generate-jmeter/stream'), {
+  const response = await apiFetch(buildUrl('/ai/generate-jmeter/stream'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(args),
@@ -268,7 +268,7 @@ export function createJmxDownloadUrl(path: string) {
 }
 
 export async function downloadGeneratedJmx(path: string, filename?: string) {
-  const response = await fetch(createJmxDownloadUrl(path))
+  const response = await apiFetch(createJmxDownloadUrl(path))
   if (!response.ok) {
     let message = `下载失败：${response.status}`
     try {

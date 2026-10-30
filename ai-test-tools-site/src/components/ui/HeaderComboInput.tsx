@@ -149,15 +149,19 @@ export function HeaderComboInput({
     const belowSpace = window.innerHeight - rect.bottom - viewportPadding
     const aboveSpace = rect.top - viewportPadding
     const minHeight = 160
-    const preferredMax = 240
     const openTop = belowSpace < minHeight && aboveSpace > belowSpace
-    const maxHeight = Math.max(minHeight, Math.min(preferredMax, (openTop ? aboveSpace : belowSpace) - gap))
+    // 高度随内容收拢，仅受可用空间限制（内容放不下才出现纵向滚动）
+    const maxHeight = Math.max(minHeight, (openTop ? aboveSpace : belowSpace) - gap)
+    // 宽度随文字自适应（max-content），保底同输入框宽度
+    const panelWidth = panelRef.current?.offsetWidth ?? rect.width
+    const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - panelWidth - viewportPadding))
 
     setPlacement(openTop ? 'top' : 'bottom')
     setPanelStyle({
       position: 'fixed',
-      left: rect.left,
-      width: rect.width,
+      left,
+      minWidth: rect.width,
+      maxWidth: window.innerWidth - viewportPadding * 2,
       maxHeight,
       ...(openTop
         ? { bottom: window.innerHeight - rect.top + gap }
@@ -168,9 +172,12 @@ export function HeaderComboInput({
   useEffect(() => {
     if (!open) return
     updatePanelPosition()
+    // 面板挂载后宽度才能测准，下一帧按真实宽度回正一次 left
+    const raf = requestAnimationFrame(updatePanelPosition)
     window.addEventListener('resize', updatePanelPosition)
     window.addEventListener('scroll', updatePanelPosition, true)
     return () => {
+      cancelAnimationFrame(raf)
       window.removeEventListener('resize', updatePanelPosition)
       window.removeEventListener('scroll', updatePanelPosition, true)
     }
@@ -251,7 +258,7 @@ export function HeaderComboInput({
           ref={panelRef}
           className={`${
             placement === 'top' ? 'dropdown-panel-up' : 'dropdown-panel'
-          } ${closing ? 'dropdown-panel-closing' : ''} liquid-glass z-[999] overflow-y-auto rounded-xl p-1`}
+          } ${closing ? 'dropdown-panel-closing' : ''} liquid-glass z-[999] w-max overflow-x-hidden overflow-y-auto rounded-xl p-1`}
           style={panelStyle}
         >
           {filtered.length > 0 ? (
@@ -271,12 +278,12 @@ export function HeaderComboInput({
                     item.text === value ? 'dropdown-item-selected' : ''
                   }`}
                 >
-                  <span className="truncate">{renderItem(item)}</span>
+                  <span className="min-w-0 break-words">{renderItem(item)}</span>
                 </button>
               ))}
             </div>
           ) : (
-            <div className="px-3 py-6 text-center text-[12px] text-muted">
+            <div className="px-3 py-6 text-center text-[12px] break-words text-muted">
               {query ? (
                 <>
                   无匹配结果 "<span className="font-medium text-fg">{value.trim()}</span>"

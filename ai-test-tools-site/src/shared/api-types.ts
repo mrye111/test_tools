@@ -63,6 +63,19 @@ export interface RuntimeAiConfig {
   maxOutputTokens?: number
 }
 
+/** 云端模型配置引用：生成提交只送 id，密钥不出服务端，由服务端按引用解析（spec §4）。 */
+export interface CloudAiConfigRef {
+  cloudConfigId: string
+}
+
+/** 生成提交载荷：本地条目 = 完整运行时配置；云端条目 = 引用。 */
+export type AiConfigSubmitPayload = RuntimeAiConfig | CloudAiConfigRef
+
+export function isCloudAiConfigRef(payload: AiConfigSubmitPayload): payload is CloudAiConfigRef {
+  return typeof (payload as CloudAiConfigRef).cloudConfigId === 'string'
+    && Boolean((payload as CloudAiConfigRef).cloudConfigId.trim())
+}
+
 /** 兼容旧前端导出的类型别名 */
 export type StoredModelConfig = UniversalProvider
 export type AiConfig = RuntimeAiConfig

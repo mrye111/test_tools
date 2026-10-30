@@ -1,4 +1,4 @@
-import { buildUrl, parseJson } from './httpClient'
+import { apiFetch, buildUrl, parseJson } from './httpClient'
 
 export interface ToolParam {
   name: string
@@ -35,7 +35,7 @@ export interface ApiResponse<T> {
 }
 
 export async function getCategories(): Promise<ToolCategory[]> {
-  const response = await fetch(buildUrl('/api/data-factory/categories'))
+  const response = await apiFetch(buildUrl('/api/data-factory/categories'))
   const data = await parseJson<ApiResponse<ToolCategory[]>>(response)
   if (!response.ok || data.success === false) {
     throw new Error(data.error ?? `请求失败：${response.status}`)
@@ -44,7 +44,7 @@ export async function getCategories(): Promise<ToolCategory[]> {
 }
 
 export async function executeTool<T = unknown>(toolId: string, args: Record<string, unknown>): Promise<T> {
-  const response = await fetch(buildUrl('/api/data-factory/execute'), {
+  const response = await apiFetch(buildUrl('/api/data-factory/execute'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tool: toolId, args }),
@@ -64,7 +64,7 @@ export async function batchExecuteTool<T = unknown>(
   args: Record<string, unknown>,
   count = 10,
 ): Promise<{ count: number; results: T[] }> {
-  const response = await fetch(buildUrl('/api/data-factory/batch'), {
+  const response = await apiFetch(buildUrl('/api/data-factory/batch'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tool: toolId, args, count }),

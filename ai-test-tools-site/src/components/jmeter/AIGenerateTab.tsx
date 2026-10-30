@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, CheckCircle2, Loader2, Settings, Sparkles } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Cloud, Loader2, Settings, Sparkles } from 'lucide-react'
 import { ModelConfigModal } from './ModelConfigModal'
-import { downloadGeneratedJmx, getJmeterAiConfig, getPrimaryModelLabel, type AiConfigStatus, type JmeterTool } from '../../lib/jmeter-api'
+import { downloadGeneratedJmx, getJmeterAiConfig, type AiConfigStatus, type JmeterTool } from '../../lib/jmeter-api'
 import { normalizeErrorMessage } from '../../lib/app-error'
 import { AiGenerationExecutionModal } from './AiGenerationExecutionModal'
 import { useAiGenerationPlayback } from '../../hooks/useAiGenerationPlayback'
-import { loadStoredModelConfig, upsertStoredModelConfig } from '../../lib/model-config-store'
-import type { StoredModelConfig } from '../../shared/api-types'
+import {
+  loadActiveAiConfigSelection,
+  loadLocalAiConfigSelection,
+  type ActiveAiConfigSelection,
+} from '../../lib/active-ai-config'
+import { setActiveCloudModelConfig, upsertStoredModelConfig } from '../../lib/model-config-store'
+import { createCloudModelConfig } from '../../lib/auth-api'
+import { useAuth } from '../../lib/auth-context'
 
 interface Props {
   tools: JmeterTool[]
@@ -21,10 +27,13 @@ const EXAMPLES = [
 ]
 
 export function AIGenerateTab({ tools, loading, backendError }: Props) {
+  const { status } = useAuth()
+  const cloudEnabled = status === 'authenticated'
   const [description, setDescription] = useState('')
   const [descriptionError, setDescriptionError] = useState<string | null>(null)
   const [showConfig, setShowConfig] = useState(false)
-  const [modelConfig, setModelConfig] = useState<StoredModelConfig | null>(() => loadStoredModelConfig())
+  // 同步兜底初始化（本地指针立即有值）；云端指针由下方 effect 实时校验后补全（云端零本地缓存）
+  const [selection, setSelection] = useState<ActiveAiConfigSelection | null>(() => loadLocalAiConfigSelection())
   const [aiConfigStatus, setAiConfigStatus] = useState<AiConfigStatus | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [showExecutionModal, setShowExecutionModal] = useState(false)
@@ -36,18 +45,36 @@ export function AIGenerateTab({ tools, loading, backendError }: Props) {
       .catch(() => setAiConfigStatus(null))
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    loadActiveAiConfigSelection()
+      .then((next) => {
+        if (!cancelled) setSelection(next)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const refreshSelection = async () => {
+    setSelection(await loadActiveAiConfigSelection().catch(() => null))
+  }
+
   const handleGenerate = async () => {
     if (!description.trim()) {
       setDescriptionError('请输入测试需求描述')
       return
     }
-    if (!modelConfig) {
+    const active = selection ?? (await loadActiveAiConfigSelection())
+    if (!active) {
       setShowConfig(true)
       return
     }
+    if (active !== selection) setSelection(active)
 
     setShowExecutionModal(true)
-    await playback.start({ prompt: description, modelConfig })
+    await playback.start({ prompt: description, aiConfig: active.payload })
   }
 
   const handleDownload = async () => {
@@ -73,7 +100,7 @@ export function AIGenerateTab({ tools, loading, backendError }: Props) {
           </p>
         </div>
 
-        {!modelConfig && (
+        {!selection && (
           <button
             type="button"
             onClick={() => setShowConfig(true)}
@@ -86,20 +113,26 @@ export function AIGenerateTab({ tools, loading, backendError }: Props) {
       </div>
 
       <div className={`px-4 py-3 ${
-        modelConfig
+        selection
           ? 'status-panel'
           : 'status-panel danger-panel'
       }`}>
-        {modelConfig ? (
+        {selection ? (
           <div className="relative z-[1] flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm text-accent">
               <CheckCircle2 className="h-4 w-4" />
               <span className="font-semibold">当前模型已配置</span>
+              {selection.storage === 'cloud' && (
+                <span className="badge badge-accent">
+                  <Cloud className="h-3 w-3" />
+                  云端
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
-              <span>名称: {modelConfig.name}</span>
-              <span>模型: {getPrimaryModelLabel(modelConfig)}</span>
-              <span>格式: {modelConfig.apiFormat}</span>
+              <span>名称: {selection.name}</span>
+              <span>模型: {selection.model}</span>
+              <span>格式: {selection.apiFormat}</span>
               <span>工具数: {tools.length}</span>
               {aiConfigStatus && <span>模式: {aiConfigStatus.mode}</span>}
             </div>
@@ -150,7 +183,7 @@ export function AIGenerateTab({ tools, loading, backendError }: Props) {
             type="button"
             onClick={handleGenerate}
             disabled={playback.running || loading || !!backendError || tools.length === 0}
-            className="primary-action px-6 py-2.5 text-sm disabled:opacity-50"
+            className="ai-glass-action px-6 py-2.5 text-sm disabled:opacity-50"
           >
             {playback.running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             {playback.running ? 'AI 生成中...' : '开始 AI 生成'}
@@ -164,10 +197,19 @@ export function AIGenerateTab({ tools, loading, backendError }: Props) {
 
       <ModelConfigModal
         open={showConfig}
+        cloudStorage={cloudEnabled
+          ? { editing: null, onChanged: () => void refreshSelection() }
+          : undefined}
         onClose={() => setShowConfig(false)}
-        onSave={(config) => {
-          upsertStoredModelConfig(config)
-          setModelConfig(loadStoredModelConfig())
+        onSave={async (config, target) => {
+          if (target.storage === 'cloud') {
+            const created = await createCloudModelConfig(config, config.apiKey || undefined)
+            // 快速配置流程此前没有选择：新建的云端条目直接设为当前，保存即可生成
+            if (!selection) setActiveCloudModelConfig(created.id)
+          } else {
+            upsertStoredModelConfig(config)
+          }
+          await refreshSelection()
           setShowConfig(false)
         }}
       />

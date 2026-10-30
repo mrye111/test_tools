@@ -5,6 +5,8 @@ import {
   BarChart3,
   Database,
   Code2,
+  Bot,
+  Rocket,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -25,6 +27,14 @@ export const tools: Tool[] = [
     tag: '性能压测',
     icon: Gauge,
     href: '/jmeter',
+  },
+  {
+    id: 'online-loadtest',
+    title: '在线压测',
+    description: 'k6 引擎：可视化配置、在线运行、实时监控与网页报告',
+    tag: '性能压测',
+    icon: Rocket,
+    href: '/loadtest',
   },
   {
     id: 'testcase-generator',
@@ -57,6 +67,14 @@ export const tools: Tool[] = [
     tag: '需求洞察',
     icon: FileSearch,
     href: '/requirement-analysis',
+  },
+  {
+    id: 'ui-automation',
+    title: '自动化测试',
+    description: 'UI 自动化：自然语言驱动浏览器执行用例，逐步截图可回放',
+    tag: 'UI 自动化',
+    icon: Bot,
+    href: '/automation',
   },
   {
     id: 'dev-tools',

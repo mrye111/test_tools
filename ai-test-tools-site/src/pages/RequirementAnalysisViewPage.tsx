@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Download, Loader2, Pencil, Plus, RefreshCw, Share2, Trash2 } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Pencil, Plus, RefreshCw, Share2, Trash2, Wand2 } from 'lucide-react'
 import { Tooltip } from '../components/ui/Tooltip'
 import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { useErrorDialog } from '../components/ui/ErrorDialogProvider'
 import { downloadAnalysisMarkdown } from '../features/requirement-analysis-v2/markdown-export'
-import { loadStoredModelConfig } from '../lib/model-config-store'
-import { toAiConfig } from '../shared/api-types'
+import { loadActiveAiConfigSelection } from '../lib/active-ai-config'
 import {
   bulkPatchIssues,
   createCondition,
@@ -26,7 +25,13 @@ import {
   type RtmView,
   type TestCondition,
 } from '../features/requirement-analysis-v2/analysis-api'
-import { REQUIREMENT_CONDITIONS_HANDOFF_KEY, type ConditionsHandoffPayload } from '../features/requirement-analysis-v2/handoff'
+import {
+  buildConditionsHandoffText,
+  CONDITION_KIND_LABEL,
+  REQUIREMENT_CONDITIONS_HANDOFF_KEY,
+  type ConditionsHandoffPayload,
+} from '../features/requirement-analysis-v2/handoff'
+import { RequirementImportDialog } from '../features/automation/RequirementImportDialog'
 
 const ISSUE_TYPE_LABEL: Record<AnalysisIssue['type'], string> = {
   ambiguity: '歧义',
@@ -45,12 +50,6 @@ const ISSUE_STATUS_LABEL: Record<IssueStatus, string> = {
   open: '待澄清',
   resolved: '已澄清',
   accepted: '已接受',
-}
-
-const CONDITION_KIND_LABEL: Record<ConditionKind, string> = {
-  normal: '正常',
-  boundary: '边界',
-  exception: '异常',
 }
 
 const ISSUE_STATUS_CYCLE: IssueStatus[] = ['open', 'resolved', 'accepted']
@@ -97,12 +96,13 @@ export function RequirementAnalysisViewPage() {
 
   // 重新分析（新记录 + 保守继承已处理问题状态）
   const [reanalyzeConfirm, setReanalyzeConfirm] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
   const [reanalyzing, setReanalyzing] = useState(false)
   const [reanalyzeProgress, setReanalyzeProgress] = useState('')
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (showLoading = true) => {
     if (!id) return
-    setLoading(true)
+    if (showLoading) setLoading(true)
     try {
       const [detail, rtmView] = await Promise.all([getAnalysisRecord(id), getAnalysisRtm(id)])
       setRecord(detail)
@@ -111,7 +111,7 @@ export function RequirementAnalysisViewPage() {
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : '获取分析记录失败')
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
   }, [id])
 
@@ -190,15 +190,7 @@ export function RequirementAnalysisViewPage() {
     try {
       const conditionIds = selected.map((c) => c.id)
       await relayConditions(record.id, conditionIds)
-      const requirementText = [
-        `【需求分析接力】${record.title}`,
-        '',
-        '需求原文摘要：',
-        record.sourceText.slice(0, 2000),
-        '',
-        '测试条件（需逐条覆盖）：',
-        ...selected.map((c) => `- [${CONDITION_KIND_LABEL[c.kind]}] ${c.text}`),
-      ].join('\n')
+      const requirementText = buildConditionsHandoffText(record, selected)
       const payload: ConditionsHandoffPayload = {
         requirement: requirementText,
         name: record.title,
@@ -321,8 +313,8 @@ export function RequirementAnalysisViewPage() {
   /** 重新分析：确认 → SSE 生成新记录 → 跳转新详情页（旧记录保留） */
   const handleReanalyze = async () => {
     if (!record || reanalyzing) return
-    const stored = loadStoredModelConfig()
-    if (!stored) {
+    const aiSelection = await loadActiveAiConfigSelection()
+    if (!aiSelection) {
       showError(new Error('请先在「设置」中配置模型'), { title: '无法重新分析' })
       return
     }
@@ -330,7 +322,7 @@ export function RequirementAnalysisViewPage() {
     setReanalyzing(true)
     setReanalyzeProgress('正在连接模型…')
     try {
-      const next = await reanalyzeRecordStream(record.id, toAiConfig(stored), (event) => {
+      const next = await reanalyzeRecordStream(record.id, aiSelection.payload, (event) => {
         if (event.type === 'progress') setReanalyzeProgress(event.message)
       })
       if (next) {
@@ -383,6 +375,8 @@ export function RequirementAnalysisViewPage() {
   }
 
   const relayableCount = record.conditions.filter((c) => c.relay === 'none').length
+  /** 可生成自动化用例的条件：已勾选且未接力/未生成。 */
+  const importableIds = record.conditions.filter((c) => checked.has(c.id) && c.relay === 'none').map((c) => c.id)
 
   return (
     <div className="page-shell ra2-view">
@@ -425,6 +419,25 @@ export function RequirementAnalysisViewPage() {
             onClick={() => downloadAnalysisMarkdown(record, rtm)}
           >
             <Download className="h-4 w-4" />
+          </button>
+        </Tooltip>
+        <Tooltip
+          content={
+            relayableCount === 0
+              ? '该记录的测试条件均已接力或已生成，无可导入条件'
+              : importableIds.length > 0
+                ? `生成自动化用例（按勾选的 ${importableIds.length} 条测试条件）`
+                : '先在「测试条件」页签勾选要覆盖的条件'
+          }
+        >
+          <button
+            type="button"
+            className="icon-action h-10 w-10 rounded-xl"
+            aria-label="生成自动化用例"
+            disabled={importableIds.length === 0}
+            onClick={() => setShowImportDialog(true)}
+          >
+            <Wand2 className="h-4 w-4" />
           </button>
         </Tooltip>
       </div>
@@ -760,6 +773,17 @@ export function RequirementAnalysisViewPage() {
         onCancel={() => setReanalyzeConfirm(false)}
         onConfirm={() => void handleReanalyze()}
       />
+
+      {showImportDialog && (
+        <RequirementImportDialog
+          recordId={record.id}
+          recordTitle={record.title}
+          conditionIds={importableIds}
+          onClose={() => setShowImportDialog(false)}
+          // 静默刷新：走 loading 态会把弹窗连同汇总一起卸载掉
+          onFinished={() => void load(false)}
+        />
+      )}
     </div>
   )
 }

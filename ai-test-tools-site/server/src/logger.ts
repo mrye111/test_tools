@@ -9,15 +9,25 @@ const isDev = process.env.NODE_ENV !== "production";
 
 // ── Logger 实例 ───────────────────────────────────────────────────────────────
 
+/** 日志脱敏（spec §6「日志禁钥」）：密钥类字段永不落日志。 */
+const REDACT_PATHS = [
+  "password", "newPassword", "currentPassword", "apiKey", "api_key",
+  "*.password", "*.newPassword", "*.currentPassword", "*.apiKey", "*.api_key",
+  "req.body.password", "req.body.newPassword", "req.body.currentPassword", "req.body.apiKey",
+];
+const REDACT_OPTIONS = { paths: REDACT_PATHS, censor: "[redacted]" } as const;
+
 function createLogger(): pino.Logger {
   mkdirSync(LOG_DIR, { recursive: true });
 
   if (isDev) {
     return pino({
       level: process.env.LOG_LEVEL ?? "debug",
+      redact: REDACT_OPTIONS,
       transport: {
         target: "pino-pretty",
         options: {
+          ...(process.argv[2] === "stdio" ? { destination: 2 } : {}),
           colorize: true,
           translateTime: "HH:MM:ss",
           ignore: "pid,hostname",
@@ -31,7 +41,7 @@ function createLogger(): pino.Logger {
   const filePath = resolve(LOG_DIR, `app-${day}.log`);
 
   return pino(
-    { level: process.env.LOG_LEVEL ?? "info" },
+    { level: process.env.LOG_LEVEL ?? "info", redact: REDACT_OPTIONS },
     pino.destination(filePath),
   );
 }

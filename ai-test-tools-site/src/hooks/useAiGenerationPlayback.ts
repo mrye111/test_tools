@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react'
-import { generateJmeterWithAiStream, getPreferredAiConfig, type AiGenerateResponse, type AiGenerateStreamEvent } from '../lib/jmeter-api'
+import { generateJmeterWithAiStream, type AiGenerateResponse, type AiGenerateStreamEvent } from '../lib/jmeter-api'
 import { normalizeErrorMessage } from '../lib/app-error'
 import { toGeneratedPlanResult, type GeneratedPlanResult } from '../lib/jmeter-builders'
 import { formatAiToolStep } from '../components/jmeter/aiStepFlow'
-import type { StoredModelConfig } from '../shared/api-types'
+import type { AiConfigSubmitPayload } from '../shared/api-types'
 
 export type AiGenerationEvent = {
   id: string
@@ -29,7 +29,8 @@ interface UseAiGenerationPlaybackOptions {
 
 interface StartGenerationArgs {
   prompt: string
-  modelConfig: StoredModelConfig
+  /** 生成提交载荷：本地=完整运行时配置，云端={ cloudConfigId } 引用（密钥不出服务端）。 */
+  aiConfig: AiConfigSubmitPayload
 }
 
 function toAiEvents(response: AiGenerateResponse): AiGenerationEvent[] {
@@ -157,7 +158,7 @@ export function useAiGenerationPlayback(options: UseAiGenerationPlaybackOptions 
     return queueDrainPromiseRef.current
   }
 
-  const start = async ({ prompt, modelConfig }: StartGenerationArgs) => {
+  const start = async ({ prompt, aiConfig }: StartGenerationArgs) => {
     setRunning(true)
     setError(null)
     setResult(null)
@@ -169,13 +170,9 @@ export function useAiGenerationPlayback(options: UseAiGenerationPlaybackOptions 
 
     try {
       // 输出文件名由服务端统一生成（server/generated 下），前端不再计算 output_path。
-      const preferredConfig = getPreferredAiConfig(modelConfig)
-      if (!preferredConfig) {
-        throw new Error('当前统一供应商缺少可用模型配置')
-      }
       const generated = await streamGenerate({
         prompt,
-        ai_config: preferredConfig,
+        ai_config: aiConfig,
       }, (streamEvent) => {
         return enqueueEvent(toAiEvent(streamEvent))
       })

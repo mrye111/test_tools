@@ -1,12 +1,14 @@
 import { useEffect } from 'react'
 import { NavLink, Link } from 'react-router-dom'
 import { motion, useMotionValue, useSpring, useTransform } from 'motion/react'
-import { Settings, Wrench, BookOpen } from 'lucide-react'
+import { Settings, Wrench, BookOpen, Bot } from 'lucide-react'
 import { Tooltip } from './ui/Tooltip'
+import { UserMenu } from './UserMenu'
 
 const navItems = [
-  { to: '/#tools', label: '工具', icon: Wrench, external: false },
-  { to: '#', label: '文档', icon: BookOpen, external: true },
+  { to: '/#tools', label: '工具', icon: Wrench, external: false, tooltip: '探索全部测试工具' },
+  { to: '/automation', label: '自动化测试', icon: Bot, external: false, tooltip: 'UI 自动化执行与回放' },
+  { to: '#', label: '文档', icon: BookOpen, external: true, tooltip: '使用文档与 API 参考' },
 ]
 
 // 滚动收缩曲线：前 160px 滚动映射为 0→1 进度
@@ -82,7 +84,7 @@ export function Navbar() {
             if (item.external) {
               return (
                 <li key={item.label}>
-                  <Tooltip content={item.label === '文档' ? '使用文档与 API 参考' : ''}>
+                  <Tooltip content={item.tooltip}>
                     <a
                       href={item.to}
                       className={`nav-pill flex items-center gap-1.5 ${
@@ -99,7 +101,7 @@ export function Navbar() {
 
             return (
               <li key={item.label}>
-                <Tooltip content="探索全部测试工具">
+                <Tooltip content={item.tooltip}>
                   <NavLink
                     to={item.to}
                     className={({ isActive: active }) =>
@@ -126,6 +128,11 @@ export function Navbar() {
                 <span className="max-sm:hidden">设置</span>
               </Link>
             </Tooltip>
+          </li>
+
+          {/* 用户菜单：登录入口 / 用户名下拉（改密、用户管理、登出） */}
+          <li>
+            <UserMenu />
           </li>
         </motion.ul>
       </motion.div>

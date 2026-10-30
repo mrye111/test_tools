@@ -21,8 +21,14 @@ vi.mock('../features/requirement-analysis-v2/analysis-api', () => ({
   analyzeRequirementStream: stub.analyzeRequirementStream,
 }))
 
-vi.mock('../lib/model-config-store', () => ({
-  loadStoredModelConfig: vi.fn(() => ({ id: 'p1' })),
+vi.mock('../lib/active-ai-config', () => ({
+  loadActiveAiConfigSelection: vi.fn(async () => ({
+    storage: 'local',
+    payload: { provider: 'codex', endpointType: 'openai_chat', baseUrl: 'http://x', apiKey: 'k', model: 'm' },
+    name: 'p1',
+    model: 'm',
+    apiFormat: 'openai_chat',
+  })),
 }))
 
 vi.mock('../shared/api-types', async () => {

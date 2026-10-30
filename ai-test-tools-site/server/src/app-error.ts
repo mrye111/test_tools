@@ -17,10 +17,10 @@ export class AppError extends Error {
   }
 
   toJSON(): Record<string, unknown> {
+    // 出站错误信封只带安全文案：cause 可能内嵌请求体片段/密钥，只进日志不进响应（审查 M-5）
     return {
       code: this.code,
       message: this.message,
-      ...(this.cause ? { cause: this.cause.message } : {}),
     };
   }
 }
@@ -29,6 +29,18 @@ export class AppError extends Error {
 
 export function badRequest(message: string, cause?: Error): AppError {
   return new AppError({ code: "BAD_REQUEST", message, httpStatus: 400, cause });
+}
+
+export function unauthorized(message: string, cause?: Error): AppError {
+  return new AppError({ code: "UNAUTHORIZED", message, httpStatus: 401, cause });
+}
+
+export function forbidden(message: string, cause?: Error): AppError {
+  return new AppError({ code: "FORBIDDEN", message, httpStatus: 403, cause });
+}
+
+export function conflict(message: string, cause?: Error): AppError {
+  return new AppError({ code: "CONFLICT", message, httpStatus: 409, cause });
 }
 
 export function notFound(message: string, cause?: Error): AppError {
