@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>自动化测试 · 交互原型 v2（供评审）</title>
+<style>
+  :root {
+    --accent: oklch(0.55 0.21 262);
+    --accent-strong: oklch(0.47 0.23 264);
+    --accent-muted: oklch(0.94 0.025 262);
+    --run: oklch(0.6 0.17 155);
+    --run-strong: oklch(0.52 0.17 155);
+    --run-bg: oklch(0.96 0.025 155);
+    --surface: oklch(1 0 0);
+    --surface-2: oklch(0.985 0.004 262);
+    --bg: oklch(0.982 0.006 262);
+    --fg: oklch(0.2 0.03 262);
+    --fg-soft: oklch(0.3 0.03 262);
+    --muted: oklch(0.47 0.03 262);
+    --muted-soft: oklch(0.66 0.02 262);
+    --border: oklch(0.91 0.012 262);
+    --border-strong: oklch(0.82 0.02 262);
+    --danger: oklch(0.55 0.2 25);
+    --danger-bg: oklch(0.97 0.012 25);
+    --success: oklch(0.55 0.15 160);
+    --success-bg: oklch(0.96 0.02 155);
+    --warn: oklch(0.6 0.14 75);
+    --warn-bg: oklch(0.96 0.03 90);
+    --violet: oklch(0.55 0.18 300);
+    --violet-bg: oklch(0.96 0.02 300);
+    --cyan: oklch(0.58 0.12 220);
+    --cyan-bg: oklch(0.96 0.02 220);
+    --code-bg: oklch(0.21 0.03 262);
+    --code-fg: oklch(0.87 0.02 262);
+    --code-muted: oklch(0.6 0.03 262);
+    --code-green: oklch(0.78 0.15 155);
+    --code-blue: oklch(0.74 0.12 240);
+    --code-amber: oklch(0.8 0.12 85);
+    --shadow-sm: 0 1px 2px oklch(0.5 0.05 262 / 0.06), 0 1px 3px oklch(0.5 0.05 262 / 0.04);
+    --shadow-md: 0 1px 2px oklch(0.5 0.05 262 / 0.05), 0 8px 24px -12px oklch(0.5 0.08 262 / 0.14);
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Inter, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--fg); font-size: 13.5px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; cursor: pointer; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .ic { display: inline-flex; width: 15px; height: 15px; flex-shrink: 0; align-self: center; }
+  .ic svg { width: 100%; height: 100%; }
+
+  /* ===== 顶部玻璃导航 ===== */
+  .nav-wrap { position: sticky; top: 12px; z-index: 50; padding: 0 16px; }
+  .navbar { max-width: 1120px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 8px 7px 16px; border-radius: 999px; border: 1px solid oklch(1 0 0 / 0.66); background: oklch(1 0 0 / 0.72); backdrop-filter: blur(16px) saturate(1.5); box-shadow: 0 18px 44px -26px oklch(0.45 0.14 262 / 0.35), inset 0 1px 0 oklch(1 0 0 / 0.85); }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16.5px; letter-spacing: -0.03em; }
+  .logo-badge { width: 33px; height: 33px; border-radius: 11px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 800; box-shadow: 0 12px 28px -14px oklch(0.58 0.17 262 / 0.7), inset 0 1px 0 oklch(1 0 0 / 0.32); }
+  .nav-pills { display: flex; gap: 3px; padding: 4px; border-radius: 999px; border: 1px solid oklch(1 0 0 / 0.6); background: oklch(1 0 0 / 0.5); }
+  .nav-pill { display: flex; align-items: center; gap: 6px; padding: 6px 13px; border-radius: 999px; color: var(--muted); font-size: 13px; border: none; background: transparent; transition: color 0.18s var(--ease), background 0.18s var(--ease), box-shadow 0.18s var(--ease); }
+  .nav-pill:hover { color: var(--fg-soft); }
+  .nav-pill.active { background: var(--surface); color: var(--fg); box-shadow: var(--shadow-md); font-weight: 600; }
+  .new-dot { font-size: 9.5px; letter-spacing: 0.06em; background: var(--accent); color: #fff; border-radius: 6px; padding: 1px 5px; font-weight: 700; }
+
+  .proto-banner { max-width: 1120px; margin: 12px auto 0; padding: 7px 14px; border: 1px dashed var(--border-strong); border-radius: 11px; color: var(--muted); font-size: 12px; background: var(--surface-2); }
+  .proto-banner b { color: var(--fg-soft); }
+
+  .module-head { max-width: 1120px; margin: 16px auto 0; display: flex; align-items: flex-end; justify-content: space-between; }
+  .module-title h1 { font-size: 24px; letter-spacing: -0.03em; font-weight: 800; }
+  .module-title p { color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+  .tabs { max-width: 1120px; margin: 12px auto 0; display: flex; gap: 2px; border-bottom: 1px solid var(--border); }
+  .tab { padding: 8px 13px; border: none; background: none; color: var(--muted); font-size: 13.5px; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.16s var(--ease), border-color 0.16s var(--ease); }
+  .tab:hover { color: var(--fg-soft); }
+  .tab.active { color: var(--accent-strong); border-bottom-color: var(--accent); font-weight: 650; }
+
+  main { max-width: 1120px; margin: 16px auto 60px; padding: 0 2px; }
+  .screen { display: none; }
+  .screen.active { display: block; animation: fadeUp 0.24s var(--ease); }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 13px; box-shadow: var(--shadow-sm); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--fg-soft); font-size: 12.5px; font-weight: 550; box-shadow: var(--shadow-sm); transition: all 0.18s var(--ease); }
+  .btn:hover { border-color: var(--accent); color: var(--accent-strong); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+  .btn:active { transform: none; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 650; }
+  .btn-primary:hover { background: var(--accent-strong); color: #fff; }
+  .btn-run { background: var(--run); border-color: var(--run); color: #fff; font-weight: 650; }
+  .btn-run:hover { background: var(--run-strong); border-color: var(--run-strong); color: #fff; }
+  .btn[disabled] { opacity: 0.45; cursor: not-allowed; transform: none !important; box-shadow: var(--shadow-sm) !important; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; border-radius: 8px; }
+  .input, select.input { padding: 6px 11px; border: 1px solid var(--border-strong); border-radius: 9px; font: inherit; font-size: 12.5px; background: var(--surface); color: var(--fg); transition: border-color 0.16s var(--ease); }
+  .input:hover { border-color: var(--accent); }
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 1.5px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 650; white-space: nowrap; }
+  .badge .ic { width: 12px; height: 12px; }
+  .b-green { background: var(--success-bg); color: var(--success); }
+  .b-amber { background: var(--warn-bg); color: var(--warn); }
+  .b-gray { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+  .b-red { background: var(--danger-bg); color: var(--danger); }
+  .b-blue { background: var(--accent-muted); color: var(--accent-strong); }
+  .b-violet { background: var(--violet-bg); color: var(--violet); }
+  .b-cyan { background: var(--cyan-bg); color: var(--cyan); }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .note { border: 1px dashed var(--border-strong); border-radius: 10px; padding: 8px 12px; font-size: 12px; color: var(--muted); background: var(--surface-2); }
+  .note b { color: var(--accent-strong); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 760px; }
+  th { text-align: left; font-size: 11.5px; letter-spacing: 0.04em; color: var(--muted); font-weight: 650; padding: 9px 14px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+  th:first-child { border-radius: 13px 0 0 0; } th:last-child { border-radius: 0 13px 0 0; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tbody tr { transition: background 0.14s var(--ease); }
+  tbody tr:hover { background: var(--surface-2); }
+  tr:last-child td { border-bottom: none; }
+  .toolbar { display: flex; align-items: center; gap: 9px; margin-bottom: 13px; flex-wrap: wrap; }
+  .toolbar .spacer { flex: 1; }
+
+  /* ===== 步骤 ===== */
+  .step { display: flex; gap: 10px; padding: 8px 12px; border: 1px solid var(--border); border-left: 3px solid var(--border-strong); border-radius: 9px; margin-bottom: 7px; background: var(--surface); align-items: flex-start; transition: all 0.18s var(--ease); }
+  .step:hover { border-color: var(--accent); transform: translateX(2px); box-shadow: var(--shadow-sm); }
+  .step.t-act { border-left-color: var(--accent); }
+  .step.t-assert { border-left-color: var(--violet); }
+  .step.t-extract { border-left-color: var(--cyan); }
+  .step.t-wait { border-left-color: var(--muted-soft); }
+  .step-no { color: var(--muted-soft); font-size: 11.5px; min-width: 16px; padding-top: 2px; text-align: right; }
+  .step-body { flex: 1; }
+  .step-text { font-size: 13px; }
+  .from-step { font-size: 10.5px; color: var(--muted-soft); border: 1px solid var(--border); border-radius: 5px; padding: 0 4px; margin-left: 6px; white-space: nowrap; }
+  .var-chip { display: inline-block; padding: 0 6px; border-radius: 6px; background: var(--accent-muted); color: var(--accent-strong); font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 11.5px; font-weight: 650; }
+  .save-as { font-size: 11.5px; color: var(--cyan); font-family: ui-monospace, monospace; font-weight: 600; }
+
+  /* ===== 深色编译面板 ===== */
+  .code-panel { background: var(--code-bg); color: var(--code-fg); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-md); }
+  .code-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid oklch(1 0 0 / 0.08); }
+  .code-title { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 650; color: var(--code-fg); }
+  .code-body { padding: 12px; font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 12px; line-height: 1.7; }
+  .cl-src { color: var(--code-muted); }
+  cl-dst, .cl-dst { color: var(--code-green); }
+  .cl-key { color: var(--code-blue); }
+  .cl-manual { color: var(--code-amber); }
+  .cl-arrow { color: oklch(0.5 0.05 262); text-align: center; font-size: 10.5px; }
+  .cl-comment { color: oklch(0.52 0.03 262); font-style: italic; }
+  .toggle { display: inline-flex; border: 1px solid oklch(1 0 0 / 0.16); border-radius: 8px; overflow: hidden; }
+  .toggle button { border: none; background: transparent; padding: 3px 11px; font-size: 11.5px; color: var(--code-muted); transition: all 0.16s var(--ease); }
+  .toggle button.on { background: oklch(1 0 0 / 0.12); color: #fff; font-weight: 650; }
+
+  /* ===== 执行台 ===== */
+  .bench-status { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 11px; background: var(--code-bg); color: var(--code-fg); margin-bottom: 12px; box-shadow: var(--shadow-md); }
+  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--code-green); box-shadow: 0 0 0 0 oklch(0.78 0.15 155 / 0.5); animation: live 1.8s infinite; }
+  @keyframes live { 0% { box-shadow: 0 0 0 0 oklch(0.78 0.15 155 / 0.45); } 70% { box-shadow: 0 0 0 9px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+  .bench-status .stop-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; background: oklch(1 0 0 / 0.1); color: #fff; border: 1px solid oklch(1 0 0 / 0.2); border-radius: 8px; padding: 3px 11px; font-size: 12px; transition: background 0.16s; }
+  .bench-status .stop-btn:hover { background: var(--danger); border-color: var(--danger); }
+  .bench-bar { display: flex; gap: 9px; margin-bottom: 13px; }
+  .bench-bar .input-url { width: 300px; font-family: ui-monospace, monospace; font-size: 12px; }
+  .bench-bar .input-cmd { flex: 1; }
+  .bench-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 13px; }
+  .browser-frame { border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow-md); }
+  .browser-chrome { display: flex; align-items: center; gap: 6px; padding: 7px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .browser-url { flex: 1; margin-left: 8px; font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 2px 10px; }
+  .browser-view { position: relative; height: 372px; background: linear-gradient(135deg, oklch(0.97 0.01 262), oklch(0.99 0.005 262)); }
+  .mock-sidebar { position: absolute; left: 0; top: 0; bottom: 0; width: 164px; background: var(--surface); border-right: 1px solid var(--border); padding: 12px 9px; }
+  .mock-nav-item { display: flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 8px; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .mock-nav-item.on { background: var(--accent-muted); color: var(--accent-strong); font-weight: 650; }
+  .mock-main { position: absolute; left: 180px; right: 14px; top: 14px; }
+  .mock-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; margin-bottom: 9px; box-shadow: var(--shadow-sm); }
+  .mock-num { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .click-marker { position: absolute; width: 20px; height: 20px; border-radius: 50%; background: oklch(0.55 0.21 262 / 0.85); border: 3px solid #fff; box-shadow: 0 0 0 4px oklch(0.55 0.21 262 / 0.35), 0 4px 12px oklch(0.55 0.21 262 / 0.5); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.22); } }
+  .view-caption { position: absolute; right: 9px; bottom: 7px; font-size: 10.5px; color: var(--muted-soft); background: oklch(1 0 0 / 0.85); padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); }
+
+  .timeline { display: flex; flex-direction: column; gap: 3px; }
+  .tl-item { display: flex; gap: 9px; padding: 7px 9px; border-radius: 9px; font-size: 12.5px; }
+  .tl-item.thought { color: var(--muted); font-style: italic; font-size: 12px; }
+  .tl-item.action { background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+  .tl-icon { flex-shrink: 0; width: 18px; text-align: center; color: var(--muted-soft); }
+  .tl-icon .ic { width: 14px; height: 14px; }
+  .tl-ok { color: var(--success); }
+  .tl-fail { color: var(--danger); }
+  .tl-meta { font-size: 11px; color: var(--muted-soft); margin-top: 2px; }
+
+  /* ===== 运行历史 ===== */
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 13px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 13px; box-shadow: var(--shadow-sm); }
+  .stat-label { font-size: 11px; color: var(--muted); letter-spacing: 0.03em; }
+  .stat-value { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-top: 1px; }
+  .mini-bars { display: flex; align-items: flex-end; gap: 2.5px; height: 22px; margin-top: 6px; }
+  .mini-bars span { flex: 1; border-radius: 2px; background: var(--accent-muted); }
+  .mini-bars span.hot { background: var(--accent); }
+  .gauge-wrap { display: flex; align-items: center; gap: 10px; }
+  .gauge { width: 40px; height: 40px; border-radius: 50%; background: conic-gradient(var(--run) 0 75%, var(--border) 75% 100%); display: flex; align-items: center; justify-content: center; }
+  .gauge::after { content: ''; width: 28px; height: 28px; border-radius: 50%; background: var(--surface); }
+  .gauge-num { position: absolute; font-size: 11px; font-weight: 800; }
+  .run-detail { background: var(--surface-2); border-top: 1px dashed var(--border-strong); padding: 11px 14px; }
+  .replay-steps { display: flex; gap: 5px; flex-wrap: wrap; margin: 7px 0; }
+  .replay-step { width: 25px; height: 25px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; cursor: pointer; transition: transform 0.15s var(--ease); }
+  .replay-step:hover { transform: translateY(-2px); }
+  .replay-step .ic { width: 13px; height: 13px; }
+  .rs-ok { background: var(--success-bg); color: var(--success); }
+  .rs-skip { background: var(--warn-bg); color: var(--warn); }
+  .rs-fail { background: var(--danger-bg); color: var(--danger); }
+  .iframe-mock { border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+  /* ===== 集成示意 ===== */
+  .exec-pop { border: 1px solid var(--accent); border-radius: 12px; background: oklch(0.98 0.01 262); padding: 12px 14px; margin-top: 11px; box-shadow: var(--shadow-md); }
+  .progress-track { height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; margin: 8px 0; }
+  .progress-fill { height: 100%; width: 38%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--run)); transition: width 0.4s var(--ease); }
+  .running-badge { position: relative; overflow: hidden; }
+  .running-badge::after { content: ''; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, oklch(1 0 0 / 0.55) 50%, transparent 70%); animation: shimmer 1.6s infinite; }
+  @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+  .two-col { display: grid; grid-template-columns: 1.15fr 1fr; gap: 13px; align-items: start; }
+  .section-title { font-size: 12.5px; font-weight: 700; color: var(--fg-soft); margin-bottom: 8px; display: flex; align-items: center; gap: 7px; letter-spacing: 0.01em; }
+  .pad { padding: 13px; }
+  .kv { display: grid; grid-template-columns: 84px 1fr; gap: 6px 10px; font-size: 12.5px; align-items: center; }
+  .kv dt { color: var(--muted); }
+  .manual-card { border: 1px solid oklch(0.85 0.08 85); background: var(--warn-bg); border-radius: 12px; padding: 12px 13px; }
+  .manual-item { display: flex; gap: 9px; padding: 7px 0; border-bottom: 1px dashed oklch(0.85 0.08 85); font-size: 12.5px; }
+  .manual-item:last-child { border-bottom: none; }
+  .manual-item .ic { color: var(--warn); margin-top: 2px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="nav-wrap">
+  <div class="navbar">
+    <div class="logo"><div class="logo-badge">AI</div>AI测试工具</div>
+    <div class="nav-pills">
+      <button class="nav-pill"><span class="ic" data-ic="wrench"></span>工具</button>
+      <button class="nav-pill active"><span class="ic" data-ic="bot"></span>自动化测试 <span class="new-dot">NEW</span></button>
+      <button class="nav-pill"><span class="ic" data-ic="book"></span>文档</button>
+      <button class="nav-pill"><span class="ic" data-ic="sliders"></span>设置</button>
+    </div>
+  </div>
+</div>
+
+<div class="proto-banner">
+  <b>交互原型 v2 · 供评审</b> — 数据为示例（取自真实用例集：登录集 / 包年套餐集 / zentao 导入集）。顶部导航新增「自动化测试」一级入口（首页工具矩阵同步加卡片，此处略）。点击页签与「编辑 / 查看报告」切换五个界面。
+</div>
+
+<div class="module-head">
+  <div class="module-title">
+    <h1>自动化测试</h1>
+    <p>UI 自动化：自然语言驱动 · 视觉引擎执行 · 逐步可回放</p>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-tab="list" onclick="showTab('list', this)">用例管理</button>
+  <button class="tab" data-tab="editor" onclick="showTab('editor', this)">用例编辑器</button>
+  <button class="tab" data-tab="bench" onclick="showTab('bench', this)">交互执行台</button>
+  <button class="tab" data-tab="runs" onclick="showTab('runs', this)">运行历史</button>
+  <button class="tab" data-tab="integration" onclick="showTab('integration', this)">用例页执行 · 集成示意</button>
+</div>
+
+<main>
+
+<!-- ================= 界面 1：用例管理 ================= -->
+<section class="screen active" id="s-list">
+  <div class="toolbar">
+    <select class="input"><option>全部项目</option><option>星舟商城</option><option>计费中心</option><option>智信学习</option></select>
+    <select class="input"><option>全部环境</option><option>预发</option><option>测试</option></select>
+    <input class="input" placeholder="搜索用例标题 / 编号" style="width:210px">
+    <div class="spacer"></div>
+    <button class="btn"><span class="ic" data-ic="upload"></span>导入</button>
+    <button class="btn btn-primary" onclick="showTab('editor')"><span class="ic" data-ic="plus"></span>新建自动化用例</button>
+  </div>
+
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>编号 / 标题</th><th>项目</th><th>可自动化程度</th><th>步骤</th><th>最近运行</th><th style="width:160px">操作</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b class="num">ATC-001</b> · 正常账号密码登录</td>
+          <td>星舟商城</td>
+          <td><span class="badge b-green"><span class="ic" data-ic="check"></span>全自动</span></td>
+          <td class="num">8 步</td>
+          <td><span class="tl-ok">✓ 通过</span> <span class="muted small num">2 分钟前</span></td>
+          <td><button class="btn btn-sm btn-run"><span class="ic" data-ic="play"></span>执行</button> <button class="btn btn-sm" onclick="showTab('editor')">编辑</button></td>
+        </tr>
+        <tr>
+          <td><b class="num">ATC-002</b> · 包年套餐超量阶梯计费</td>
+          <td>计费中心</td>
+          <td><span class="badge b-amber"><span class="ic" data-ic="half"></span>部分自动 · 2 项人工</span></td>
+          <td class="num">12 步</td>
+          <td><span style="color:var(--warn)">◐ 部分通过</span> <span class="muted small num">1 小时前</span></td>
+          <td><button class="btn btn-sm btn-run"><span class="ic" data-ic="play"></span>执行</button> <button class="btn btn-sm" onclick="showTab('editor')">编辑</button></td>
+        </tr>
+        <tr title="编译后无可自动执行步骤：用例粒度过粗（zentao 手写），需人工执行或补充细化">
+          <td><b class="num">ATC-003</b> · 页面展示与文案校验 <span class="muted small">（zentao 导入）</span></td>
+          <td>智信学习</td>
+          <td><span class="badge b-gray"><span class="ic" data-ic="user"></span>需人工</span></td>
+          <td><span class="muted">无可执行步骤</span></td>
+          <td><span class="muted small">从未运行</span></td>
+          <td><button class="btn btn-sm" disabled><span class="ic" data-ic="play"></span>执行</button> <button class="btn btn-sm">编辑</button></td>
+        </tr>
+        <tr>
+          <td><b class="num">ATC-004</b> · 套餐创建幂等提交</td>
+          <td>计费中心</td>
+          <td><span class="badge b-green"><span class="ic" data-ic="check"></span>全自动</span></td>
+          <td class="num">9 步</td>
+          <td><span class="tl-fail">✗ 失败 · 步骤 6</span> <span class="muted small num">昨天</span></td>
+          <td><button class="btn btn-sm btn-run"><span class="ic" data-ic="play"></span>执行</button> <button class="btn btn-sm">编辑</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="note" style="margin-top:11px"><b>原型注释</b>：「可自动化程度」由 LLM 编译器判定（调研实测：38% 功能用例含浏览器不可执行的后端操作）。<b>部分自动</b>的用例执行结果最高为「部分通过」，如实呈现；<b>需人工</b>（多为 zentao 类粗粒老用例）执行按钮禁用，悬停可见原因。</p>
+</section>
+
+<!-- ================= 界面 2：用例编辑器 ================= -->
+<section class="screen" id="s-editor">
+  <div class="toolbar">
+    <span style="font-size:15.5px;font-weight:750">ATC-002 · 包年套餐超量阶梯计费</span>
+    <span class="badge b-amber"><span class="ic" data-ic="half"></span>部分自动</span>
+    <div class="spacer"></div>
+    <button class="btn">保存</button>
+    <button class="btn btn-run"><span class="ic" data-ic="play"></span>立即执行</button>
+  </div>
+
+  <div class="two-col">
+    <div>
+      <div class="card pad" style="margin-bottom:11px">
+        <div class="section-title"><span class="ic" data-ic="database"></span>基本信息与前置条件</div>
+        <dl class="kv">
+          <dt>所属项目</dt><dd>计费中心</dd>
+          <dt>目标环境</dt><dd><select class="input" style="padding:3px 8px"><option>预发 https://staging.billing.example.com</option><option>测试 https://test.billing.example.com</option></select></dd>
+          <dt>前置条件</dt>
+          <dd>
+            <span class="badge b-gray"><span class="ic" data-ic="database"></span>外部数据：阶梯套餐 PKG-O 已生效</span>
+            <span class="badge b-gray"><span class="ic" data-ic="database"></span>外部数据：累计用量 = 500000</span><br>
+            登录：admin / <span class="var-chip">${BILLING_ADMIN_PASSWORD}</span> <span class="muted small">真实值仅存服务端配置</span>
+          </dd>
+        </dl>
+      </div>
+
+      <div class="section-title"><span class="ic" data-ic="steps"></span>执行步骤 <span class="muted small" style="font-weight:400">（编译产物，可手工修正）</span></div>
+      <div class="step t-act"><span class="step-no">1</span><div class="step-body"><span class="badge b-blue">act</span> <span class="step-text">在左侧导航点击【账单中心】</span><span class="from-step">← 步骤1</span></div></div>
+      <div class="step t-assert"><span class="step-no">2</span><div class="step-body"><span class="badge b-violet">assert</span> <span class="step-text">用量概览区显示累计用量为 500000 条</span><span class="from-step">← 步骤1·预期1</span></div></div>
+      <div class="step t-extract"><span class="step-no">3</span><div class="step-body"><span class="badge b-cyan">extract</span> <span class="step-text">读取当前累计用量数值</span> <span class="save-as">→ {{usageBefore}}</span><span class="from-step">← 步骤1</span></div></div>
+      <div class="step t-act"><span class="step-no">4</span><div class="step-body"><span class="badge b-blue">act</span> <span class="step-text">点击【账单明细】页签</span><span class="from-step">← 步骤4</span></div></div>
+      <div class="step t-wait"><span class="step-no">5</span><div class="step-body"><span class="badge b-gray">wait</span> <span class="step-text">等待账单列表加载完成</span><span class="from-step">← 步骤4</span></div></div>
+      <div class="step t-assert"><span class="step-no">6</span><div class="step-body"><span class="badge b-violet">assert</span> <span class="step-text">账单明细显示：500000 条以内按包年价结算</span><span class="from-step">← 预期4</span></div></div>
+      <div class="step t-assert"><span class="step-no">7</span><div class="step-body"><span class="badge b-violet">assert</span> <span class="step-text">账单明细显示：超出 20000 条费用为 1000.00 元</span><span class="from-step">← 预期4</span><br><span class="muted small">编译期已将「20000×0.05=1000」改写为纯比对，防 VLM 算错账</span></div></div>
+      <button class="btn btn-sm"><span class="ic" data-ic="plus"></span>添加步骤</button>
+    </div>
+
+    <div>
+      <div class="code-panel" style="margin-bottom:11px">
+        <div class="code-head">
+          <span class="code-title"><span class="ic" data-ic="code"></span>编译预览 · CompiledPlan</span>
+          <span class="toggle"><button class="on" onclick="compileView(this,'dst')">产物对照</button><button onclick="compileView(this,'src')">用例原文</button></span>
+        </div>
+        <div class="code-body" id="compileDst">
+          <div class="cl-src">"1. 确认累计用量500000条"</div>
+          <div class="cl-arrow">↓ compile · 拆为 3 条</div>
+          <div><span class="cl-key">act</span>(点击【账单中心】)</div>
+          <div><span class="cl-key">assert</span>(累计用量 = 500000)</div>
+          <div><span class="cl-key">extract</span>(累计用量) <span class="cl-dst">→ {{usageBefore}}</span></div>
+          <div style="height:8px"></div>
+          <div class="cl-src">"2. 再发起20000条调用使累计达520000条"</div>
+          <div class="cl-arrow">↓ 非 UI 操作 → 人工项</div>
+          <div><span class="cl-manual">manual</span>(需通过 API/压测工具发起调用)</div>
+          <div class="cl-comment">// executable: partial · manualItems: 2</div>
+        </div>
+        <div class="code-body" id="compileSrc" style="display:none">
+          <div class="cl-src">[测试步骤] 1.确认累计用量500000条 2.再发起20000条调用使累计达520000条 3.触发结算 4.查看账单构成</div>
+          <div style="height:6px"></div>
+          <div class="cl-src">[预期结果] …4.50万条以内按最高档包年价结算，超出2万条按单条计费=20000×0.05=1000.00元</div>
+        </div>
+      </div>
+
+      <div class="manual-card" style="margin-bottom:11px">
+        <div class="section-title" style="color:var(--warn)"><span class="ic" data-ic="alert"></span>需人工执行 · 2 项</div>
+        <div class="manual-item"><span class="ic" data-ic="user"></span><div><b>再发起 20000 条调用使累计达 520000 条</b><br><span class="muted small">需通过 API / 压测工具发起，非 UI 操作（来自步骤 2）</span></div></div>
+        <div class="manual-item"><span class="ic" data-ic="user"></span><div><b>触发结算</b><br><span class="muted small">后端批处理动作，UI 无入口（来自步骤 3）</span></div></div>
+        <p class="small muted" style="margin-top:7px">执行时自动跳过并计入报告；本用例结论最高为「部分通过」。</p>
+      </div>
+
+      <div class="card pad">
+        <div class="section-title"><span class="ic" data-ic="sliders"></span>执行参数</div>
+        <dl class="kv">
+          <dt>执行引擎</dt><dd><select class="input" style="padding:3px 8px"><option><span class="ic" data-ic="eye"></span>视觉引擎（默认，支持断言）</option><option disabled>⚡ 极速引擎（规划中，仅 act 步骤）</option></select></dd>
+          <dt>执行缓存</dt><dd><label class="small"><input type="checkbox" checked> read-write（命中步骤跳过模型调用）</label></dd>
+          <dt>失败重试</dt><dd><select class="input" style="padding:3px 8px"><option>不重试</option><option>1 次</option></select></dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 界面 3：交互执行台 ================= -->
+<section class="screen" id="s-bench">
+  <div class="bench-status">
+    <span class="live-dot"></span>
+    <span style="font-weight:650">执行中</span>
+    <span class="muted" style="color:var(--code-muted);font-size:12px">点击左侧「账单中心」，检查累计用量</span>
+    <span class="num" style="color:var(--code-muted);font-size:12px">已用 14.2s</span>
+    <button class="stop-btn"><span class="ic" data-ic="stop"></span>中止</button>
+  </div>
+
+  <div class="bench-bar">
+    <input class="input input-url" value="https://staging.billing.example.com">
+    <input class="input input-cmd" placeholder="输入自然语言指令，如：点击左侧「账单中心」，检查累计用量是否显示 500000 条">
+    <button class="btn btn-run">发送 <span class="ic" data-ic="send"></span></button>
+  </div>
+
+  <div class="bench-grid">
+    <div>
+      <div class="browser-frame">
+        <div class="browser-chrome">
+          <span class="dot" style="background:var(--danger)"></span><span class="dot" style="background:var(--warn)"></span><span class="dot" style="background:var(--success)"></span>
+          <span class="browser-url">https://staging.billing.example.com/bills</span>
+        </div>
+        <div class="browser-view">
+          <div class="mock-sidebar">
+            <div class="mock-nav-item"><span class="ic" data-ic="chart"></span>用量概览</div>
+            <div class="mock-nav-item on"><span class="ic" data-ic="receipt"></span>账单中心</div>
+            <div class="mock-nav-item"><span class="ic" data-ic="box"></span>套餐管理</div>
+            <div class="mock-nav-item"><span class="ic" data-ic="sliders"></span>系统设置</div>
+          </div>
+          <div class="mock-main">
+            <div class="mock-card"><span class="muted small">累计用量（条）</span><div class="mock-num num">500,000</div></div>
+            <div class="mock-card"><span class="muted small">当前套餐</span><div style="font-weight:650;font-size:13px">阶梯套餐 PKG-O · 包年</div></div>
+          </div>
+          <div class="click-marker" style="left:70px; top:48px" title="AI 点击落点"></div>
+          <div class="view-caption">画面来自 plan_thinking 进度事件 · 2.3s 前</div>
+        </div>
+      </div>
+      <p class="note" style="margin-top:9px"><b>原型注释</b>：MVP 实时画面 = 进度事件自带截图（每次规划一张）+ 点击落点标记（action 事件含坐标）。流畅直播（CDP screencast）为后续增强。</p>
+    </div>
+
+    <div>
+      <div class="card pad">
+        <div class="section-title"><span class="ic" data-ic="steps"></span>执行流</div>
+        <div class="timeline">
+          <div class="tl-item thought"><span class="tl-icon"><span class="ic" data-ic="thought"></span></span><div>页面显示账单管理后台，左侧导航可见【账单中心】，我先点击它进入账单页。</div></div>
+          <div class="tl-item action"><span class="tl-icon tl-ok"><span class="ic" data-ic="play"></span></span><div><b>CLICK</b> 【账单中心】<div class="tl-meta">落点 (86, 64) · 1.8s · <span class="tl-ok">✓ 完成</span></div></div></div>
+          <div class="tl-item thought"><span class="tl-icon"><span class="ic" data-ic="thought"></span></span><div>已进入账单中心，用量概览区显示 500,000 条，与预期一致。</div></div>
+          <div class="tl-item action"><span class="tl-icon tl-ok"><span class="ic" data-ic="eye"></span></span><div><b>ASSERT</b> 用量概览区显示累计用量 500000 条<div class="tl-meta">1.2s · <span class="tl-ok">✓ 通过</span></div></div></div>
+          <div class="tl-item thought"><span class="tl-icon"><span class="ic" data-ic="clock"></span></span><div class="muted">等待下一条指令…</div></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:9px;margin-top:11px">
+        <button class="btn btn-primary" style="flex:1"><span class="ic" data-ic="save"></span>将本次流程存为用例</button>
+        <button class="btn"><span class="ic" data-ic="download"></span>导出调试记录</button>
+      </div>
+      <p class="note" style="margin-top:9px">存为用例后进入用例管理，可加入回归；执行台用于<b>调试指令</b>（写准指令 → 一次跑通 → 固化）。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 界面 4：运行历史 ================= -->
+<section class="screen" id="s-runs">
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="stat-label">今日运行</div>
+      <div class="stat-value num">12</div>
+      <div class="mini-bars"><span style="height:30%"></span><span style="height:45%"></span><span style="height:35%"></span><span style="height:60%"></span><span class="hot" style="height:80%"></span><span class="hot" style="height:100%"></span><span class="hot" style="height:70%"></span></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">通过率</div>
+      <div class="gauge-wrap">
+        <div class="gauge"><span class="gauge-num num">75%</span></div>
+        <div class="small muted">9 / 12 通过<br>1 失败 · 2 部分通过</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">平均耗时</div>
+      <div class="stat-value num">48<small style="font-size:12px;color:var(--muted)">s</small></div>
+      <div class="small muted">缓存命中 61% · 节省 ~3 分钟</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">待人工补执行</div>
+      <div class="stat-value num" style="color:var(--warn)">3</div>
+      <div class="small muted">来自 2 条部分自动用例</div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <select class="input"><option>全部用例</option></select>
+    <select class="input"><option>全部状态</option><option>通过</option><option>部分通过</option><option>失败</option></select>
+    <select class="input"><option>全部环境</option></select>
+  </div>
+
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>运行</th><th>用例</th><th>环境</th><th>结果</th><th>耗时</th><th>引擎</th><th>时间</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b class="num">#R-1042</b></td><td>ATC-001 正常账号密码登录</td><td>预发</td>
+          <td><span class="badge b-green"><span class="ic" data-ic="check"></span>通过 8/8</span></td><td class="num">41s</td>
+          <td><span class="badge b-blue"><span class="ic" data-ic="eye"></span>视觉</span></td><td class="muted small num">2 分钟前</td>
+          <td><button class="btn btn-sm" onclick="toggleRun('rd1')">查看报告</button></td>
+        </tr>
+        <tr id="rd1" style="display:none"><td colspan="8" class="run-detail">
+          <div class="small muted">步骤回放（点击步骤看截图与思考）：</div>
+          <div class="replay-steps">
+            <span class="replay-step rs-ok">1</span><span class="replay-step rs-ok">2</span><span class="replay-step rs-ok">3</span><span class="replay-step rs-ok">4</span><span class="replay-step rs-ok">5</span><span class="replay-step rs-ok">6</span><span class="replay-step rs-ok">7</span><span class="replay-step rs-ok">8</span>
+          </div>
+          <div class="iframe-mock"><span class="ic" data-ic="report" style="width:20px;height:20px"></span>Midscene 原生报告 · iframe 嵌入（逐步截图 + 模型思考 + 点击落点）</div>
+        </td></tr>
+        <tr>
+          <td><b class="num">#R-1041</b></td><td>ATC-002 包年套餐超量阶梯计费</td><td>预发</td>
+          <td><span class="badge b-amber"><span class="ic" data-ic="half"></span>部分通过 9/12 · 2 项人工跳过</span></td><td class="num">96s</td>
+          <td><span class="badge b-blue"><span class="ic" data-ic="eye"></span>视觉</span></td><td class="muted small num">1 小时前</td>
+          <td><button class="btn btn-sm" onclick="toggleRun('rd2')">查看报告</button></td>
+        </tr>
+        <tr id="rd2" style="display:none"><td colspan="8" class="run-detail">
+          <div class="small muted">步骤回放（<span class="ic" data-ic="user" style="width:11px;height:11px"></span> = 人工项已跳过并注明原因）：</div>
+          <div class="replay-steps">
+            <span class="replay-step rs-ok">1</span><span class="replay-step rs-ok">2</span><span class="replay-step rs-ok">3</span><span class="replay-step rs-skip"><span class="ic" data-ic="user"></span></span><span class="replay-step rs-skip"><span class="ic" data-ic="user"></span></span><span class="replay-step rs-ok">4</span><span class="replay-step rs-ok">5</span><span class="replay-step rs-ok">6</span><span class="replay-step rs-ok">7</span><span class="replay-step rs-ok">8</span><span class="replay-step rs-ok">9</span><span class="replay-step rs-fail">10</span>
+          </div>
+          <p class="small" style="color:var(--warn)">◐ 结论：部分通过 —— 含 2 项人工项未执行，不构成完整验证；步骤 10 断言失败（超出部分费用显示 <b class="num">1050.00</b>，预期 <b class="num">1000.00</b>）。</p>
+          <div class="iframe-mock"><span class="ic" data-ic="report" style="width:20px;height:20px"></span>Midscene 原生报告 · iframe 嵌入</div>
+        </td></tr>
+        <tr>
+          <td><b class="num">#R-1040</b></td><td>ATC-004 套餐创建幂等提交</td><td>预发</td>
+          <td><span class="badge b-red"><span class="ic" data-ic="x"></span>失败 · 步骤 6</span></td><td class="num">58s</td>
+          <td><span class="badge b-blue"><span class="ic" data-ic="eye"></span>视觉</span></td><td class="muted small num">昨天</td>
+          <td><button class="btn btn-sm">查看报告</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= 界面 5：用例页执行 · 集成示意 ================= -->
+<section class="screen" id="s-integration">
+  <p class="note" style="margin-bottom:11px"><b>原型注释</b>：以下为<b>现有「测试用例」页</b>的集成改造示意——功能用例（AI 生成的自然语言用例）新增「执行」按钮：LLM 实时编译为指令序列直接运行（不落地转换结果），结果回写用例集的执行状态列。</p>
+
+  <div class="module-title" style="margin-bottom:9px"><h1 style="font-size:19px">测试用例 · 登录用例集</h1></div>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>编号</th><th>标题</th><th>优先级</th><th>执行状态</th><th style="width:200px">操作 <span class="badge b-blue" style="font-weight:500">新增「执行」</span></th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="num">TC001</td><td>正常账号密码登录</td><td>P0</td>
+          <td><span class="badge b-green"><span class="ic" data-ic="check"></span>通过</span> <span class="muted small num">2 分钟前</span></td>
+          <td><button class="btn btn-sm btn-run"><span class="ic" data-ic="play"></span>执行</button> <button class="btn btn-sm">详情</button></td>
+        </tr>
+        <tr>
+          <td class="num">TC002</td><td>错误密码登录锁定</td><td>P0</td>
+          <td><span class="badge b-blue running-badge">● 执行中…</span></td>
+          <td><button class="btn btn-sm" disabled><span class="ic" data-ic="clock"></span>执行中</button> <button class="btn btn-sm">详情</button></td>
+        </tr>
+        <tr>
+          <td class="num">TC003</td><td>空密码提交校验</td><td>P1</td>
+          <td><span class="badge b-gray">未测</span></td>
+          <td><button class="btn btn-sm btn-run"><span class="ic" data-ic="play"></span>执行</button> <button class="btn btn-sm">详情</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="exec-pop">
+    <div class="section-title"><span class="ic" data-ic="play"></span>TC002 · 错误密码登录锁定 — 正在执行</div>
+    <div class="small muted">已编译：8 条指令（6 act · 2 assert）· 0 项人工 · 入口 https://staging.shop.example.com/login</div>
+    <div class="progress-track"><div class="progress-fill"></div></div>
+    <div class="timeline" style="margin-top:5px">
+      <div class="tl-item thought"><span class="tl-icon"><span class="ic" data-ic="thought"></span></span><div>当前在登录页，我在账号框输入 user_normal…</div></div>
+      <div class="tl-item action"><span class="tl-icon tl-ok"><span class="ic" data-ic="check"></span></span><div><b>TYPE</b> 密码框 ← WrongPass123 <span class="tl-meta">1.5s · ✓</span></div></div>
+      <div class="tl-item action"><span class="tl-icon"><span class="ic" data-ic="play"></span></span><div><b>CLICK</b> 【登录】<span class="tl-meta">执行中…</span></div></div>
+    </div>
+    <p class="small muted" style="margin-top:7px">执行过程直播：编译摘要 → 逐步指令/思考/结果（数据源：addProgressListener）。完成后状态自动回写「执行状态」列，可随时中止。</p>
+  </div>
+</section>
+
+</main>
+
+<script>
+  const ICONS = {
+    play: '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>',
+    stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+    x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+    half: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v18" fill="currentColor" stroke="none" opacity="0.45"/></svg>',
+    alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+    user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a7 7 0 0 1 14 0v1"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
+    thought: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+    save: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>',
+    download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><path d="M12 15V3"/></svg>',
+    upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><path d="M12 3v12"/></svg>',
+    wrench: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+    book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>',
+    sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1.5 14h5M9.5 8h5M17.5 16h5"/></svg>',
+    bot: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="8" width="16" height="12" rx="2.5"/><path d="M12 8V4M8.5 4h7"/><circle cx="9" cy="13.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="13.5" r="1.1" fill="currentColor" stroke="none"/><path d="M9.3 17h5.4"/></svg>',
+    eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+    code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+    database: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/></svg>',
+    report: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>',
+    send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>',
+    chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18M8 17V9M13 17V5M18 17v-7"/></svg>',
+    receipt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1.5L8 22l2-1.5L12 22l2-1.5L16 22l2-1.5L20 22V2l-2 1.5L16 2l-2 1.5L12 2l-2 1.5L8 2 6 3.5 4 2z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
+    box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.3 7 12 12 20.7 7"/><path d="M12 22V12"/></svg>',
+    steps: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="19" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg>',
+  };
+  document.querySelectorAll('[data-ic]').forEach(el => { el.innerHTML = ICONS[el.dataset.ic] || ''; });
+
+  function showTab(id, el) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('s-' + id).classList.add('active');
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    const tab = el || document.querySelector('.tab[data-tab="' + id + '"]');
+    if (tab) tab.classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function toggleRun(id) {
+    const el = document.getElementById(id);
+    el.style.display = el.style.display === 'none' ? '' : 'none';
+  }
+  function compileView(btn, which) {
+    btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    document.getElementById('compileDst').style.display = which === 'dst' ? '' : 'none';
+    document.getElementById('compileSrc').style.display = which === 'src' ? '' : 'none';
+  }
+</script>
+</body>
+</html>

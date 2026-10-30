@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "D:\\code\\Test_Tools_Demo\\ai-test-tools-site\\src\\features\\automation\\automation.css"
+        ],
+        "createdAt": "2026-10-30T10:26:19.652Z",
+        "reason": "P3 step-editor design predating this session: left border encodes step type (t-act blue / t-assert violet / neutral), functional categorical coding not decorative accent"
+      }
+    ]
+  }
+}
