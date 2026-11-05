@@ -20,6 +20,7 @@ import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { AdminUsersPage } from './pages/AdminUsersPage'
 import { AuthProvider, GuestOnly, RequireAdmin, RequireAuth } from './lib/auth-context'
+import AutomationShellPrototype from './features/automation/prototype/AutomationShellPrototype'
 
 // 路由切换时回到页面顶部。全局 html 开了 scroll-behavior: smooth，
 // 必须显式传 instant，否则换页会看到一段从底部滚回顶部的动画
@@ -82,6 +83,9 @@ export default function App() {
                   <Route path="/admin/users" element={<AdminUsersPage />} />
                 </Route>
               </Route>
+            </Route>
+            <Route element={<RequireAuth />}>
+              <Route path="/automation/shell-prototype" element={<AutomationShellPrototype />} />
             </Route>
           </Routes>
         </AuthProvider>
